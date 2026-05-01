@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "my-jee-tutor-agent"
+version = "0.1.0"
+description = "AI-powered IIT JEE instructor built with AWS Lambda, CrewAI, and liteLLM."
+authors = ["OpenAI Codex <codex@example.com>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+boto3 = "1.38.3"
+crewai = "0.130.0"
+litellm = "1.72.0"
+pydantic = "2.11.4"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "0.11.8"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
