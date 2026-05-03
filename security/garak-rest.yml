@@ -1,0 +1,21 @@
+run:
+  generations: 1
+
+plugins:
+  target_type: rest
+  probe_spec: dan,promptinject,encoding
+  generators:
+    rest:
+      RestGenerator:
+        name: jee-tutor-agent-local-adapter
+        uri: http://127.0.0.1:8765/garak
+        method: post
+        req_template_json_object:
+          text: $INPUT
+        response_json: true
+        response_json_field: text
+        request_timeout: 120
+
+reporting:
+  report_dir: garak_runs
+  report_prefix: jee-tutor-agent

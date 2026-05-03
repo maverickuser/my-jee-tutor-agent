@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.ruff_cache/
+tmp*/
+garak_runs/
+eval_runs/
+garak.log
+garak_adapter.log
+garak_adapter.pid

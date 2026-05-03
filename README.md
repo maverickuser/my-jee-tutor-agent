@@ -4,7 +4,7 @@ AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with Cr
 
 ## What It Does
 
-1. A client invokes the Bedrock AgentCore runtime with an image payload.
+1. A client invokes the Bedrock AgentCore runtime with an image folder or image payload.
 2. `src/agentcore_app.py` receives the invocation on AgentCore's `/invocations` contract.
 3. `src/agentcore_handler.py` validates the payload and converts it into the tutor workflow input shape.
 4. CrewAI runs the IIT JEE tutor agent.
@@ -22,7 +22,19 @@ poetry install --with dev
 
 ## AgentCore Payload Shape
 
-Preferred:
+Preferred folder payload:
+
+```json
+{
+  "image_folder": "/app/input/attempt-images",
+  "question_context": "Optional student/question context"
+}
+```
+
+The folder path must be available inside the runtime container. Supported files are `.png`,
+`.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
+
+Single-image payload:
 
 ```json
 {
@@ -118,6 +130,29 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 - Runtime guardrails use the same role with `bedrock:ApplyGuardrail`. By default, Terraform uses the guardrail it creates; set `bedrock_guardrail_id` only to use an existing guardrail instead.
 - Langfuse keys are passed as AgentCore runtime environment variables when configured.
 
+## CD Agent Evals and Security Scan
+
+The CD workflow runs agent evals and a garak scan after deployment.
+
+The eval step runs cases from `evals/jee_tutor_eval_cases.json` against the real
+AgentCore handler, using the sample image folder and deployed Bedrock Guardrail
+settings. It writes `eval_runs/agent-evals.json` and fails the workflow when the
+pass rate is below `CD_EVAL_MIN_SCORE`.
+
+The garak step starts a local REST adapter around the same handler, supplies the
+sample image folder, sends garak probe prompts as `question_context`, and reuses
+the deployed Bedrock Guardrail ID.
+
+GitHub repository variables can tune the scan:
+
+```text
+CD_EVAL_MIN_SCORE=0.75
+GARAK_PROBES=dan,promptinject,encoding
+GARAK_HIT_THRESHOLD=0
+```
+
+Eval and garak reports are uploaded as the `garak-security-reports` workflow artifact.
+
 ## Runtime Guardrails
 
 The AgentCore handler applies Bedrock Guardrails at the runtime boundary:
@@ -161,7 +196,7 @@ Example score payload:
 
 ```json
 {
-  "image_data_uri": "data:image/png;base64,...",
+  "image_folder": "/app/input/attempt-images",
   "evaluation_scores": [
     {
       "name": "helpfulness",

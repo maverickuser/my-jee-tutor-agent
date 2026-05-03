@@ -1,5 +1,5 @@
 VISION_TOOL_DESCRIPTION = (
-    "Analyzes an uploaded IIT JEE question attempt image with a vision-capable LLM "
+    "Analyzes uploaded IIT JEE question attempt images with a vision-capable LLM "
     "and returns coaching-style feedback."
 )
 
@@ -27,16 +27,17 @@ LOCAL_PROMPT_FALLBACKS = {
         "work, recognize exam patterns, and tailor hints to student mistakes."
     ),
     DIAGNOSIS_TASK_DESCRIPTION: (
-        "Use the provided question image to identify the topic, infer the student's "
+        "Use the provided question image(s) to identify the topic, infer the student's "
         "mistake, and produce a short teaching note. You must use the "
-        "jee_question_vision_analyzer tool to inspect the uploaded image.\n\n"
+        "jee_question_vision_analyzer tool to inspect the uploaded image(s).\n\n"
         "Follow this structure exactly:\n"
         "1. Subject and topic\n"
         "2. Error type: conceptual or calculation\n"
         "3. Evidence from the attempt\n"
         "4. Two to three hints that move the student forward\n"
         "5. One recommended revision habit\n\n"
-        "Image payload: {image_data_uri}\n"
+        "Image payloads: {image_data_uris}\n"
+        "Image count: {image_count}\n"
         "Optional context: {question_context}"
     ),
     DIAGNOSIS_TASK_EXPECTED_OUTPUT: (

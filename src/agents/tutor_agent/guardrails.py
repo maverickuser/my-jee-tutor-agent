@@ -55,8 +55,10 @@ class RuntimeGuardrail:
         *,
         question_context: str | None,
         image_data_uri: str | None = None,
+        image_data_uris: list[str] | None = None,
     ) -> GuardrailCheck:
-        content = self._build_input_content(question_context, image_data_uri)
+        resolved_image_data_uris = image_data_uris or ([image_data_uri] if image_data_uri else [])
+        content = self._build_input_content(question_context, resolved_image_data_uris)
         return self._apply("INPUT", content)
 
     def check_output(self, analysis: str) -> GuardrailCheck:
@@ -141,13 +143,14 @@ class RuntimeGuardrail:
     def _build_input_content(
         self,
         question_context: str | None,
-        image_data_uri: str | None,
+        image_data_uris: list[str],
     ) -> list[dict[str, Any]]:
         content = self._text_content(question_context)
-        if self.settings.include_image and image_data_uri:
-            image_content = self._image_content(image_data_uri)
-            if image_content:
-                content.append(image_content)
+        if self.settings.include_image:
+            for image_data_uri in image_data_uris:
+                image_content = self._image_content(image_data_uri)
+                if image_content:
+                    content.append(image_content)
         return content
 
     @staticmethod

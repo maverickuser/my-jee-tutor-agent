@@ -19,9 +19,20 @@ class VisionLLMClient:
             observability=self.observability
         )
 
-    def analyze_vision(self, image_data_uri: str, user_prompt: str) -> str:
+    def analyze_vision(self, image_data_uris: list[str] | str, user_prompt: str) -> str:
         model_settings = self.model_config.resolve()
         system_prompt = self.prompt_provider.get(VISION_SYSTEM)
+        resolved_image_data_uris = (
+            [image_data_uris] if isinstance(image_data_uris, str) else image_data_uris
+        )
+        user_content = [{"type": "text", "text": user_prompt}]
+        user_content.extend(
+            {
+                "type": "image_url",
+                "image_url": {"url": image_data_uri},
+            }
+            for image_data_uri in resolved_image_data_uris
+        )
 
         request_kwargs = {
             **model_settings.to_litellm_kwargs(),
@@ -32,13 +43,7 @@ class VisionLLMClient:
                 },
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": image_data_uri},
-                        },
-                    ],
+                    "content": user_content,
                 },
             ],
         }

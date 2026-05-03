@@ -1,4 +1,6 @@
+import base64
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from agents.tutor_agent.guardrails import GuardrailCheck
@@ -52,7 +54,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response, {"analysis": "coaching analysis"})
         run_tutor_workflow.assert_called_once_with(
-            image_data_uri="data:image/png;base64,ZmFrZQ==",
+            image_data_uris=["data:image/png;base64,ZmFrZQ=="],
             question_context="student context",
         )
         self.assertEqual(
@@ -62,11 +64,42 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                     "input",
                     {
                         "question_context": "student context",
-                        "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                        "image_data_uris": ["data:image/png;base64,ZmFrZQ=="],
                     },
                 ),
                 ("output", "coaching analysis"),
             ],
+        )
+
+    def test_folder_invocation_loads_multiple_images(self):
+        image_folder = Path(__file__).parent / "fixtures" / "image_folder"
+        first_image = (image_folder / "attempt-1.png").read_bytes()
+        second_image = (image_folder / "attempt-2.jpg").read_bytes()
+
+        with (
+            patch(
+                "agentcore_handler.RuntimeGuardrail",
+                return_value=FakeRuntimeGuardrail(),
+            ),
+            patch(
+                "agentcore_handler.run_tutor_workflow",
+                return_value="folder analysis",
+            ) as run_tutor_workflow,
+        ):
+            response = handle_tutor_invocation(
+                {
+                    "image_folder": str(image_folder),
+                    "question_context": "multi-page attempt",
+                }
+            )
+
+        self.assertEqual(response, {"analysis": "folder analysis"})
+        run_tutor_workflow.assert_called_once_with(
+            image_data_uris=[
+                "data:image/png;base64," + base64.b64encode(first_image).decode("ascii"),
+                "data:image/jpeg;base64," + base64.b64encode(second_image).decode("ascii"),
+            ],
+            question_context="multi-page attempt",
         )
 
     def test_input_guardrail_intervention_skips_workflow(self):

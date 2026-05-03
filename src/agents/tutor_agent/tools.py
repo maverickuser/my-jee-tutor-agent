@@ -6,9 +6,9 @@ from agents.tutor_agent.prompts import VISION_TOOL_DESCRIPTION
 
 
 class VisionInput(BaseModel):
-    image_data_uri: str = Field(
+    image_data_uris: list[str] = Field(
         ...,
-        description="A data URI containing the uploaded question image.",
+        description="Data URIs containing the uploaded question images.",
     )
     user_prompt: str = Field(
         ...,
@@ -24,8 +24,8 @@ class VisionAnalysisTool(BaseTool):
     args_schema: type[BaseModel] = VisionInput
     llm_client: VisionLLMClient = Field(default_factory=VisionLLMClient, exclude=True)
 
-    def _run(self, image_data_uri: str, user_prompt: str) -> str:
-        return self.llm_client.analyze_vision(image_data_uri, user_prompt)
+    def _run(self, image_data_uris: list[str], user_prompt: str) -> str:
+        return self.llm_client.analyze_vision(image_data_uris, user_prompt)
 
 
 def build_vision_tool(llm_client: VisionLLMClient | None = None) -> VisionAnalysisTool:

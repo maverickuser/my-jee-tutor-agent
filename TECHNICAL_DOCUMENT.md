@@ -79,7 +79,7 @@ Creates the `BedrockAgentCoreApp` and registers the single AgentCore entrypoint.
 Owns request/response concerns:
 
 - validates incoming payloads with Pydantic
-- accepts either `image_data_uri` or a structured `media` image payload
+- accepts an `image_folder`, `image_data_uris`, `image_data_uri`, or structured `media` image payload
 - resolves `question_context` from `question_context` or `prompt`
 - applies optional Bedrock Guardrails before and after the tutor workflow
 - returns either `{"analysis": "..."}` or a validation error response
@@ -90,7 +90,7 @@ This file is the boundary between AgentCore JSON payloads and the tutor workflow
 
 ### `workflow.py`
 
-Defines `run_tutor_workflow(...)`. It is the domain-facing API for running the tutor agent. It accepts an image data URI, optional question context, and an optional injected `VisionLLMClient`.
+Defines `run_tutor_workflow(...)`. It is the domain-facing API for running the tutor agent. It accepts one or more image data URIs, optional question context, and an optional injected `VisionLLMClient`.
 
 ### `crew.py`
 
@@ -260,11 +260,23 @@ Creates:
 2. Build the image from `src/Dockerfile`.
 3. Push the image to ECR.
 4. Apply Terraform with `agentcore_image_uri` set to the pushed image URI.
-5. Invoke the AgentCore runtime endpoint with an image payload.
+5. Invoke the AgentCore runtime endpoint with an image folder or image payload.
 
 ## 8. Invocation Payloads
 
 Preferred:
+
+```json
+{
+  "image_folder": "/app/input/attempt-images",
+  "question_context": "Optional context"
+}
+```
+
+The folder path must be available inside the runtime container. Supported files are `.png`,
+`.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
+
+Single-image:
 
 ```json
 {

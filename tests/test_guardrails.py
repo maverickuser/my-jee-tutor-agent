@@ -55,6 +55,34 @@ class RuntimeGuardrailTest(unittest.TestCase):
             {"image": {"format": "png", "source": {"bytes": image_bytes}}},
         )
 
+    def test_input_guardrail_sends_multiple_images(self):
+        client = FakeBedrockRuntimeClient({"action": "NONE"})
+        guardrail = RuntimeGuardrail(
+            settings=GuardrailSettings(enabled=True, identifier="guardrail-id", version="1"),
+            client=client,
+        )
+        png_bytes = b"fake-png-bytes"
+        jpeg_bytes = b"fake-jpeg-bytes"
+        image_data_uris = [
+            "data:image/png;base64," + base64.b64encode(png_bytes).decode(),
+            "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode(),
+        ]
+
+        result = guardrail.check_input(
+            question_context="Please check this attempt.",
+            image_data_uris=image_data_uris,
+        )
+
+        self.assertTrue(result.allowed)
+        self.assertEqual(
+            client.calls[0]["content"],
+            [
+                {"text": {"text": "Please check this attempt."}},
+                {"image": {"format": "png", "source": {"bytes": png_bytes}}},
+                {"image": {"format": "jpeg", "source": {"bytes": jpeg_bytes}}},
+            ],
+        )
+
     def test_output_intervention_returns_guardrail_message(self):
         client = FakeBedrockRuntimeClient(
             {
