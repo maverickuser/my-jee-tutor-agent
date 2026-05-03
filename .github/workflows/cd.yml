@@ -53,9 +53,11 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-          TF_VAR_vision_model: ${{ vars.VISION_MODEL || 'openai/gpt-4o' }}
-          TF_VAR_lambda_image_uri: "111111111111.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-repo:bootstrap"
-        run: terraform apply -target=aws_ecr_repository.lambda_repo -auto-approve
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+          TF_VAR_agentcore_image_uri: "111111111111.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-repo:bootstrap"
+        run: terraform apply -target=aws_ecr_repository.agentcore_repo -auto-approve
 
       - name: Read Terraform outputs
         id: tf_outputs
@@ -67,7 +69,7 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push Lambda image
+      - name: Build, tag, and push AgentCore image
         id: image
         env:
           ECR_REPOSITORY_URL: ${{ steps.tf_outputs.outputs.ecr_repo_url }}
@@ -79,7 +81,7 @@ jobs:
           docker push "$ECR_REPOSITORY_URL:latest"
           echo "image_uri=$ECR_REPOSITORY_URL:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Terraform apply Lambda update
+      - name: Terraform apply AgentCore runtime
         working-directory: terraform
         env:
           TF_VAR_project_name: ${{ env.PROJECT_NAME }}
@@ -87,6 +89,8 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-          TF_VAR_vision_model: ${{ vars.VISION_MODEL || 'openai/gpt-4o' }}
-          TF_VAR_lambda_image_uri: ${{ steps.image.outputs.image_uri }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+          TF_VAR_agentcore_image_uri: ${{ steps.image.outputs.image_uri }}
         run: terraform apply -auto-approve

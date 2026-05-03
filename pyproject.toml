@@ -1,14 +1,16 @@
 [tool.poetry]
 name = "my-jee-tutor-agent"
 version = "0.1.0"
-description = "AI-powered IIT JEE instructor built with AWS Lambda, CrewAI, and liteLLM."
+description = "AI-powered IIT JEE instructor built with Amazon Bedrock AgentCore, CrewAI, and liteLLM."
 authors = ["OpenAI Codex <codex@example.com>"]
 package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.14"
-boto3 = "1.38.3"
+boto3 = ">=1.42.86,<2.0.0"
+bedrock-agentcore = "^1.6.2"
 crewai = "0.130.0"
+langfuse = "^3.0.0"
 litellm = "1.72.0"
 pydantic = "2.11.4"
 

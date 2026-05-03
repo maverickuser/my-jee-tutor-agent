@@ -10,14 +10,8 @@ variable "project_name" {
   default     = "jee-tutor-agent"
 }
 
-variable "bucket_name" {
-  description = "Optional explicit S3 bucket name. Leave empty to auto-generate."
-  type        = string
-  default     = ""
-}
-
-variable "lambda_image_uri" {
-  description = "Full ECR image URI, including a tag or digest, built by CI/CD."
+variable "agentcore_image_uri" {
+  description = "Full ECR image URI, including a tag or digest, for the Bedrock AgentCore runtime container."
   type        = string
 }
 
@@ -29,14 +23,14 @@ variable "litellm_api_key" {
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API key used when VISION_MODEL points to an OpenAI model."
+  description = "OpenAI API key used when the configured model points to an OpenAI model."
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "google_api_key" {
-  description = "Google AI Studio API key used when VISION_MODEL points to a Gemini model."
+  description = "Google AI Studio API key used when the configured model points to a Gemini model."
   type        = string
   default     = ""
   sensitive   = true
@@ -48,8 +42,58 @@ variable "litellm_base_url" {
   default     = ""
 }
 
-variable "vision_model" {
-  description = "Vision-capable model identifier used by liteLLM."
+variable "langfuse_public_key" {
+  description = "Langfuse public key for observability, prompt management, and evaluation scores."
   type        = string
-  default     = "openai/gpt-4o"
+  default     = ""
+  sensitive   = true
+}
+
+variable "langfuse_secret_key" {
+  description = "Langfuse secret key for observability, prompt management, and evaluation scores."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "langfuse_base_url" {
+  description = "Langfuse base URL, for example https://cloud.langfuse.com or https://us.cloud.langfuse.com."
+  type        = string
+  default     = "https://cloud.langfuse.com"
+}
+
+variable "bedrock_guardrail_enabled" {
+  description = "Enable Bedrock ApplyGuardrail checks at the AgentCore runtime boundary."
+  type        = bool
+  default     = true
+}
+
+variable "bedrock_guardrail_id" {
+  description = "Bedrock Guardrail identifier or ARN used by ApplyGuardrail."
+  type        = string
+  default     = ""
+}
+
+variable "bedrock_guardrail_version" {
+  description = "Bedrock Guardrail version to apply, for example DRAFT or a published version number."
+  type        = string
+  default     = "DRAFT"
+}
+
+variable "bedrock_guardrail_output_scope" {
+  description = "ApplyGuardrail response scope: INTERVENTIONS or FULL."
+  type        = string
+  default     = "INTERVENTIONS"
+}
+
+variable "bedrock_guardrail_fail_closed" {
+  description = "Block requests when a configured guardrail check fails."
+  type        = bool
+  default     = true
+}
+
+variable "bedrock_guardrail_include_image" {
+  description = "Include png/jpeg attempt images in input guardrail checks."
+  type        = bool
+  default     = true
 }

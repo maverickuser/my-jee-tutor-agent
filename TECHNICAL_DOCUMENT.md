@@ -1,343 +1,287 @@
-﻿# My JEE Tutor Agent Technical Document
+# My JEE Tutor Agent Technical Document
 
 ## 1. Project Overview
 
-`my-jee-tutor-agent` is a serverless, AI-powered tutoring system for IIT JEE preparation. It processes a student's uploaded image of a failed Physics, Chemistry, or Mathematics attempt, analyzes the mistake using a vision-capable large language model, and writes coaching-oriented feedback back to Amazon S3.
+`my-jee-tutor-agent` is an Amazon Bedrock AgentCore Runtime application that analyzes IIT JEE question-attempt images and returns coaching-oriented feedback. The only runtime entrypoint is `src/agentcore_app.py`.
 
-The project combines:
-- AWS Lambda packaged as a Docker container
-- Amazon S3 for event-driven ingestion and output storage
-- Amazon ECR for container image hosting
-- Terraform for infrastructure provisioning
-- CrewAI for agent orchestration
-- liteLLM for model routing across OpenAI and Google APIs
-- GitHub Actions for CI/CD automation
+The code is split by responsibility:
 
-## 2. Business Use Case
+- Runtime adapter: AgentCore app setup
+- Invocation boundary: payload validation and response shaping
+- Workflow orchestration: CrewAI kickoff
+- Crew assembly: CrewAI object composition
+- Tutor components: tool, agent, and task factories
+- Model access: LiteLLM request construction and model configuration
+- Runtime safety: Bedrock ApplyGuardrail checks around the custom agent
+- Observability: Langfuse spans, generations, prompt links, and evaluation scores
+- Prompt content: prompt strings only
 
-A student uploads an image into the `uploads/` prefix of an S3 bucket. The image can contain a handwritten or typed question attempt. The system analyzes the work to determine:
-- the subject and likely topic
-- whether the failure came from a conceptual error or a calculation error
-- what evidence in the attempt supports that diagnosis
-- what hints should be given next without revealing the entire answer
-
-The result is saved under the `outputs/` prefix in the same bucket as a JSON document.
-
-## 3. High-Level Architecture
-
-### Core Components
-
-- **Amazon S3**
-  - Stores uploaded question images in `uploads/`
-  - Stores generated analysis payloads in `outputs/`
-  - Emits object-created events for `.jpg` and `.png` uploads
-
-- **AWS Lambda**
-  - Triggered by S3 object creation events
-  - Downloads the image into temporary local storage
-  - Converts the image to a base64 data URI
-  - Invokes the CrewAI tutor workflow
-  - Uploads the analysis result to S3
-
-- **CrewAI Agent Layer**
-  - Defines an IIT JEE Instructor persona
-  - Uses a tool-backed task to force image analysis through a vision-capable LLM
-  - Produces pedagogical output rather than a direct final answer
-
-- **liteLLM SDK**
-  - Routes model calls to the configured provider
-  - Supports OpenAI models such as `openai/gpt-4o`
-  - Supports Google Gemini models such as `gemini/gemini-1.5-pro`
-  - Chooses API credentials based on the selected model
-
-- **Terraform**
-  - Provisions S3, ECR, Lambda, IAM, and event notifications
-  - Injects runtime environment variables into Lambda
-  - Applies least-privilege access for S3 and CloudWatch Logs
-
-- **GitHub Actions**
-  - Runs lint checks in pull requests
-  - Builds and pushes the Lambda image on `main`
-  - Applies Terraform after image publication
-
-## 4. End-to-End Request Flow
+## 2. Request Flow
 
 ```mermaid
 flowchart TD
-    A[Student uploads JPG or PNG to S3 uploads/] --> B[S3 ObjectCreated event]
-    B --> C[AWS Lambda container is invoked]
-    C --> D[Lambda downloads image to /tmp]
-    D --> E[Lambda converts image to base64 data URI]
-    E --> F[CrewAI tutor workflow starts]
-    F --> G[VisionAnalysisTool calls liteLLM completion]
-    G --> H{Selected VISION_MODEL provider}
-    H -->|OpenAI| I[OpenAI vision model API]
-    H -->|Google| J[Google Gemini vision model API]
-    I --> K[Coaching-style tutor response]
-    J --> K
-    K --> L[Lambda builds JSON output payload]
-    L --> M[Lambda writes result to S3 outputs/]
+    A[Client invokes AgentCore Runtime] --> B[AgentCore POST /invocations]
+    B --> C[src/agentcore_app.py]
+    C --> D[src/agentcore_handler.py]
+    D --> E[Input Bedrock Guardrail]
+    E --> F[run_tutor_workflow]
+    F --> G[build_tutor_crew]
+    G --> H[VisionAnalysisTool]
+    H --> I[VisionLLMClient]
+    I --> J[Langfuse generation span]
+    J --> K[VisionModelConfig]
+    K --> L[liteLLM completion]
+    L --> M[Output Bedrock Guardrail]
+    M --> N[Langfuse trace scores if provided]
+    N --> O[Coaching JSON response]
 ```
 
-## 5. Runtime Execution Sequence
-
-### Step 1. Image Upload
-
-A user uploads a `.jpg` or `.png` object into the S3 path:
-
-```text
-s3://<bucket-name>/uploads/<filename>
-```
-
-### Step 2. S3 Event Notification
-
-Terraform configures S3 notifications for:
-- prefix: `uploads/`
-- suffix: `.jpg`
-- suffix: `.png`
-
-These events invoke the Lambda function.
-
-### Step 3. Lambda Ingestion
-
-The Lambda handler in `src/main.py`:
-- reads the S3 event payload
-- validates that the object is under `uploads/`
-- downloads the image with `boto3`
-- builds a data URI from the image content
-
-### Step 4. CrewAI Tutor Execution
-
-The tutor workflow in `src/agents/tutor_agent.py` creates:
-- an **Agent** with an IIT JEE Instructor persona
-- a **Task** that enforces a structured tutoring response
-- a **VisionAnalysisTool** that invokes `litellm.completion(...)`
-
-### Step 5. Model Routing with liteLLM
-
-The `VisionAnalysisTool` determines provider settings based on `VISION_MODEL`.
-
-Examples:
-
-```text
-VISION_MODEL=openai/gpt-4o
-OPENAI_API_KEY=...
-```
-
-```text
-VISION_MODEL=gemini/gemini-1.5-pro
-GOOGLE_API_KEY=...
-```
-
-Fallback behavior:
-- if provider-specific keys are not set, `LITELLM_API_KEY` can be used as a shared fallback
-- `LITELLM_BASE_URL` can point to a LiteLLM proxy if needed
-
-### Step 6. Output Persistence
-
-The Lambda function writes a JSON payload similar to:
-
-```json
-{
-  "source_bucket": "example-bucket",
-  "source_key": "uploads/problem-01.png",
-  "destination_bucket": "example-bucket",
-  "output_key": "outputs/problem-01.json",
-  "analysis": "Subject and topic...",
-  "request_id": "aws-request-id"
-}
-```
-
-## 6. Project Structure
+## 3. Project Structure
 
 ```text
 my-jee-tutor-agent/
-├── .github/workflows/
-│   ├── ci.yml
-│   └── cd.yml
-├── src/
-│   ├── agents/
-│   │   └── tutor_agent.py
-│   ├── main.py
-│   └── Dockerfile
-├── terraform/
-│   ├── main.tf
-│   ├── providers.tf
-│   └── variables.tf
-├── pyproject.toml
-├── poetry.lock
-├── poetry.toml
-└── README.md
++-- src/
+|   +-- agentcore_app.py
+|   +-- agentcore_handler.py
+|   +-- Dockerfile
+|   +-- config/
+|   |   +-- llm.toml
+|   +-- agents/
+|       +-- tutor_agent/
+|           +-- __init__.py
+|           +-- crew.py
+|           +-- factories.py
+|           +-- llm_client.py
+|           +-- model_config.py
+|           +-- config_loader.py
+|           +-- guardrails.py
+|           +-- observability.py
+|           +-- prompts.py
+|           +-- tools.py
+|           +-- workflow.py
++-- terraform/
+|   +-- main.tf
+|   +-- providers.tf
+|   +-- variables.tf
++-- pyproject.toml
++-- poetry.lock
++-- README.md
 ```
 
-## 7. Important Source Files
+## 4. Runtime Boundary
 
-### `src/main.py`
+### `src/agentcore_app.py`
 
-Responsibilities:
-- Lambda entrypoint: `lambda_handler(event, context)`
-- S3 event parsing
-- file download and temporary storage
-- image-to-data-URI conversion
-- invocation of the tutoring workflow
-- upload of the generated JSON result
+Creates the `BedrockAgentCoreApp` and registers the single AgentCore entrypoint. It delegates immediately to `handle_tutor_invocation(...)` so the runtime file stays thin.
 
-### `src/agents/tutor_agent.py`
+### `src/agentcore_handler.py`
 
-Responsibilities:
-- defines the CrewAI agent persona
-- defines the tutor task prompt shape
-- encapsulates `liteLLM` SDK usage in `VisionAnalysisTool`
-- maps `VISION_MODEL` to the right API key source
+Owns request/response concerns:
+
+- validates incoming payloads with Pydantic
+- accepts either `image_data_uri` or a structured `media` image payload
+- resolves `question_context` from `question_context` or `prompt`
+- applies optional Bedrock Guardrails before and after the tutor workflow
+- returns either `{"analysis": "..."}` or a validation error response
+
+This file is the boundary between AgentCore JSON payloads and the tutor workflow API.
+
+## 5. Tutor Agent Package
+
+### `workflow.py`
+
+Defines `run_tutor_workflow(...)`. It is the domain-facing API for running the tutor agent. It accepts an image data URI, optional question context, and an optional injected `VisionLLMClient`.
+
+### `crew.py`
+
+Builds the CrewAI `Crew`. It composes the vision tool, tutor agent, and diagnosis task, then configures sequential execution.
+
+### `tools.py`
+
+Defines tool-level concerns:
+
+- `VisionInput`
+- `VisionAnalysisTool`
+- `build_vision_tool(...)`
+
+The tool delegates LLM calls to an injected `VisionLLMClient`, keeping CrewAI integration separate from model access.
+
+### `factories.py`
+
+Defines CrewAI object factories:
+
+- `build_tutor_agent(...)`
+- `build_diagnosis_task(...)`
+
+This keeps agent/task construction separate from the tool implementation.
+
+### `prompt_provider.py`
+
+Resolves all behavior-shaping prompts. Langfuse is used when configured and available; otherwise the provider returns local fallback text from `prompts.py`. This keeps prompt management centralized and prevents CrewAI factories or LLM code from knowing where prompt text came from.
+
+### `llm_client.py`
+
+Owns LiteLLM request construction and response extraction. It asks `VisionModelConfig` for provider settings and completion options, builds the multimodal message payload, opens a Langfuse generation span when enabled, calls `litellm.completion(...)`, and returns response text.
+
+### `model_config.py`
+
+Owns model configuration resolution. Defaults come from `src/config/llm.toml`, while environment variables can override deployment-specific values:
+
+- `bedrock/...` and `amazon/...` use AWS IAM credentials from AgentCore
+- `openai/...` uses `OPENAI_API_KEY` or `LITELLM_API_KEY`
+- `gemini/...` and `google/...` use `GOOGLE_API_KEY` or `LITELLM_API_KEY`
+- all other providers use `LITELLM_API_KEY`
+- `LITELLM_BASE_URL` can override `litellm.api_base`
+- `VISION_MODEL` can override `vision.model`
+- `LLM_CONFIG_FILE` can point to a different TOML config file
+
+### `config_loader.py`
+
+Loads the TOML config file and exposes section-level values to the model configuration layer.
+
+### `guardrails.py`
+
+Owns runtime Bedrock Guardrails integration through the independent `ApplyGuardrail` API:
+
+- resolves guardrail settings from `[guardrails]` or environment variables
+- checks input text and png/jpeg image payloads before CrewAI runs
+- checks the final analysis before it is returned
+- extracts non-sensitive PII type labels from Bedrock sensitive information assessments
+- fails closed by default when guardrails are configured but unavailable
+
+PII detection is configured in the Bedrock guardrail's sensitive information policy. The runtime passes content to `ApplyGuardrail`; Bedrock decides whether to block, anonymize, or allow configured PII entities and custom regex matches. The app reports only PII type labels, not matched values.
+
+### `observability.py`
+
+Owns the Langfuse integration:
+
+- starts a root span for each AgentCore invocation
+- starts a generation span around each LiteLLM call
+- fetches managed prompts from Langfuse
+- records optional evaluation scores on the current trace
+- falls back to local behavior when Langfuse credentials are not configured
+
+### `src/config/llm.toml`
+
+Default non-secret LLM settings:
+
+```toml
+[vision]
+model = "gemini/gemini-3-flash-preview"
+
+[completion]
+temperature = 0.2
+```
+
+Runtime guardrail settings:
+
+```toml
+[guardrails]
+enabled = false
+identifier = ""
+version = "DRAFT"
+output_scope = "INTERVENTIONS"
+fail_closed = true
+include_image = true
+```
+
+Additional LiteLLM options can be added without code changes:
+
+```toml
+[completion]
+temperature = 0.2
+top_p = 0.9
+max_tokens = 1200
+timeout = 60
+```
+
+Langfuse settings:
+
+```toml
+[langfuse]
+enabled = true
+trace_name = "jee-tutor-agentcore-invocation"
+generation_name = "vision-question-analysis"
+flush_after_invocation = false
+
+[langfuse.prompts]
+vision_system = "jee-tutor-vision-system-prompt"
+tutor_agent_goal = "jee-tutor-agent-goal"
+tutor_agent_backstory = "jee-tutor-agent-backstory"
+diagnosis_task_description = "jee-tutor-diagnosis-task-description"
+diagnosis_task_expected_output = "jee-tutor-diagnosis-task-expected-output"
+```
+
+### `prompts.py`
+
+Stores local fallback prompt text and stable code-owned labels only. Editing production prompt behavior should usually happen in Langfuse; editing fallbacks or application contracts happens here.
+
+### `__init__.py`
+
+Exports the package API used by external modules.
+
+## 6. Infrastructure
+
+### `terraform/providers.tf`
+
+Configures:
+
+- `aws` for IAM and ECR
+- `awscc` for Bedrock AgentCore Runtime resources
+
+### `terraform/variables.tf`
+
+Defines deployment inputs:
+
+- `aws_region`
+- `project_name`
+- `agentcore_image_uri`
+- provider/API key variables
+- Langfuse API key variables
 
 ### `terraform/main.tf`
 
-Responsibilities:
-- creates S3 bucket and encryption settings
-- creates ECR repository
-- creates Lambda function from a container image
-- creates IAM role and least-privilege policy
-- creates S3 notification rules for `.jpg` and `.png`
+Creates:
 
-### `.github/workflows/cd.yml`
+- ECR repository for the AgentCore image
+- Bedrock Guardrail with sensitive-information, harmful-content, and profanity policies
+- AgentCore runtime IAM role
+- inline IAM policy for ECR pull, logs, metrics, X-Ray, and Bedrock model invocation
+- inline IAM permission for `bedrock:ApplyGuardrail`
+- Bedrock AgentCore Runtime
+- default Bedrock AgentCore Runtime endpoint
+- Langfuse and guardrail environment variables for observability, prompt management, scoring, and safety
 
-Responsibilities:
-- authenticates to AWS
-- initializes Terraform backend
-- ensures ECR exists
-- builds and pushes the Lambda image
-- updates infrastructure with the produced image URI
+`terraform/guardrails.tf` owns the default guardrail. `terraform/main.tf` injects its `guardrail_id` as `BEDROCK_GUARDRAIL_ID`, and `src/agents/tutor_agent/guardrails.py` reads that environment variable before calling `bedrock-runtime.ApplyGuardrail`.
 
-## 8. Infrastructure Design
+## 7. Deployment Shape
 
-### S3
+1. Apply Terraform enough to create or discover the ECR repository.
+2. Build the image from `src/Dockerfile`.
+3. Push the image to ECR.
+4. Apply Terraform with `agentcore_image_uri` set to the pushed image URI.
+5. Invoke the AgentCore runtime endpoint with an image payload.
 
-The S3 bucket is configured with:
-- versioning enabled
-- public access blocked
-- SSE-S3 encryption enabled
+## 8. Invocation Payloads
 
-### Lambda
+Preferred:
 
-The Lambda function is configured with:
-- package type: `Image`
-- timeout: `300 seconds`
-- memory: `1024 MB`
-- environment variables for model/provider configuration
+```json
+{
+  "image_data_uri": "data:image/png;base64,...",
+  "question_context": "Optional context"
+}
+```
 
-### ECR
+Alternative:
 
-The Lambda image is stored in Amazon ECR with image scanning enabled on push.
-
-### IAM
-
-The Lambda execution role is intentionally restricted to:
-- `s3:GetObject` on `uploads/*`
-- `s3:PutObject` on `outputs/*`
-- CloudWatch Logs permissions for runtime logging
-
-## 9. CI/CD Design
-
-### CI Workflow
-
-The CI workflow:
-- checks out the repository
-- installs dependencies with Poetry
-- runs `ruff` against `src`
-
-### CD Workflow
-
-The CD workflow:
-1. assumes an AWS IAM role from GitHub Actions
-2. runs `terraform init`
-3. creates the ECR repository if needed
-4. reads the ECR repository URL from Terraform outputs
-5. builds the Lambda container image
-6. pushes the image to ECR
-7. runs Terraform again with the real image URI
-
-This two-phase apply avoids a cold-start dependency loop where Lambda expects an image before the repository exists.
-
-## 10. Environment Variables
-
-### Lambda Runtime Variables
-
-- `VISION_MODEL`
-- `OPENAI_API_KEY`
-- `GOOGLE_API_KEY`
-- `LITELLM_API_KEY`
-- `LITELLM_BASE_URL`
-- `OUTPUT_BUCKET`
-- `OUTPUT_PREFIX`
-
-### GitHub Secrets
-
-- `AWS_ROLE_TO_ASSUME`
-- `OPENAI_API_KEY`
-- `GOOGLE_API_KEY`
-- `LITELLM_API_KEY`
-- `LITELLM_BASE_URL`
-
-### GitHub Repository Variables
-
-- `AWS_REGION`
-- `PROJECT_NAME`
-- `VISION_MODEL`
-- `TF_STATE_BUCKET`
-- `TF_STATE_KEY`
-- `TF_STATE_DYNAMODB_TABLE`
-
-## 11. Security Considerations
-
-- The Lambda IAM role is limited to exact S3 prefixes.
-- Public access to the S3 bucket is blocked.
-- Secrets are expected to come from GitHub Secrets and Terraform variables rather than source control.
-- The Lambda container model keeps runtime packaging deterministic.
-- The output is teaching-oriented and avoids directly disclosing the full solution whenever possible.
-
-## 12. Operational Considerations
-
-### Logging
-
-The Lambda writes execution details into CloudWatch Logs. These logs should be used for:
-- failed image parsing
-- API failures from OpenAI or Google
-- unexpected S3 event payloads
-- latency analysis
-
-### Performance
-
-Potential latency contributors:
-- image download size
-- image encoding time
-- upstream vision model response time
-- cold starts for Lambda container images
-
-### Scalability
-
-The design scales naturally with:
-- S3 event-driven invocation
-- stateless Lambda execution
-- managed container delivery through ECR
-
-## 13. Current Limitations
-
-- only `.jpg` and `.png` files are accepted through S3 triggers
-- the current output format is JSON only
-- there is no persistence layer beyond S3 for analytics or user history
-- there is no explicit dead-letter queue yet for failed invocations
-- metadata extraction from S3 object metadata is minimal
-
-## 14. Recommended Next Enhancements
-
-- add unit tests for Lambda event parsing and output-key generation
-- add integration tests with sample S3 event payloads
-- add a DLQ or failure destination for Lambda
-- add structured observability with metrics and tracing
-- support multi-page PDF ingestion if students upload worksheets
-- persist tutor sessions in DynamoDB for analytics and continuity
-- add prompt guardrails for hallucination reduction and answer leakage control
-
-## 15. Summary
-
-This project implements a production-oriented, event-driven AI tutoring backend for IIT JEE workflows. It uses AWS serverless components for scalability, CrewAI for agent structure, and liteLLM for flexible provider routing across OpenAI and Google models. The system is designed to be secure, deployable, and straightforward to extend.
+```json
+{
+  "media": {
+    "type": "image",
+    "format": "png",
+    "data": "base64..."
+  },
+  "prompt": "Optional context"
+}
+```

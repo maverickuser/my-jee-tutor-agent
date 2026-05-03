@@ -1,43 +1,15 @@
-﻿locals {
-  resolved_bucket_name = var.bucket_name != "" ? var.bucket_name : "${var.project_name}-${data.aws_caller_identity.current.account_id}"
-  lambda_name          = "${var.project_name}-processor"
-  ecr_repo_name        = "${var.project_name}-repo"
+locals {
+  ecr_repo_name           = "${var.project_name}-repo"
+  agentcore_runtime_name  = substr("JeeTutorAgent_${replace(var.project_name, "/[^a-zA-Z0-9_]/", "_")}", 0, 48)
+  agentcore_endpoint_name = "DefaultEndpoint"
+
+  # Use created guardrail if not overridden via var.bedrock_guardrail_id
+  bedrock_guardrail_id = var.bedrock_guardrail_id != "" ? var.bedrock_guardrail_id : try(awscc_bedrock_guardrail.jee_tutor[0].guardrail_id, "")
 }
 
 data "aws_caller_identity" "current" {}
 
-resource "aws_s3_bucket" "uploads" {
-  bucket = local.resolved_bucket_name
-}
-
-resource "aws_s3_bucket_versioning" "uploads" {
-  bucket = aws_s3_bucket.uploads.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "uploads" {
-  bucket = aws_s3_bucket.uploads.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
-  bucket = aws_s3_bucket.uploads.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-resource "aws_ecr_repository" "lambda_repo" {
+resource "aws_ecr_repository" "agentcore_repo" {
   name                 = local.ecr_repo_name
   image_tag_mutability = "MUTABLE"
 
@@ -46,121 +18,181 @@ resource "aws_ecr_repository" "lambda_repo" {
   }
 }
 
-resource "aws_iam_role" "lambda_exec" {
-  name = "${var.project_name}-lambda-role"
+resource "aws_iam_role" "agentcore_runtime" {
+  name = "${var.project_name}-agentcore-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "AssumeRolePolicy"
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "lambda.amazonaws.com"
+          Service = "bedrock-agentcore.amazonaws.com"
+        }
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:bedrock-agentcore:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+          }
         }
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy" "lambda_access" {
-  name = "${var.project_name}-lambda-access"
-  role = aws_iam_role.lambda_exec.id
+resource "aws_iam_role_policy" "agentcore_runtime_access" {
+  name = "${var.project_name}-agentcore-access"
+  role = aws_iam_role.agentcore_runtime.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ReadUploads"
+        Sid    = "ECRImageAccess"
         Effect = "Allow"
-        Action = ["s3:GetObject"]
-        Resource = [
-          "${aws_s3_bucket.uploads.arn}/uploads/*"
+        Action = [
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer"
         ]
+        Resource = aws_ecr_repository.agentcore_repo.arn
       },
       {
-        Sid    = "WriteOutputs"
-        Effect = "Allow"
-        Action = ["s3:PutObject"]
-        Resource = [
-          "${aws_s3_bucket.uploads.arn}/outputs/*"
-        ]
+        Sid      = "ECRTokenAccess"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
       },
       {
-        Sid    = "WriteLogs"
+        Sid    = "AgentCoreLogs"
         Effect = "Allow"
         Action = [
           "logs:CreateLogGroup",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:*"
+        ]
+      },
+      {
+        Sid    = "AgentCoreLogStreams"
+        Effect = "Allow"
+        Action = [
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*"
+        ]
+      },
+      {
+        Sid    = "AgentCoreTracing"
+        Effect = "Allow"
+        Action = [
+          "xray:GetSamplingRules",
+          "xray:GetSamplingTargets",
+          "xray:PutTelemetryRecords",
+          "xray:PutTraceSegments"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "AgentCoreMetrics"
+        Effect   = "Allow"
+        Action   = "cloudwatch:PutMetricData"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "bedrock-agentcore"
+          }
+        }
+      },
+      {
+        Sid    = "BedrockModelInvocation"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/*",
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+        ]
+      },
+      {
+        Sid    = "BedrockRuntimeGuardrails"
+        Effect = "Allow"
+        Action = [
+          "bedrock:ApplyGuardrail"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:guardrail/*"
+        ]
       }
     ]
   })
 }
 
-resource "aws_lambda_function" "processor" {
-  function_name = local.lambda_name
-  role          = aws_iam_role.lambda_exec.arn
-  package_type  = "Image"
-  image_uri     = var.lambda_image_uri
-  timeout       = 300
-  memory_size   = 1024
+resource "awscc_bedrockagentcore_runtime" "tutor" {
+  agent_runtime_name     = local.agentcore_runtime_name
+  description            = "CrewAI IIT JEE tutor agent runtime"
+  role_arn               = aws_iam_role.agentcore_runtime.arn
+  protocol_configuration = "HTTP"
 
-  environment {
-    variables = {
-      OUTPUT_BUCKET    = aws_s3_bucket.uploads.bucket
-      OUTPUT_PREFIX    = "outputs/"
-      LITELLM_API_KEY  = var.litellm_api_key
-      OPENAI_API_KEY   = var.openai_api_key
-      GOOGLE_API_KEY   = var.google_api_key
-      LITELLM_BASE_URL = var.litellm_base_url
-      VISION_MODEL     = var.vision_model
+  agent_runtime_artifact = {
+    container_configuration = {
+      container_uri = var.agentcore_image_uri
     }
   }
 
-  depends_on = [aws_iam_role_policy.lambda_access]
-}
+  environment_variables = {
+    LITELLM_API_KEY     = var.litellm_api_key
+    OPENAI_API_KEY      = var.openai_api_key
+    GOOGLE_API_KEY      = var.google_api_key
+    LITELLM_BASE_URL    = var.litellm_base_url
+    LANGFUSE_PUBLIC_KEY = var.langfuse_public_key
+    LANGFUSE_SECRET_KEY = var.langfuse_secret_key
+    LANGFUSE_BASE_URL   = var.langfuse_base_url
 
-resource "aws_lambda_permission" "allow_s3_invoke" {
-  statement_id  = "AllowExecutionFromS3"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.processor.function_name
-  principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.uploads.arn
-}
-
-resource "aws_s3_bucket_notification" "lambda_trigger" {
-  bucket = aws_s3_bucket.uploads.id
-
-  # S3 notifications support only one suffix per rule, so we create one rule
-  # for .jpg and one for .png while sharing the same uploads/ prefix.
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.processor.arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "uploads/"
-    filter_suffix       = ".jpg"
+    BEDROCK_GUARDRAIL_ENABLED       = tostring(local.bedrock_guardrail_id != "" && var.bedrock_guardrail_enabled)
+    BEDROCK_GUARDRAIL_ID            = local.bedrock_guardrail_id
+    BEDROCK_GUARDRAIL_VERSION       = var.bedrock_guardrail_version
+    BEDROCK_GUARDRAIL_REGION        = var.aws_region
+    BEDROCK_GUARDRAIL_OUTPUT_SCOPE  = var.bedrock_guardrail_output_scope
+    BEDROCK_GUARDRAIL_FAIL_CLOSED   = tostring(var.bedrock_guardrail_fail_closed)
+    BEDROCK_GUARDRAIL_INCLUDE_IMAGE = tostring(var.bedrock_guardrail_include_image)
   }
 
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.processor.arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "uploads/"
-    filter_suffix       = ".png"
+  network_configuration = {
+    network_mode = "PUBLIC"
   }
 
-  depends_on = [aws_lambda_permission.allow_s3_invoke]
+  depends_on = [aws_iam_role_policy.agentcore_runtime_access]
 }
 
-output "bucket_name" {
-  value = aws_s3_bucket.uploads.bucket
+resource "awscc_bedrockagentcore_runtime_endpoint" "tutor_default" {
+  agent_runtime_id      = awscc_bedrockagentcore_runtime.tutor.agent_runtime_id
+  agent_runtime_version = awscc_bedrockagentcore_runtime.tutor.agent_runtime_version
+  name                  = local.agentcore_endpoint_name
+  description           = "Default endpoint for the CrewAI IIT JEE tutor agent"
 }
 
 output "ecr_repository_url" {
-  value = aws_ecr_repository.lambda_repo.repository_url
+  value = aws_ecr_repository.agentcore_repo.repository_url
 }
 
-output "lambda_function_name" {
-  value = aws_lambda_function.processor.function_name
+output "agentcore_runtime_arn" {
+  value = awscc_bedrockagentcore_runtime.tutor.agent_runtime_arn
+}
+
+output "agentcore_runtime_id" {
+  value = awscc_bedrockagentcore_runtime.tutor.agent_runtime_id
+}
+
+output "agentcore_endpoint_arn" {
+  value = awscc_bedrockagentcore_runtime_endpoint.tutor_default.agent_runtime_endpoint_arn
 }
