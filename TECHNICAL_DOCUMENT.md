@@ -1,291 +1,170 @@
-# My JEE Tutor Agent Technical Document
+# My JEE Tutor Agent Design Document
 
-## 1. Project Overview
+## 1. Purpose
 
-`my-jee-tutor-agent` is an Amazon Bedrock AgentCore Runtime application that analyzes IIT JEE question-attempt images and returns coaching-oriented feedback. The only runtime entrypoint is `src/agentcore_app.py`.
+`my-jee-tutor-agent` is an Amazon Bedrock AgentCore Runtime application that analyzes IIT JEE attempt images and returns coaching feedback. The system is designed as a thin runtime adapter around a domain workflow, with guardrails, observability, evals, and deployment concerns kept at explicit boundaries.
 
-The code is split by responsibility:
+The architecture favors small, replaceable components over a large handler function. This keeps the production path easy to reason about, makes tests cheaper, and lets CI/CD security checks exercise the same runtime code used by AgentCore.
 
-- Runtime adapter: AgentCore app setup
-- Invocation boundary: payload validation and response shaping
-- Workflow orchestration: CrewAI kickoff
-- Crew assembly: CrewAI object composition
-- Tutor components: tool, agent, and task factories
-- Model access: LiteLLM request construction and model configuration
-- Runtime safety: Bedrock ApplyGuardrail checks around the custom agent
-- Observability: Langfuse spans, generations, prompt links, and evaluation scores
-- Prompt content: prompt strings only
+## 2. Design Goals
 
-## 2. Request Flow
+- Keep AgentCore-specific code at the edge.
+- Accept multiple image input shapes without leaking transport details into the tutor workflow.
+- Apply input and output guardrails consistently around the workflow.
+- Keep prompt resolution, model configuration, and LiteLLM request construction separate.
+- Make core dependencies injectable for tests, evals, and future providers.
+- Redact image payloads from traces and reports.
+- Keep deployment, vulnerability scanning, and evals reproducible from GitHub Actions.
+
+## 3. Non-Goals
+
+- This repository does not implement a general tutoring platform or user database.
+- It does not store uploaded images after request handling.
+- It does not replace Bedrock Guardrails with local policy logic; local code only adapts request and response shapes.
+- It does not define production prompt authoring workflows beyond Langfuse prompt lookup and local fallbacks.
+
+## 4. High-Level Architecture
 
 ```mermaid
 flowchart TD
-    A[Client invokes AgentCore Runtime] --> B[AgentCore POST /invocations]
-    B --> C[src/agentcore_app.py]
-    C --> D[src/agentcore_handler.py]
-    D --> E[Input Bedrock Guardrail]
-    E --> F[run_tutor_workflow]
-    F --> G[build_tutor_crew]
-    G --> H[VisionAnalysisTool]
-    H --> I[VisionLLMClient]
-    I --> J[Langfuse generation span]
-    J --> K[VisionModelConfig]
-    K --> L[liteLLM completion]
-    L --> M[Output Bedrock Guardrail]
-    M --> N[Langfuse trace scores if provided]
-    N --> O[Coaching JSON response]
+    A[AgentCore invocation] --> B[agentcore_app.py]
+    B --> C[agentcore_handler.py facade]
+    C --> D[TutorInvocationService]
+    D --> E[Invocation models]
+    D --> F[ImageInputResolver]
+    D --> G[Input RuntimeGuardrail]
+    G --> H[run_tutor_workflow]
+    H --> I[build_tutor_crew]
+    I --> J[VisionAnalysisTool]
+    J --> K[VisionLLMClient]
+    K --> L[VisionMessageFactory]
+    K --> M[VisionModelConfig]
+    K --> N[liteLLM completion]
+    N --> O[Output RuntimeGuardrail]
+    O --> P[Langfuse scoring and flush]
+    P --> Q[JSON response]
 ```
 
-## 3. Project Structure
+## 5. Layered Responsibilities
 
-```text
-my-jee-tutor-agent/
-+-- src/
-|   +-- agentcore_app.py
-|   +-- agentcore_handler.py
-|   +-- Dockerfile
-|   +-- config/
-|   |   +-- llm.toml
-|   +-- agents/
-|       +-- tutor_agent/
-|           +-- __init__.py
-|           +-- crew.py
-|           +-- factories.py
-|           +-- llm_client.py
-|           +-- model_config.py
-|           +-- config_loader.py
-|           +-- guardrails.py
-|           +-- observability.py
-|           +-- prompts.py
-|           +-- tools.py
-|           +-- workflow.py
-+-- terraform/
-|   +-- main.tf
-|   +-- providers.tf
-|   +-- variables.tf
-+-- pyproject.toml
-+-- poetry.lock
-+-- README.md
-```
+### Runtime Edge
 
-## 4. Runtime Boundary
+- `src/agentcore_app.py` owns the Bedrock AgentCore app registration.
+- `src/agentcore_handler.py` is a stable facade with `handle_tutor_invocation(...)`.
+- The facade delegates immediately to `TutorInvocationService`, so transport code stays thin.
 
-### `src/agentcore_app.py`
+### Invocation Application Layer
 
-Creates the `BedrockAgentCoreApp` and registers the single AgentCore entrypoint. It delegates immediately to `handle_tutor_invocation(...)` so the runtime file stays thin.
+- `src/tutor_invocation_service.py` owns the request use case.
+- It validates payloads, resolves images, applies input and output guardrails, runs the workflow, records observability, and returns response dictionaries.
+- Dependencies are injected through the constructor: `ImageInputResolver`, `RuntimeGuardrail`, `LangfuseObservability`, and workflow callable.
 
-### `src/agentcore_handler.py`
+### Request Models
 
-Owns request/response concerns:
+- `src/invocation_models.py` defines Pydantic request and response contracts.
+- `TutorInvocationPayload` accepts:
+  - `image_folder`
+  - `image_data_uris`
+  - `image_data_uri`
+  - structured `media`
+- `safe_trace_input()` removes image payloads before observability receives the request.
 
-- validates incoming payloads with Pydantic
-- accepts an `image_folder`, `image_data_uris`, `image_data_uri`, or structured `media` image payload
-- resolves `question_context` from `question_context` or `prompt`
-- applies optional Bedrock Guardrails before and after the tutor workflow
-- returns either `{"analysis": "..."}` or a validation error response
+### Image Input Resolution
 
-This file is the boundary between AgentCore JSON payloads and the tutor workflow API.
+- `src/image_inputs.py` converts supported input shapes into a list of image data URIs.
+- `ImageInputResolver` handles filesystem folder reads and structured media conversion.
+- Supported folder file types are `.png`, `.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
 
-## 5. Tutor Agent Package
+### Tutor Workflow
 
-### `workflow.py`
+- `src/agents/tutor_agent/workflow.py` exposes `run_tutor_workflow(...)`.
+- The workflow receives normalized image data URIs and optional question context.
+- CrewAI-specific construction is hidden behind `build_tutor_crew(...)`.
 
-Defines `run_tutor_workflow(...)`. It is the domain-facing API for running the tutor agent. It accepts one or more image data URIs, optional question context, and an optional injected `VisionLLMClient`.
+### CrewAI Factories
 
-### `crew.py`
+- `src/agents/tutor_agent/crew.py` composes the CrewAI `Crew`.
+- `src/agents/tutor_agent/factories.py` builds the tutor agent and diagnosis task.
+- These factory functions isolate CrewAI object construction from runtime handling and model access.
 
-Builds the CrewAI `Crew`. It composes the vision tool, tutor agent, and diagnosis task, then configures sequential execution.
+### Vision Tool and Model Client
 
-### `tools.py`
+- `src/agents/tutor_agent/tools.py` defines the CrewAI tool schema and delegates model work.
+- `VisionAnalysisTool` calls `VisionLLMClient`; it does not know provider details.
+- `src/agents/tutor_agent/llm_client.py` owns LiteLLM calls.
+- `VisionMessageFactory` builds the provider-neutral multimodal message payload.
+- `VisionModelConfig` resolves model, API key, API base, AWS region, and completion options.
 
-Defines tool-level concerns:
+### Guardrails
 
-- `VisionInput`
-- `VisionAnalysisTool`
-- `build_vision_tool(...)`
+- `src/agents/tutor_agent/guardrails.py` adapts content into Bedrock `ApplyGuardrail`.
+- `BedrockGuardrailContentBuilder` constructs text and image content payloads.
+- `RuntimeGuardrail` owns settings, client access, failure policy, and response interpretation.
+- The app reports only non-sensitive PII labels, not matched PII values.
 
-The tool delegates LLM calls to an injected `VisionLLMClient`, keeping CrewAI integration separate from model access.
+### Observability
 
-### `factories.py`
+- `src/agents/tutor_agent/observability.py` wraps Langfuse.
+- If Langfuse is not configured, calls become no-ops.
+- Invocation spans, generation spans, managed prompt lookup, and optional evaluation scores live here.
 
-Defines CrewAI object factories:
+## 6. Patterns Applied
 
-- `build_tutor_agent(...)`
-- `build_diagnosis_task(...)`
+- Facade: `agentcore_handler.py` preserves a small public entrypoint while hiding implementation details.
+- Application service: `TutorInvocationService` coordinates the invocation use case.
+- Factory: CrewAI agent/task/tool creation lives in dedicated factory functions.
+- Strategy by injection: guardrail, image resolver, observability, workflow, message factory, and completion function can be replaced in tests or future integrations.
+- Single Responsibility Principle: request schema, image loading, orchestration, guardrail adaptation, model configuration, and provider request construction are separate modules.
+- Encapsulation: image payload redaction and guardrail response parsing are owned by the components closest to those concerns.
+- Dependency inversion: high-level orchestration depends on injected collaborators instead of creating all behavior inline.
 
-This keeps agent/task construction separate from the tool implementation.
+## 7. Runtime Flow
 
-### `prompt_provider.py`
+1. AgentCore calls `agentcore_app.py`.
+2. `handle_tutor_invocation(...)` delegates to `TutorInvocationService`.
+3. Pydantic validates the JSON payload.
+4. `ImageInputResolver` normalizes folder/media/data URI inputs into a list of image data URIs.
+5. Langfuse invocation span starts with image fields excluded.
+6. Input guardrail checks text context and supported images.
+7. CrewAI runs the tutor workflow.
+8. `VisionLLMClient` builds a multimodal LiteLLM request and returns analysis text.
+9. Output guardrail checks the analysis.
+10. Langfuse scores are recorded if provided.
+11. The service returns either `{"analysis": "..."}` or `{"error": "...", "details": [...]}`.
 
-Resolves all behavior-shaping prompts. Langfuse is used when configured and available; otherwise the provider returns local fallback text from `prompts.py`. This keeps prompt management centralized and prevents CrewAI factories or LLM code from knowing where prompt text came from.
+## 8. Payload Contract
 
-### `llm_client.py`
-
-Owns LiteLLM request construction and response extraction. It asks `VisionModelConfig` for provider settings and completion options, builds the multimodal message payload, opens a Langfuse generation span when enabled, calls `litellm.completion(...)`, and returns response text.
-
-### `model_config.py`
-
-Owns model configuration resolution. Defaults come from `src/config/llm.toml`, while environment variables can override deployment-specific values:
-
-- `bedrock/...` and `amazon/...` use AWS IAM credentials from AgentCore
-- `openai/...` uses `OPENAI_API_KEY` or `LITELLM_API_KEY`
-- `gemini/...` and `google/...` use `GOOGLE_API_KEY` or `LITELLM_API_KEY`
-- all other providers use `LITELLM_API_KEY`
-- `LITELLM_BASE_URL` can override `litellm.api_base`
-- `VISION_MODEL` can override `vision.model`
-- `LLM_CONFIG_FILE` can point to a different TOML config file
-
-### `config_loader.py`
-
-Loads the TOML config file and exposes section-level values to the model configuration layer.
-
-### `guardrails.py`
-
-Owns runtime Bedrock Guardrails integration through the independent `ApplyGuardrail` API:
-
-- resolves guardrail settings from `[guardrails]` or environment variables
-- checks input text and png/jpeg image payloads before CrewAI runs
-- checks the final analysis before it is returned
-- extracts non-sensitive PII type labels from Bedrock sensitive information assessments
-- fails closed by default when guardrails are configured but unavailable
-
-PII detection is configured in the Bedrock guardrail's sensitive information policy. The runtime passes content to `ApplyGuardrail`; Bedrock decides whether to block, anonymize, or allow configured PII entities and custom regex matches. The app reports only PII type labels, not matched values.
-
-### `observability.py`
-
-Owns the Langfuse integration:
-
-- starts a root span for each AgentCore invocation
-- starts a generation span around each LiteLLM call
-- fetches managed prompts from Langfuse
-- records optional evaluation scores on the current trace
-- falls back to local behavior when Langfuse credentials are not configured
-
-### `src/config/llm.toml`
-
-Default non-secret LLM settings:
-
-```toml
-[vision]
-model = "gemini/gemini-3-flash-preview"
-
-[completion]
-temperature = 0.2
-```
-
-Runtime guardrail settings:
-
-```toml
-[guardrails]
-enabled = false
-identifier = ""
-version = "DRAFT"
-output_scope = "INTERVENTIONS"
-fail_closed = true
-include_image = true
-```
-
-Additional LiteLLM options can be added without code changes:
-
-```toml
-[completion]
-temperature = 0.2
-top_p = 0.9
-max_tokens = 1200
-timeout = 60
-```
-
-Langfuse settings:
-
-```toml
-[langfuse]
-enabled = true
-trace_name = "jee-tutor-agentcore-invocation"
-generation_name = "vision-question-analysis"
-flush_after_invocation = false
-
-[langfuse.prompts]
-vision_system = "jee-tutor-vision-system-prompt"
-tutor_agent_goal = "jee-tutor-agent-goal"
-tutor_agent_backstory = "jee-tutor-agent-backstory"
-diagnosis_task_description = "jee-tutor-diagnosis-task-description"
-diagnosis_task_expected_output = "jee-tutor-diagnosis-task-expected-output"
-```
-
-### `prompts.py`
-
-Stores local fallback prompt text and stable code-owned labels only. Editing production prompt behavior should usually happen in Langfuse; editing fallbacks or application contracts happens here.
-
-### `__init__.py`
-
-Exports the package API used by external modules.
-
-## 6. Infrastructure
-
-### `terraform/providers.tf`
-
-Configures:
-
-- `aws` for IAM and ECR
-- `awscc` for Bedrock AgentCore Runtime resources
-
-### `terraform/variables.tf`
-
-Defines deployment inputs:
-
-- `aws_region`
-- `project_name`
-- `agentcore_image_uri`
-- provider/API key variables
-- Langfuse API key variables
-
-### `terraform/main.tf`
-
-Creates:
-
-- ECR repository for the AgentCore image
-- Bedrock Guardrail with sensitive-information, harmful-content, and profanity policies
-- AgentCore runtime IAM role
-- inline IAM policy for ECR pull, logs, metrics, X-Ray, and Bedrock model invocation
-- inline IAM permission for `bedrock:ApplyGuardrail`
-- Bedrock AgentCore Runtime
-- default Bedrock AgentCore Runtime endpoint
-- Langfuse and guardrail environment variables for observability, prompt management, scoring, and safety
-
-`terraform/guardrails.tf` owns the default guardrail. `terraform/main.tf` injects its `guardrail_id` as `BEDROCK_GUARDRAIL_ID`, and `src/agents/tutor_agent/guardrails.py` reads that environment variable before calling `bedrock-runtime.ApplyGuardrail`.
-
-## 7. Deployment Shape
-
-1. Apply Terraform enough to create or discover the ECR repository.
-2. Build the image from `src/Dockerfile`.
-3. Push the image to ECR.
-4. Apply Terraform with `agentcore_image_uri` set to the pushed image URI.
-5. Invoke the AgentCore runtime endpoint with an image folder or image payload.
-
-## 8. Invocation Payloads
-
-Preferred:
+Preferred folder input:
 
 ```json
 {
   "image_folder": "/app/input/attempt-images",
-  "question_context": "Optional context"
+  "question_context": "Optional student/question context"
 }
 ```
 
-The folder path must be available inside the runtime container. Supported files are `.png`,
-`.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
+Multiple data URIs:
 
-Single-image:
+```json
+{
+  "image_data_uris": [
+    "data:image/png;base64,...",
+    "data:image/jpeg;base64,..."
+  ],
+  "question_context": "Optional student/question context"
+}
+```
+
+Single-image compatibility:
 
 ```json
 {
   "image_data_uri": "data:image/png;base64,...",
-  "question_context": "Optional context"
+  "question_context": "Optional student/question context"
 }
 ```
 
-Alternative:
+Structured media compatibility:
 
 ```json
 {
@@ -294,6 +173,88 @@ Alternative:
     "format": "png",
     "data": "base64..."
   },
-  "prompt": "Optional context"
+  "prompt": "Optional student/question context"
 }
 ```
+
+## 9. Configuration
+
+Runtime model settings live in `src/config/llm.toml` and can be overridden with environment variables.
+
+Important environment variables:
+
+- `VISION_MODEL`
+- `OPENAI_API_KEY`
+- `GOOGLE_API_KEY`
+- `LITELLM_API_KEY`
+- `LITELLM_BASE_URL`
+- `AWS_REGION`
+- `AWS_DEFAULT_REGION`
+- `LLM_CONFIG_FILE`
+- `BEDROCK_GUARDRAIL_ENABLED`
+- `BEDROCK_GUARDRAIL_ID`
+- `BEDROCK_GUARDRAIL_VERSION`
+- `BEDROCK_GUARDRAIL_REGION`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_BASE_URL`
+
+## 10. CI/CD Design
+
+### CI
+
+`ci.yml` installs dependencies, runs Ruff, and executes unit tests.
+
+### CD
+
+`cd.yml` performs deployment and runtime quality gates:
+
+1. Configure AWS credentials.
+2. Initialize Terraform.
+3. Create or discover ECR repository.
+4. Build and push the AgentCore image.
+5. Apply Terraform for the AgentCore runtime and guardrail.
+6. Run agent evals from `evals/jee_tutor_eval_cases.json`.
+7. Run garak vulnerability and guardrail probing through `scripts/garak_agent_adapter.py`.
+8. Upload eval and garak reports as artifacts.
+
+Tunable repository variables:
+
+- `CD_EVAL_MIN_SCORE`
+- `GARAK_PROBES`
+- `GARAK_HIT_THRESHOLD`
+
+## 11. Testing Strategy
+
+- Unit tests cover runtime guardrail behavior, PII response interpretation, and invocation orchestration.
+- Fixture images in `tests/fixtures/image_folder` verify folder-based multi-image input.
+- Constructor injection keeps tests from invoking CrewAI or external LLMs when orchestration behavior is under test.
+- CD evals exercise live model and guardrail behavior after deployment.
+- Garak scans probe jailbreak and prompt-injection classes through the same handler path.
+
+## 12. Security and Privacy Considerations
+
+- Image data URIs are excluded from invocation span input payloads.
+- LiteLLM generation inputs are redacted before observability.
+- Guardrail failures default to fail-closed when configured.
+- PII detection output includes labels only, not matched values.
+- CD reports may contain generated text; image payloads should remain redacted.
+
+## 13. Extension Guidelines
+
+When adding a new input shape, extend `ImageInputResolver` and keep the workflow input as `list[str]`.
+
+When changing provider behavior, prefer `VisionModelConfig` or `VisionMessageFactory` over editing orchestration code.
+
+When adding a new safety check, add it to `TutorInvocationService` only if it is part of the invocation use case; provider-specific content conversion belongs in an adapter class.
+
+When adding a new CrewAI capability, add or change factories in `factories.py` and keep `workflow.py` as the domain-facing API.
+
+When adding observability fields, make sure image payloads and secrets remain excluded or redacted.
+
+## 14. Known Tradeoffs
+
+- Folder input assumes the folder is available inside the runtime container.
+- Bedrock Guardrails currently accepts png/jpeg image content; unsupported formats are ignored for image guardrail checks even if the LLM can analyze them.
+- The eval harness uses deterministic structural checks, not a judge model, to keep CD cost and complexity low.
+- The runtime remains synchronous because AgentCore invokes a single request/response contract.

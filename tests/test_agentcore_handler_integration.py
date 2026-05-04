@@ -33,11 +33,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         with (
             patch(
-                "agentcore_handler.RuntimeGuardrail",
+                "tutor_invocation_service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(calls=guardrail_calls),
             ),
             patch(
-                "agentcore_handler.run_tutor_workflow",
+                "tutor_invocation_service.run_tutor_workflow",
                 return_value="coaching analysis",
             ) as run_tutor_workflow,
         ):
@@ -78,11 +78,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         with (
             patch(
-                "agentcore_handler.RuntimeGuardrail",
+                "tutor_invocation_service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(),
             ),
             patch(
-                "agentcore_handler.run_tutor_workflow",
+                "tutor_invocation_service.run_tutor_workflow",
                 return_value="folder analysis",
             ) as run_tutor_workflow,
         ):
@@ -105,7 +105,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_input_guardrail_intervention_skips_workflow(self):
         with (
             patch(
-                "agentcore_handler.RuntimeGuardrail",
+                "tutor_invocation_service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(
                     input_result=GuardrailCheck(
                         allowed=False,
@@ -114,7 +114,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                     )
                 ),
             ),
-            patch("agentcore_handler.run_tutor_workflow") as run_tutor_workflow,
+            patch("tutor_invocation_service.run_tutor_workflow") as run_tutor_workflow,
         ):
             response = handle_tutor_invocation(
                 {
@@ -132,10 +132,25 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
         run_tutor_workflow.assert_not_called()
 
+    def test_non_image_media_payload_is_rejected(self):
+        response = handle_tutor_invocation(
+            {
+                "media": {
+                    "type": "text",
+                    "format": "plain",
+                    "data": "ZmFrZQ==",
+                },
+                "prompt": "student context",
+            }
+        )
+
+        self.assertEqual(response["error"], "Invalid tutor invocation payload.")
+        self.assertTrue(response["details"])
+
     def test_output_guardrail_intervention_replaces_analysis(self):
         with (
             patch(
-                "agentcore_handler.RuntimeGuardrail",
+                "tutor_invocation_service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(
                     output_result=GuardrailCheck(
                         allowed=False,
@@ -144,7 +159,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 ),
             ),
             patch(
-                "agentcore_handler.run_tutor_workflow",
+                "tutor_invocation_service.run_tutor_workflow",
                 return_value="raw unsafe analysis",
             ),
         ):

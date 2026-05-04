@@ -33,6 +33,48 @@ class GuardrailCheck:
     response: dict[str, Any] | None = None
 
 
+class BedrockGuardrailContentBuilder:
+    def build_input_content(
+        self,
+        *,
+        question_context: str | None,
+        image_data_uris: list[str],
+        include_image: bool,
+    ) -> list[dict[str, Any]]:
+        content = self.text_content(question_context)
+        if include_image:
+            for image_data_uri in image_data_uris:
+                image_content = self.image_content(image_data_uri)
+                if image_content:
+                    content.append(image_content)
+        return content
+
+    @staticmethod
+    def text_content(text: str | None) -> list[dict[str, Any]]:
+        if not text or not text.strip():
+            return []
+        return [{"text": {"text": text.strip()}}]
+
+    @staticmethod
+    def image_content(image_data_uri: str) -> dict[str, Any] | None:
+        metadata, separator, encoded = image_data_uri.partition(",")
+        if not separator or ";base64" not in metadata:
+            return None
+
+        image_format = metadata.removeprefix("data:image/").split(";")[0].lower()
+        if image_format == "jpg":
+            image_format = "jpeg"
+        if image_format not in {"jpeg", "png"}:
+            return None
+
+        try:
+            image_bytes = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+
+        return {"image": {"format": image_format, "source": {"bytes": image_bytes}}}
+
+
 class RuntimeGuardrail:
     def __init__(
         self,
@@ -40,11 +82,13 @@ class RuntimeGuardrail:
         environ: Mapping[str, str] | None = None,
         config: LLMConfig | None = None,
         client: Any | None = None,
+        content_builder: BedrockGuardrailContentBuilder | None = None,
     ):
         self.environ = environ if environ is not None else os.environ
         self.config = config or LLMConfig.load(self.environ.get("LLM_CONFIG_FILE"))
         self.settings = settings or self._resolve_settings()
         self._client = client
+        self.content_builder = content_builder or BedrockGuardrailContentBuilder()
 
     @property
     def enabled(self) -> bool:
@@ -58,11 +102,15 @@ class RuntimeGuardrail:
         image_data_uris: list[str] | None = None,
     ) -> GuardrailCheck:
         resolved_image_data_uris = image_data_uris or ([image_data_uri] if image_data_uri else [])
-        content = self._build_input_content(question_context, resolved_image_data_uris)
+        content = self.content_builder.build_input_content(
+            question_context=question_context,
+            image_data_uris=resolved_image_data_uris,
+            include_image=self.settings.include_image,
+        )
         return self._apply("INPUT", content)
 
     def check_output(self, analysis: str) -> GuardrailCheck:
-        return self._apply("OUTPUT", self._text_content(analysis))
+        return self._apply("OUTPUT", self.content_builder.text_content(analysis))
 
     def _apply(self, source: GuardrailSource, content: list[dict[str, Any]]) -> GuardrailCheck:
         if not self.enabled or not content:
@@ -139,44 +187,6 @@ class RuntimeGuardrail:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-    def _build_input_content(
-        self,
-        question_context: str | None,
-        image_data_uris: list[str],
-    ) -> list[dict[str, Any]]:
-        content = self._text_content(question_context)
-        if self.settings.include_image:
-            for image_data_uri in image_data_uris:
-                image_content = self._image_content(image_data_uri)
-                if image_content:
-                    content.append(image_content)
-        return content
-
-    @staticmethod
-    def _text_content(text: str | None) -> list[dict[str, Any]]:
-        if not text or not text.strip():
-            return []
-        return [{"text": {"text": text.strip()}}]
-
-    @staticmethod
-    def _image_content(image_data_uri: str) -> dict[str, Any] | None:
-        metadata, separator, encoded = image_data_uri.partition(",")
-        if not separator or ";base64" not in metadata:
-            return None
-
-        image_format = metadata.removeprefix("data:image/").split(";")[0].lower()
-        if image_format == "jpg":
-            image_format = "jpeg"
-        if image_format not in {"jpeg", "png"}:
-            return None
-
-        try:
-            image_bytes = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError):
-            return None
-
-        return {"image": {"format": image_format, "source": {"bytes": image_bytes}}}
 
     @staticmethod
     def _first_output_text(response: dict[str, Any]) -> str | None:
