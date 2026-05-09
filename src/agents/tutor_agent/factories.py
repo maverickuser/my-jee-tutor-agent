@@ -11,6 +11,7 @@ from agents.tutor_agent.prompts import (
     TUTOR_AGENT_BACKSTORY,
     TUTOR_AGENT_GOAL,
 )
+from agents.tutor_agent.rate_limit import gemini_rate_limiter, is_gemini_model
 from agents.tutor_agent.tools import VisionAnalysisTool
 
 
@@ -47,4 +48,18 @@ def build_crewai_llm(model_config: VisionModelConfig | None = None) -> LLM:
     settings = (model_config or VisionModelConfig()).resolve()
     kwargs = settings.to_litellm_kwargs()
     model = kwargs.pop("model")
-    return LLM(model=model, **kwargs)
+    llm = LLM(model=model, **kwargs)
+    if is_gemini_model(model):
+        return RateLimitedLLM(llm)
+    return llm
+
+
+class RateLimitedLLM:
+    def __init__(self, llm: LLM):
+        self.llm = llm
+
+    def call(self, *args: Any, **kwargs: Any) -> Any:
+        return gemini_rate_limiter.call(self.llm.call, *args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.llm, name)

@@ -6,6 +6,7 @@ from agents.tutor_agent.model_config import VisionModelConfig
 from agents.tutor_agent.observability import LangfuseObservability
 from agents.tutor_agent.prompt_provider import PromptProvider
 from agents.tutor_agent.prompts import VISION_SYSTEM
+from agents.tutor_agent.rate_limit import gemini_rate_limiter, is_gemini_model
 
 
 CompletionFunction = Callable[..., dict]
@@ -85,11 +86,16 @@ class VisionLLMClient:
             input_payload=self._redacted_generation_input(request_kwargs),
             prompt=system_prompt.langfuse_prompt,
         ) as generation:
-            response = self.completion_fn(**request_kwargs)
+            response = self._complete_with_rate_limit(model_settings.model, request_kwargs)
             analysis = response["choices"][0]["message"]["content"].strip()
             if generation:
                 generation.update(output=analysis)
             return analysis
+
+    def _complete_with_rate_limit(self, model: str, request_kwargs: dict) -> dict:
+        if is_gemini_model(model):
+            return gemini_rate_limiter.call(self.completion_fn, **request_kwargs)
+        return self.completion_fn(**request_kwargs)
 
     @staticmethod
     def _redacted_generation_input(request_kwargs: dict) -> dict:
