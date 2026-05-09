@@ -143,7 +143,7 @@ jobs:
       - name: Install agent and garak dependencies
         run: |
           poetry install --with dev --no-interaction --no-ansi
-          python -m pip install --upgrade garak
+          poetry run python -m pip install --upgrade garak
 
       - name: Start garak AgentCore adapter
         env:
@@ -163,7 +163,7 @@ jobs:
           BEDROCK_GUARDRAIL_REGION: ${{ env.AWS_REGION }}
           BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
         run: |
-          python scripts/garak_agent_adapter.py \
+          poetry run python scripts/garak_agent_adapter.py \
             --image-folder tests/fixtures/image_folder \
             > garak_adapter.log 2>&1 &
           echo "$!" > garak_adapter.pid
@@ -193,7 +193,7 @@ jobs:
           BEDROCK_GUARDRAIL_REGION: ${{ env.AWS_REGION }}
           BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
         run: |
-          python scripts/run_agent_evals.py \
+          poetry run python scripts/run_agent_evals.py \
             --cases evals/jee_tutor_eval_cases.json \
             --image-folder tests/fixtures/image_folder \
             --output eval_runs/agent-evals.json \
@@ -203,7 +203,7 @@ jobs:
         env:
           XDG_DATA_HOME: ${{ github.workspace }}
         run: |
-          python - <<'PY'
+          poetry run python - <<'PY'
           import json
           import urllib.request
 
@@ -225,7 +225,7 @@ jobs:
               raise SystemExit(f"Expected guardrail block response, got: {body!r}")
           PY
           mkdir -p garak_runs
-          python -m garak \
+          poetry run python -m garak \
             --config security/garak-rest.yml \
             --probes "$GARAK_PROBES"
 
