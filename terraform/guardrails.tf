@@ -33,6 +33,10 @@ locals {
     "SEXUAL",
     "VIOLENCE",
   ]
+
+  # Cloud Control validates these optional arrays as present during updates.
+  # Keep inert placeholder entries so updates do not fail on empty lists.
+  placeholder_filter_text = "JEE_TUTOR_GUARDRAIL_PLACEHOLDER_9F8C7E6D"
 }
 
 resource "awscc_bedrock_guardrail" "jee_tutor" {
@@ -52,6 +56,19 @@ resource "awscc_bedrock_guardrail" "jee_tutor" {
         input_action   = "BLOCK"
         output_enabled = true
         output_action  = "ANONYMIZE"
+      }
+    ]
+
+    regexes_config = [
+      {
+        name           = "placeholder-noop"
+        description    = "No-op placeholder required for Cloud Control updates."
+        pattern        = local.placeholder_filter_text
+        action         = "NONE"
+        input_enabled  = true
+        input_action   = "NONE"
+        output_enabled = true
+        output_action  = "NONE"
       }
     ]
   }
@@ -78,6 +95,16 @@ resource "awscc_bedrock_guardrail" "jee_tutor" {
         input_action   = "BLOCK"
         output_enabled = true
         output_action  = "BLOCK"
+      }
+    ]
+
+    words_config = [
+      {
+        text           = local.placeholder_filter_text
+        input_enabled  = true
+        input_action   = "NONE"
+        output_enabled = true
+        output_action  = "NONE"
       }
     ]
   }
