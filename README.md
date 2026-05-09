@@ -130,6 +130,22 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 - Runtime guardrails use the same role with `bedrock:ApplyGuardrail`. By default, Terraform uses the guardrail it creates; set `bedrock_guardrail_id` only to use an existing guardrail instead.
 - Langfuse keys are passed as AgentCore runtime environment variables when configured.
 
+The role used by GitHub Actions in `AWS_ROLE_TO_ASSUME` must be able to manage
+Bedrock Guardrails through the AWS Cloud Control API. If Terraform fails with
+`Access denied for operation 'AWS::Bedrock::Guardrail'`, attach permissions like
+[docs/aws-deploy-role-policy.json](docs/aws-deploy-role-policy.json) to that
+deploy role. `bedrock:TagResource` is required because the Terraform guardrail
+resource creates tags.
+
+The CD workflow prints the effective AWS caller and runs `bedrock
+list-guardrails` before Terraform applies the guardrail. If that preflight fails,
+the assumed deploy role, permission boundary, SCP, or selected region is blocking
+Bedrock access before Terraform runs.
+
+If the deploy role cannot create guardrails, create one manually and set the
+GitHub repository variable `BEDROCK_GUARDRAIL_ID` to its ID or ARN. To deploy
+without guardrails temporarily, set `BEDROCK_GUARDRAIL_ENABLED=false`.
+
 ## CD Agent Evals and Security Scan
 
 The CD workflow runs agent evals and a garak scan after deployment.
@@ -169,6 +185,7 @@ Terraform exposes guardrail settings as variables:
 
 ```hcl
 bedrock_guardrail_enabled = true
+bedrock_guardrail_id      = ""
 bedrock_guardrail_version = "DRAFT"
 ```
 
