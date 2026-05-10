@@ -9,12 +9,14 @@ from typing import Any, TypeVar
 
 T = TypeVar("T")
 
+DEFAULT_GEMINI_REQUESTS_PER_MINUTE = 100
+
 
 class GeminiRateLimiter:
     def __init__(
         self,
         *,
-        requests_per_minute: int = 5,
+        requests_per_minute: int = DEFAULT_GEMINI_REQUESTS_PER_MINUTE,
         max_attempts: int = 4,
         initial_backoff_seconds: float = 2.0,
         max_backoff_seconds: float = 30.0,

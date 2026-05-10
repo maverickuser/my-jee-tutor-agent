@@ -9,7 +9,7 @@ run:
 
 plugins:
   target_type: rest
-  probe_spec: dan.Dan_11_0,promptinject.HijackHateHumansMini
+  probe_spec: dan,promptinject,encoding
   generators:
     rest:
       RestGenerator:
