@@ -2,7 +2,9 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -15,11 +17,21 @@ def main() -> None:
     parser.add_argument("--image-folder", default="tests/fixtures/image_folder")
     parser.add_argument("--output", default="eval_runs/agent-evals.json")
     parser.add_argument("--min-score", type=float, default=0.75)
+    parser.add_argument("--case-attempts", type=int, default=3)
+    parser.add_argument("--case-backoff-seconds", type=float, default=10.0)
     args = parser.parse_args()
 
     cases = _load_json(Path(args.cases))
     image_folder = str(Path(args.image_folder).resolve())
-    results = [_run_case(case, image_folder) for case in cases]
+    results = [
+        _run_case_with_retries(
+            case,
+            image_folder,
+            max_attempts=args.case_attempts,
+            backoff_seconds=args.case_backoff_seconds,
+        )
+        for case in cases
+    ]
     passed = sum(1 for result in results if result["passed"])
     score = passed / len(results) if results else 0.0
 
@@ -42,6 +54,31 @@ def main() -> None:
 
 def _load_json(path: Path) -> list[dict[str, Any]]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _run_case_with_retries(
+    case: dict[str, Any],
+    image_folder: str,
+    *,
+    max_attempts: int,
+    backoff_seconds: float,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return _run_case(case, image_folder)
+        except Exception as exc:
+            if attempt < max_attempts and _is_retryable_eval_error(exc):
+                wait_seconds = backoff_seconds * attempt
+                print(
+                    f"eval_case_retry id={case['id']} attempt={attempt} "
+                    f"wait_seconds={wait_seconds:.1f} error={_truncate(str(exc), 240)}"
+                )
+                sleep(wait_seconds)
+                continue
+            return _failed_case_result(case, exc, attempt)
+
+    raise RuntimeError("Eval retry loop exhausted without returning.")
 
 
 def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
@@ -114,6 +151,25 @@ def _score_guardrail_case(case: dict[str, Any], response: dict[str, Any]) -> dic
         "reason": None if passed else "Guardrail did not return the expected block response.",
         "response": _redacted_response(response),
     }
+
+
+def _failed_case_result(case: dict[str, Any], exc: Exception, attempts: int) -> dict[str, Any]:
+    return {
+        "id": case["id"],
+        "type": case["type"],
+        "passed": False,
+        "reason": f"Eval case raised after {attempts} attempt(s): {_truncate(str(exc), 500)}",
+        "exception_type": exc.__class__.__name__,
+    }
+
+
+def _is_retryable_eval_error(exc: Exception) -> bool:
+    try:
+        from agents.tutor_agent.rate_limit import is_retryable_gemini_error
+
+        return is_retryable_gemini_error(exc)
+    except Exception:
+        return False
 
 
 def _redacted_response(response: dict[str, Any]) -> dict[str, Any]:

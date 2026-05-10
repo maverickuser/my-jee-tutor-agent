@@ -256,7 +256,7 @@ jobs:
             --probes "$GARAK_PROBES"
 
       - name: Enforce garak hit threshold
-        if: always() && env.GARAK_SCAN_ENABLED == 'true'
+        if: always() && env.GARAK_SCAN_ENABLED == 'true' && steps.garak_scan.outcome != 'skipped'
         env:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
