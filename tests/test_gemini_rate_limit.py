@@ -50,6 +50,27 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertEqual(sleeps[0], 2.0)
         self.assertAlmostEqual(sleeps[1], 0.6)
 
+    def test_limiter_backs_off_and_retries_transient_connection_errors(self):
+        sleeps: list[float] = []
+        limiter = GeminiRateLimiter(
+            sleep=sleeps.append,
+            monotonic=lambda: 100.0,
+            jitter=lambda: 0.0,
+        )
+        action = Mock(
+            side_effect=[
+                Exception("APIConnectionError: Server disconnected without sending a response."),
+                "ok",
+            ]
+        )
+
+        self.assertEqual(limiter.call(action), "ok")
+
+        self.assertEqual(action.call_count, 2)
+        self.assertEqual(len(sleeps), 2)
+        self.assertEqual(sleeps[0], 2.0)
+        self.assertAlmostEqual(sleeps[1], 0.6)
+
     def test_vision_client_routes_gemini_completion_through_limiter(self):
         config = LLMConfig(
             {

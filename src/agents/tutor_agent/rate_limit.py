@@ -40,7 +40,7 @@ class GeminiRateLimiter:
             try:
                 return func(*args, **kwargs)
             except Exception as exc:
-                if attempt == self.max_attempts or not is_retryable_rate_limit_error(exc):
+                if attempt == self.max_attempts or not is_retryable_gemini_error(exc):
                     raise
                 self.sleep(self._backoff_seconds(attempt))
 
@@ -77,6 +77,32 @@ def is_retryable_rate_limit_error(exc: Exception) -> bool:
             "quota",
             "too many requests",
             "429",
+        )
+    )
+
+
+def is_retryable_gemini_error(exc: Exception) -> bool:
+    return is_retryable_rate_limit_error(exc) or is_retryable_connection_error(exc)
+
+
+def is_retryable_connection_error(exc: Exception) -> bool:
+    text = f"{exc.__class__.__name__}: {exc}".lower()
+    status_code = getattr(exc, "status_code", None)
+    return status_code in {408, 409, 425, 500, 502, 503, 504} or any(
+        marker in text
+        for marker in (
+            "apiconnectionerror",
+            "connection error",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "connection timeout",
+            "disconnected",
+            "remoteprotocolerror",
+            "server disconnected",
+            "temporarily unavailable",
+            "timeout",
+            "timed out",
         )
     )
 
