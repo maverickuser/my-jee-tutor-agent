@@ -1,8 +1,13 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.factories import build_crewai_llm
+from agents.tutor_agent.factories import (
+    RateLimitedLLM,
+    build_crewai_llm,
+    build_diagnosis_task,
+    build_tutor_agent,
+)
 from agents.tutor_agent.model_config import VisionModelConfig
 
 
@@ -48,6 +53,32 @@ class CrewAIModelConfigTest(unittest.TestCase):
             aws_region_name="ap-south-1",
             temperature=0.2,
         )
+
+    def test_rate_limited_llm_delegates_attributes(self):
+        wrapped = Mock()
+        wrapped.name = "wrapped"
+
+        self.assertEqual(RateLimitedLLM(wrapped).name, "wrapped")
+
+    def test_build_agent_and_task_use_prompt_provider(self):
+        prompt_provider = Mock()
+        prompt_provider.get.side_effect = lambda key: Mock(text=f"text:{key}")
+        vision_tool = object()
+        llm = object()
+
+        with (
+            patch("agents.tutor_agent.factories.Agent") as agent_class,
+            patch("agents.tutor_agent.factories.Task") as task_class,
+        ):
+            agent = build_tutor_agent(vision_tool, prompt_provider, llm)
+            build_diagnosis_task(agent, prompt_provider)
+
+        agent_class.assert_called_once()
+        _, agent_kwargs = agent_class.call_args
+        self.assertEqual(agent_kwargs["tools"], [vision_tool])
+        self.assertIs(agent_kwargs["llm"], llm)
+        self.assertFalse(agent_kwargs["allow_delegation"])
+        task_class.assert_called_once()
 
 
 if __name__ == "__main__":

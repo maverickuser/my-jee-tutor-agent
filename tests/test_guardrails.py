@@ -1,7 +1,13 @@
 import base64
 import unittest
+from unittest.mock import patch
 
-from agents.tutor_agent.guardrails import GuardrailSettings, RuntimeGuardrail
+from agents.tutor_agent.config_loader import LLMConfig
+from agents.tutor_agent.guardrails import (
+    BedrockGuardrailContentBuilder,
+    GuardrailSettings,
+    RuntimeGuardrail,
+)
 
 
 class FakeBedrockRuntimeClient:
@@ -191,6 +197,84 @@ class RuntimeGuardrailTest(unittest.TestCase):
 
         self.assertTrue(result.allowed)
         self.assertIn("bedrock unavailable", result.action_reason)
+
+    def test_content_builder_skips_blank_text_and_unsupported_images(self):
+        builder = BedrockGuardrailContentBuilder()
+
+        content = builder.build_input_content(
+            question_context="  ",
+            image_data_uris=[
+                "not-a-data-uri",
+                "data:image/webp;base64,ZmFrZQ==",
+                "data:image/png;base64,not-base64",
+            ],
+            include_image=True,
+        )
+
+        self.assertEqual(content, [])
+
+    def test_jpg_image_is_normalized_to_jpeg(self):
+        image_bytes = b"fake-jpg"
+        image_data_uri = "data:image/jpg;base64," + base64.b64encode(image_bytes).decode()
+
+        self.assertEqual(
+            BedrockGuardrailContentBuilder.image_content(image_data_uri),
+            {"image": {"format": "jpeg", "source": {"bytes": image_bytes}}},
+        )
+
+    def test_disabled_when_identifier_missing(self):
+        client = FakeBedrockRuntimeClient({"action": "GUARDRAIL_INTERVENED"})
+        guardrail = RuntimeGuardrail(
+            settings=GuardrailSettings(enabled=True, identifier=None),
+            client=client,
+        )
+
+        self.assertTrue(guardrail.check_output("analysis").allowed)
+        self.assertEqual(client.calls, [])
+
+    def test_settings_resolve_from_environment_and_config_defaults(self):
+        config = LLMConfig(
+            {
+                "guardrails": {
+                    "enabled": False,
+                    "identifier": "config-id",
+                    "version": "",
+                    "output_scope": "",
+                    "fail_closed": False,
+                    "include_image": False,
+                }
+            }
+        )
+        guardrail = RuntimeGuardrail(
+            environ={
+                "BEDROCK_GUARDRAIL_ENABLED": "true",
+                "BEDROCK_GUARDRAIL_REGION": "ap-south-1",
+            },
+            config=config,
+            client=FakeBedrockRuntimeClient({"action": "NONE"}),
+        )
+
+        self.assertTrue(guardrail.settings.enabled)
+        self.assertEqual(guardrail.settings.identifier, "config-id")
+        self.assertEqual(guardrail.settings.version, "DRAFT")
+        self.assertEqual(guardrail.settings.region_name, "ap-south-1")
+        self.assertEqual(guardrail.settings.output_scope, "INTERVENTIONS")
+        self.assertFalse(guardrail.settings.fail_closed)
+        self.assertFalse(guardrail.settings.include_image)
+
+    def test_lazy_client_uses_configured_region(self):
+        guardrail = RuntimeGuardrail(
+            settings=GuardrailSettings(
+                enabled=True,
+                identifier="guardrail-id",
+                region_name="us-east-1",
+            )
+        )
+
+        with patch("agents.tutor_agent.guardrails.boto3.client") as boto_client:
+            self.assertIs(guardrail.client, boto_client.return_value)
+
+        boto_client.assert_called_once_with("bedrock-runtime", region_name="us-east-1")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import base64
+import tempfile
 import unittest
 
 from image_inputs import ImageInputResolver
@@ -101,6 +102,29 @@ class ImageInputResolverTest(unittest.TestCase):
             resolver.resolve(image_s3_uri="s3://attempt-bucket/student/notes.txt")
 
         self.assertEqual(client.get_object_calls, [])
+
+    def test_empty_folder_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(ValueError, "contains no supported images"):
+                ImageInputResolver().resolve(image_folder=tmpdir)
+
+    def test_s3_prefix_without_supported_images_is_rejected(self):
+        client = FakeS3Client({}, pages=[{"Contents": [{"Key": "attempts/notes.txt"}]}])
+
+        with self.assertRaisesRegex(ValueError, "contains no supported images"):
+            ImageInputResolver(s3_client=client).resolve(
+                image_s3_prefix="s3://attempt-bucket/attempts/"
+            )
+
+    def test_lazy_s3_client_is_created_once(self):
+        fake_client = FakeS3Client({("bucket", "image.png"): b"image"})
+
+        with unittest.mock.patch("image_inputs.boto3.client", return_value=fake_client) as client:
+            resolver = ImageInputResolver()
+            resolver.resolve(image_s3_uri="s3://bucket/image.png")
+            resolver.resolve(image_s3_uri="s3://bucket/image.png")
+
+        client.assert_called_once_with("s3")
 
 
 if __name__ == "__main__":

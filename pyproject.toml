@@ -15,6 +15,7 @@ litellm = "1.72.0"
 pydantic = "2.11.4"
 
 [tool.poetry.group.dev.dependencies]
+coverage = {extras = ["toml"], version = "^7.6.0"}
 ruff = "0.11.8"
 
 [build-system]
@@ -24,3 +25,19 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = [
+  "src/agents/tutor_agent/prompts.py",
+]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
