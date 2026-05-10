@@ -5,7 +5,7 @@ system:
 
 run:
   generations: 1
-  soft_probe_prompt_cap: 3
+  soft_probe_prompt_cap: 1
 
 plugins:
   target_type: rest

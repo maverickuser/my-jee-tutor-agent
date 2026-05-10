@@ -167,11 +167,14 @@ GARAK_PROBES=dan.Dan_11_0,promptinject.HijackHateHumansMini
 GARAK_HIT_THRESHOLD=0
 ```
 
-The default garak probe list is intentionally a CD smoke scan. Gemini calls are
+The default garak probe list is intentionally a reduced CD smoke scan, capped at
+one prompt per probe by `soft_probe_prompt_cap` in
+[security/garak-rest.yml](security/garak-rest.yml). Gemini calls are
 rate-limited to 100 requests per minute, but full probe families such as
 `dan,promptinject,encoding` can still exceed the 30-minute CI step timeout
 because each prompt performs a full agent invocation with image analysis. Use
-`GARAK_PROBES` for deeper scheduled scans when longer runtime is acceptable.
+`GARAK_PROBES` and a higher prompt cap for deeper scheduled scans when longer
+runtime is acceptable.
 
 Eval and garak reports are uploaded as the `garak-security-reports` workflow artifact.
 
