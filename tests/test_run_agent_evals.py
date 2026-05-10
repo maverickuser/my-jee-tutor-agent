@@ -44,6 +44,8 @@ class RunAgentEvalsTest(unittest.TestCase):
             )
 
         self.assertFalse(result["passed"])
+        self.assertTrue(result["skipped"])
+        self.assertTrue(result["transient_error"])
         self.assertEqual(result["id"], "case-1")
         self.assertEqual(result["exception_type"], "Exception")
         self.assertIn("2 attempt", result["reason"])

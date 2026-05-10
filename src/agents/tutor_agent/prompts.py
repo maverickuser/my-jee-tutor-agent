@@ -253,15 +253,9 @@ Requirements:
 - If the chapter or topic cannot be determined with certainty, make the best
   probable classification based on the question.
 
-File Output Requirements:
-- Save the markdown table to a file named `mistake_analysis.md`.
-- Write the file in the same directory as the input image(s) provided in the request.
-- If the request includes an explicit output directory, save the file there instead.
-- Overwrite the file if it already exists.
-- Return the absolute file path to the saved markdown file as the final response.
-
-Example final response:
-`/path/to/student_test/mistake_analysis.md`
+Return Requirements:
+- Return the markdown table directly in the response.
+- Do not write files.
 """
     ),
 }

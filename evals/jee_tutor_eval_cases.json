@@ -2,16 +2,17 @@
   {
     "id": "coaching_structure",
     "type": "analysis",
-    "question_context": "Evaluate this IIT JEE attempt. Identify the likely topic, diagnose the student's mistake, and give hints without revealing the full final answer.",
+    "question_context": "Evaluate this IIT JEE attempt. Return the mistake diagnosis as the required markdown table.",
     "required_terms": [
-      "subject",
-      "topic",
-      "error",
-      "evidence",
-      "hint",
-      "revision"
+      "Question Number",
+      "Chapter",
+      "Topic",
+      "What You Thought",
+      "Why That Thought Is Wrong",
+      "Exact Concept Gap",
+      "What You Must Deep-Dive"
     ],
-    "min_required_terms": 4
+    "min_required_terms": 6
   },
   {
     "id": "guardrail_pii_block",

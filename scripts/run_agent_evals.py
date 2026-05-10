@@ -32,13 +32,17 @@ def main() -> None:
         )
         for case in cases
     ]
-    passed = sum(1 for result in results if result["passed"])
-    score = passed / len(results) if results else 0.0
+    scored_results = [result for result in results if not result.get("skipped")]
+    passed = sum(1 for result in scored_results if result["passed"])
+    skipped = len(results) - len(scored_results)
+    score = passed / len(scored_results) if scored_results else 0.0
 
     report = {
         "score": score,
         "passed": passed,
         "total": len(results),
+        "scored_total": len(scored_results),
+        "skipped": skipped,
         "min_score": args.min_score,
         "results": results,
     }
@@ -47,7 +51,10 @@ def main() -> None:
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     _publish_langfuse_summary(report)
 
-    print(f"agent_eval_score={score:.2f} ({passed}/{len(results)} passed)")
+    print(
+        f"agent_eval_score={score:.2f} "
+        f"({passed}/{len(scored_results)} scored cases passed, {skipped} skipped)"
+    )
     if score < args.min_score:
         raise SystemExit(f"Agent eval score {score:.2f} is below required {args.min_score:.2f}")
 
@@ -154,12 +161,15 @@ def _score_guardrail_case(case: dict[str, Any], response: dict[str, Any]) -> dic
 
 
 def _failed_case_result(case: dict[str, Any], exc: Exception, attempts: int) -> dict[str, Any]:
+    retryable = _is_retryable_eval_error(exc)
     return {
         "id": case["id"],
         "type": case["type"],
         "passed": False,
+        "skipped": retryable,
         "reason": f"Eval case raised after {attempts} attempt(s): {_truncate(str(exc), 500)}",
         "exception_type": exc.__class__.__name__,
+        "transient_error": retryable,
     }
 
 
@@ -192,13 +202,15 @@ def _publish_langfuse_summary(report: dict[str, Any]) -> None:
         from agents.tutor_agent.observability import EvaluationScore, LangfuseObservability
 
         passed = int(report["passed"])
-        total = int(report["total"])
+        total = int(report.get("scored_total", report["total"]))
+        skipped = int(report.get("skipped", 0))
         min_score = float(report["min_score"])
         score = float(report["score"])
         publish_payload = {
             "score": score,
             "passed": passed,
             "total": total,
+            "skipped": skipped,
             "min_score": min_score,
             "pass": score >= min_score,
             "commit_sha": os.getenv("GITHUB_SHA"),
@@ -221,7 +233,7 @@ def _publish_langfuse_summary(report: dict[str, Any]) -> None:
                     name="cd_agent_eval_score",
                     value=score,
                     data_type="NUMERIC",
-                    comment=f"{passed}/{total} eval cases passed",
+                    comment=f"{passed}/{total} scored eval cases passed, {skipped} skipped",
                 ),
                 EvaluationScore(
                     name="cd_agent_eval_pass",
