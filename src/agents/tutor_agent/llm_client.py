@@ -62,9 +62,7 @@ class VisionLLMClient:
     ):
         self.model_config = model_config or VisionModelConfig()
         self.observability = observability or LangfuseObservability()
-        self.prompt_provider = prompt_provider or PromptProvider(
-            observability=self.observability
-        )
+        self.prompt_provider = prompt_provider or PromptProvider(observability=self.observability)
         self.message_factory = message_factory or VisionMessageFactory()
         self.completion_fn = completion_fn
 

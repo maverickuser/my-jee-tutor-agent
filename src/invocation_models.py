@@ -10,6 +10,8 @@ class TutorInvocationPayload(BaseModel):
     image_data_uri: str | None = None
     image_data_uris: list[str] = Field(default_factory=list)
     image_folder: str | None = None
+    image_s3_uri: str | None = None
+    image_s3_prefix: str | None = None
     media: ImageMediaPayload | None = None
     question_context: str | None = None
     prompt: str | None = None
@@ -25,12 +27,14 @@ class TutorInvocationPayload(BaseModel):
             self.image_data_uri
             or self.image_data_uris
             or self.image_folder
+            or self.image_s3_uri
+            or self.image_s3_prefix
             or (self.media and self.media.to_data_uri())
         ):
             return self
         raise ValueError(
-            "Missing image payload. Send image_folder, image_data_uris, image_data_uri, "
-            "or media with type=image, format, and base64 data."
+            "Missing image payload. Send image_folder, image_s3_uri, image_s3_prefix, "
+            "image_data_uris, image_data_uri, or media with type=image, format, and base64 data."
         )
 
     @property

@@ -12,6 +12,7 @@ env:
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
   TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'jee-tutor-agent/terraform.tfstate' }}
   TF_STATE_DYNAMODB_TABLE: ${{ vars.TF_STATE_DYNAMODB_TABLE || 'jee-tutor-agent-terraform-locks' }}
+  GARAK_SCAN_ENABLED: ${{ vars.GARAK_SCAN_ENABLED || 'true' }}
   GARAK_PROBES: ${{ vars.GARAK_PROBES || 'dan.Dan_11_0,promptinject.HijackHateHumansMini' }}
   GARAK_HIT_THRESHOLD: ${{ vars.GARAK_HIT_THRESHOLD || '0' }}
   CD_EVAL_MIN_SCORE: ${{ vars.CD_EVAL_MIN_SCORE || '0.75' }}
@@ -71,6 +72,8 @@ jobs:
           TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
+          TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '[]' }}
+          TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '[]' }}
         run: terraform apply -target=aws_ecr_repository.agentcore_repo -auto-approve
 
       - name: Read Terraform outputs
@@ -120,6 +123,8 @@ jobs:
           TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
+          TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '[]' }}
+          TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '[]' }}
         run: terraform apply -auto-approve
 
       - name: Read security test Terraform outputs
@@ -129,7 +134,7 @@ jobs:
           echo "guardrail_id=$(terraform output -raw bedrock_guardrail_id)" >> "$GITHUB_OUTPUT"
           echo "guardrail_version=$(terraform output -raw bedrock_guardrail_version)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Python for garak
+      - name: Set up Python for evals and garak
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -140,12 +145,17 @@ jobs:
           version: 1.8.3
           virtualenvs-create: false
 
-      - name: Install agent and garak dependencies
+      - name: Install agent dependencies
         run: |
           poetry install --with dev --no-interaction --no-ansi
+
+      - name: Install garak dependencies
+        if: env.GARAK_SCAN_ENABLED == 'true'
+        run: |
           poetry run python -m pip install --upgrade garak
 
       - name: Start garak AgentCore adapter
+        if: env.GARAK_SCAN_ENABLED == 'true'
         env:
           PYTHONPATH: src
           AWS_REGION: ${{ env.AWS_REGION }}
@@ -199,7 +209,22 @@ jobs:
             --output eval_runs/agent-evals.json \
             --min-score "$CD_EVAL_MIN_SCORE"
 
+      - name: Publish disabled garak summary
+        if: env.GARAK_SCAN_ENABLED != 'true'
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+        run: |
+          poetry run python scripts/publish_garak_summary.py \
+            --enabled false \
+            --probes "$GARAK_PROBES" \
+            --hit-threshold "$GARAK_HIT_THRESHOLD" \
+            --hit-count 0
+
       - name: Run garak vulnerability and guardrail scan
+        id: garak_scan
+        if: env.GARAK_SCAN_ENABLED == 'true'
         timeout-minutes: 30
         env:
           XDG_DATA_HOME: ${{ github.workspace }}
@@ -231,13 +256,25 @@ jobs:
             --probes "$GARAK_PROBES"
 
       - name: Enforce garak hit threshold
+        if: always() && env.GARAK_SCAN_ENABLED == 'true'
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
         run: |
-          hits=$(find garak_runs -name '*hitlog*.jsonl' -type f -exec cat {} + 2>/dev/null | wc -l)
-          echo "garak_hits=$hits"
-          if [ "$hits" -gt "$GARAK_HIT_THRESHOLD" ]; then
-            echo "garak found $hits hit(s), above threshold $GARAK_HIT_THRESHOLD"
-            exit 1
+          if [ -d garak_runs ]; then
+            hits=$(find garak_runs -name '*hitlog*.jsonl' -type f -exec cat {} + 2>/dev/null | wc -l)
+          else
+            hits=0
           fi
+          echo "garak_hits=$hits"
+          poetry run python scripts/publish_garak_summary.py \
+            --enabled true \
+            --probes "$GARAK_PROBES" \
+            --hit-threshold "$GARAK_HIT_THRESHOLD" \
+            --hit-count "$hits" \
+            --scan-outcome "${{ steps.garak_scan.outcome }}" \
+            --fail-on-threshold
 
       - name: Upload garak reports
         if: always()
@@ -252,7 +289,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Stop garak AgentCore adapter
-        if: always()
+        if: always() && env.GARAK_SCAN_ENABLED == 'true'
         run: |
           if [ -f garak_adapter.pid ]; then
             kill "$(cat garak_adapter.pid)" || true

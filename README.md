@@ -34,6 +34,52 @@ Preferred folder payload:
 The folder path must be available inside the runtime container. Supported files are `.png`,
 `.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
 
+S3 object payload:
+
+```json
+{
+  "image_s3_uri": "s3://jee-tutor-agent-123456789012-ap-south-1-images/physics/student-123/page-1.png",
+  "question_context": "Optional student/question context"
+}
+```
+
+S3 prefix payload:
+
+```json
+{
+  "image_s3_prefix": "s3://jee-tutor-agent-123456789012-ap-south-1-images/maths/student-123/",
+  "question_context": "Optional student/question context"
+}
+```
+
+S3 prefixes are folder-like object prefixes, not local folders. Supported image
+extensions are `.png`, `.jpg`, `.jpeg`, and `.webp`; objects are loaded in key
+order. The AgentCore runtime role must have `s3:GetObject` for S3 objects and
+`s3:ListBucket` for S3 prefixes. The Terraform-managed bucket also grants the
+runtime write access to objects under the subject prefixes.
+
+Terraform creates an image input bucket with these subject prefixes:
+
+```text
+physics/
+chemistry/
+maths/
+```
+
+Read the bucket name after deployment with:
+
+```powershell
+terraform -chdir=terraform output -raw image_input_bucket_name
+```
+
+For additional external S3 buckets, configure access with GitHub repository
+variables formatted as Terraform JSON lists:
+
+```text
+S3_IMAGE_INPUT_BUCKET_ARNS=["arn:aws:s3:::my-attempt-bucket"]
+S3_IMAGE_INPUT_OBJECT_ARNS=["arn:aws:s3:::my-attempt-bucket/attempts/*"]
+```
+
 Single-image payload:
 
 ```json
@@ -122,12 +168,14 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 ## Terraform Notes
 
 - Terraform provisions an ECR repository, AgentCore execution role, AgentCore runtime, and default runtime endpoint.
+- Terraform creates an S3 image input bucket with `physics/`, `chemistry/`, and `maths/` prefixes.
 - Terraform creates a Bedrock Guardrail for the tutor and injects its ID into the AgentCore runtime.
 - Build the container from `src/Dockerfile`.
 - Push that image to ECR.
 - Pass the pushed image URI as `agentcore_image_uri`.
 - `bedrock/...` model calls use the AgentCore runtime IAM role; no external API key is needed for Bedrock models.
 - Runtime guardrails use the same role with `bedrock:ApplyGuardrail`. By default, Terraform uses the guardrail it creates; set `bedrock_guardrail_id` only to use an existing guardrail instead.
+- S3 image inputs use the AgentCore runtime role. The Terraform-created image bucket grants read/write access to `physics/`, `chemistry/`, and `maths/`; external buckets require explicit ARN variables.
 - Langfuse keys are passed as AgentCore runtime environment variables when configured.
 
 The role used by GitHub Actions in `AWS_ROLE_TO_ASSUME` must be able to manage
@@ -148,27 +196,31 @@ without guardrails temporarily, set `BEDROCK_GUARDRAIL_ENABLED=false`.
 
 ## CD Agent Evals and Security Scan
 
-The CD workflow runs agent evals and a garak scan after deployment.
+The CD workflow runs agent evals after deployment. The garak scan is enabled by
+default and can be skipped by setting `GARAK_SCAN_ENABLED=false`.
 
 The eval step runs cases from `evals/jee_tutor_eval_cases.json` against the real
 AgentCore handler, using the sample image folder and deployed Bedrock Guardrail
 settings. It writes `eval_runs/agent-evals.json` and fails the workflow when the
 pass rate is below `CD_EVAL_MIN_SCORE`.
 
-The garak step starts a local REST adapter around the same handler, supplies the
-sample image folder, sends garak probe prompts as `question_context`, and reuses
-the deployed Bedrock Guardrail ID.
+When enabled, the garak step starts a local REST adapter around the same
+handler, supplies the sample image folder, sends garak probe prompts as
+`question_context`, and reuses the deployed Bedrock Guardrail ID.
 
-GitHub repository variables can tune the scan:
+GitHub repository variables can tune the eval and scan steps:
 
 ```text
 CD_EVAL_MIN_SCORE=0.75
+GARAK_SCAN_ENABLED=true
 GARAK_PROBES=dan.Dan_11_0,promptinject.HijackHateHumansMini
 GARAK_HIT_THRESHOLD=0
 ```
 
-The default garak probe list is intentionally a reduced CD smoke scan, capped at
-one prompt per probe by `soft_probe_prompt_cap` in
+When `GARAK_SCAN_ENABLED=true`, the workflow installs garak, starts the local
+adapter, runs the guardrail smoke check, executes garak probes, and enforces
+`GARAK_HIT_THRESHOLD`. The default probe list is intentionally reduced and
+capped at one prompt per probe by `soft_probe_prompt_cap` in
 [security/garak-rest.yml](security/garak-rest.yml). Gemini calls are
 rate-limited to 100 requests per minute, but full probe families such as
 `dan,promptinject,encoding` can still exceed the 30-minute CI step timeout
@@ -176,7 +228,13 @@ because each prompt performs a full agent invocation with image analysis. Use
 `GARAK_PROBES` and a higher prompt cap for deeper scheduled scans when longer
 runtime is acceptable.
 
-Eval and garak reports are uploaded as the `garak-security-reports` workflow artifact.
+When Langfuse credentials are configured, CD publishes aggregate deploy metrics:
+the agent eval score/pass result and garak aggregate fields including
+enabled/disabled, probes, hit count, hit threshold, pass/fail, and commit SHA.
+Detailed eval and garak reports remain in GitHub Actions artifacts.
+
+Eval reports, plus garak reports when enabled, are uploaded as the
+`garak-security-reports` workflow artifact.
 
 ## Runtime Guardrails
 
@@ -199,6 +257,15 @@ bedrock_guardrail_version = "DRAFT"
 ```
 
 Leave `bedrock_guardrail_id` empty to use the Terraform-created guardrail. Set it only when you want the AgentCore runtime to use a pre-existing Bedrock Guardrail.
+
+Terraform also exposes S3 image input permissions:
+
+```hcl
+s3_image_input_bucket_arns = ["arn:aws:s3:::my-attempt-bucket"]
+s3_image_input_object_arns = ["arn:aws:s3:::my-attempt-bucket/attempts/*"]
+```
+
+These optional variables are only needed for external buckets. The Terraform-managed image input bucket is always created and grants the AgentCore runtime read/write access to the subject prefixes.
 
 ## Langfuse
 

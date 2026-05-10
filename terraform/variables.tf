@@ -97,3 +97,15 @@ variable "bedrock_guardrail_include_image" {
   type        = bool
   default     = true
 }
+
+variable "s3_image_input_bucket_arns" {
+  description = "S3 bucket ARNs the AgentCore runtime can list for image_s3_prefix inputs."
+  type        = list(string)
+  default     = []
+}
+
+variable "s3_image_input_object_arns" {
+  description = "S3 object ARNs the AgentCore runtime can read for image_s3_uri and image_s3_prefix inputs."
+  type        = list(string)
+  default     = []
+}

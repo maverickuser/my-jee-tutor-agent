@@ -70,7 +70,9 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Expose the tutor agent through garak's REST shape.")
+    parser = argparse.ArgumentParser(
+        description="Expose the tutor agent through garak's REST shape."
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument(

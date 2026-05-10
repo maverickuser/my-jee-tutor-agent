@@ -131,6 +131,31 @@ class LangfuseObservability:
                 **{key: value for key, value in kwargs.items() if value is not None}
             )
 
+    def publish_deploy_summary(
+        self,
+        *,
+        name: str,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+        scores: list[EvaluationScore],
+        metadata: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+
+        langfuse = get_client()
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name=name,
+            input=input_payload,
+            output=output_payload,
+            metadata=metadata,
+        ):
+            langfuse.update_current_trace(name=name, metadata=metadata, tags=tags)
+            self.score_current_trace(scores)
+        langfuse.flush()
+
     def flush(self) -> None:
         if self.enabled and self.flush_after_invocation:
             get_client().flush()

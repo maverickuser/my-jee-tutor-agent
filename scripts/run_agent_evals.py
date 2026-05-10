@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ def main() -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _publish_langfuse_summary(report)
 
     print(f"agent_eval_score={score:.2f} ({passed}/{len(results)} passed)")
     if score < args.min_score:
@@ -127,6 +129,56 @@ def _truncate(value: str, limit: int = 1000) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "...[truncated]"
+
+
+def _publish_langfuse_summary(report: dict[str, Any]) -> None:
+    try:
+        from agents.tutor_agent.observability import EvaluationScore, LangfuseObservability
+
+        passed = int(report["passed"])
+        total = int(report["total"])
+        min_score = float(report["min_score"])
+        score = float(report["score"])
+        publish_payload = {
+            "score": score,
+            "passed": passed,
+            "total": total,
+            "min_score": min_score,
+            "pass": score >= min_score,
+            "commit_sha": os.getenv("GITHUB_SHA"),
+            "run_id": os.getenv("GITHUB_RUN_ID"),
+            "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
+            "ref_name": os.getenv("GITHUB_REF_NAME"),
+        }
+        publish_payload = {
+            key: value for key, value in publish_payload.items() if value is not None
+        }
+        LangfuseObservability().publish_deploy_summary(
+            name="cd-agent-evals",
+            input_payload={
+                "commit_sha": os.getenv("GITHUB_SHA"),
+                "run_id": os.getenv("GITHUB_RUN_ID"),
+            },
+            output_payload=publish_payload,
+            scores=[
+                EvaluationScore(
+                    name="cd_agent_eval_score",
+                    value=score,
+                    data_type="NUMERIC",
+                    comment=f"{passed}/{total} eval cases passed",
+                ),
+                EvaluationScore(
+                    name="cd_agent_eval_pass",
+                    value=score >= min_score,
+                    data_type="BOOLEAN",
+                    comment=f"Required minimum score: {min_score:.2f}",
+                ),
+            ],
+            metadata=publish_payload,
+            tags=["cd", "agent-evals"],
+        )
+    except Exception as exc:
+        print(f"langfuse_eval_publish_error={exc}")
 
 
 if __name__ == "__main__":

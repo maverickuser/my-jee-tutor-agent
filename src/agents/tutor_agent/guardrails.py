@@ -169,7 +169,9 @@ class RuntimeGuardrail:
             )
             or "INTERVENTIONS",
             fail_closed=self._bool_setting("BEDROCK_GUARDRAIL_FAIL_CLOSED", "fail_closed", True),
-            include_image=self._bool_setting("BEDROCK_GUARDRAIL_INCLUDE_IMAGE", "include_image", True),
+            include_image=self._bool_setting(
+                "BEDROCK_GUARDRAIL_INCLUDE_IMAGE", "include_image", True
+            ),
         )
 
     def _setting(

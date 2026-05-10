@@ -77,7 +77,9 @@ class GeminiRateLimitTest(unittest.TestCase):
 
         with patch("agents.tutor_agent.llm_client.gemini_rate_limiter") as limiter:
             limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
-            self.assertEqual(client.analyze_vision("data:image/png;base64,AA==", "prompt"), "analysis")
+            self.assertEqual(
+                client.analyze_vision("data:image/png;base64,AA==", "prompt"), "analysis"
+            )
 
         limiter.call.assert_called_once()
         completion.assert_called_once()

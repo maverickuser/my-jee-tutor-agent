@@ -41,6 +41,8 @@ class TutorInvocationService:
                 image_data_uri=invocation.image_data_uri,
                 image_data_uris=invocation.image_data_uris,
                 image_folder=invocation.image_folder,
+                image_s3_uri=invocation.image_s3_uri,
+                image_s3_prefix=invocation.image_s3_prefix,
                 media=invocation.media,
             )
         except ValueError as exc:
@@ -66,8 +68,7 @@ class TutorInvocationService:
             )
             if not input_guardrail.allowed:
                 response = self._error_response(
-                    input_guardrail.message
-                    or "Tutor invocation blocked by runtime guardrail.",
+                    input_guardrail.message or "Tutor invocation blocked by runtime guardrail.",
                     [input_guardrail.action_reason] if input_guardrail.action_reason else [],
                 )
                 self._finish_invocation(span, response, invocation)
