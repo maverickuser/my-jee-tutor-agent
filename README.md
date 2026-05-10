@@ -163,9 +163,14 @@ GitHub repository variables can tune the scan:
 
 ```text
 CD_EVAL_MIN_SCORE=0.75
-GARAK_PROBES=dan,promptinject,encoding
+GARAK_PROBES=dan.Dan_11_0,promptinject.HijackHateHumansMini
 GARAK_HIT_THRESHOLD=0
 ```
+
+The default garak probe list is intentionally a CD smoke scan. Gemini calls are
+rate-limited to 5 requests per minute, so broad probe families such as
+`dan,promptinject,encoding` can exceed the REST adapter timeout in CI. Use
+`GARAK_PROBES` for a deeper scheduled scan when longer runtime is acceptable.
 
 Eval and garak reports are uploaded as the `garak-security-reports` workflow artifact.
 

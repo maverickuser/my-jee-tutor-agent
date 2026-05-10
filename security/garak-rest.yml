@@ -1,9 +1,15 @@
+system:
+  parallel_attempts: 1
+  parallel_requests: 1
+  max_workers: 1
+
 run:
   generations: 1
+  soft_probe_prompt_cap: 3
 
 plugins:
   target_type: rest
-  probe_spec: dan,promptinject,encoding
+  probe_spec: dan.Dan_11_0,promptinject.HijackHateHumansMini
   generators:
     rest:
       RestGenerator:
@@ -14,7 +20,7 @@ plugins:
           text: $INPUT
         response_json: true
         response_json_field: text
-        request_timeout: 120
+        request_timeout: 900
 
 reporting:
   report_dir: garak_runs
