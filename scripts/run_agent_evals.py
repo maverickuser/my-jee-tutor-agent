@@ -101,6 +101,8 @@ def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
 
     if case["type"] == "analysis":
         return _score_analysis_case(case, response)
+    if case["type"] == "markdown_table":
+        return _score_markdown_table_case(case, response)
     if case["type"] == "guardrail":
         return _score_guardrail_case(case, response)
 
@@ -134,6 +136,68 @@ def _score_analysis_case(case: dict[str, Any], response: dict[str, Any]) -> dict
         else "Analysis was empty or did not include enough expected coaching structure terms.",
         "response": _redacted_response(response),
     }
+
+
+def _score_markdown_table_case(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+    analysis = str(response.get("analysis", ""))
+    header_columns, data_rows = _extract_markdown_table(analysis)
+    required_columns = case.get("required_columns", [])
+    matched_columns = [
+        column
+        for column in required_columns
+        if _normalize_table_cell(column)
+        in {_normalize_table_cell(value) for value in header_columns}
+    ]
+    min_required_columns = int(case.get("min_required_columns", len(required_columns)))
+    min_data_rows = int(case.get("min_data_rows", 1))
+    passed = len(matched_columns) >= min_required_columns and len(data_rows) >= min_data_rows
+
+    return {
+        "id": case["id"],
+        "type": case["type"],
+        "passed": passed,
+        "matched_columns": matched_columns,
+        "required_columns": required_columns,
+        "header_columns": header_columns,
+        "data_row_count": len(data_rows),
+        "min_required_columns": min_required_columns,
+        "min_data_rows": min_data_rows,
+        "reason": None
+        if passed
+        else "Analysis did not include the required markdown table structure.",
+        "response": _redacted_response(response),
+    }
+
+
+def _extract_markdown_table(text: str) -> tuple[list[str], list[list[str]]]:
+    rows = [_split_markdown_table_row(line) for line in text.splitlines()]
+    rows = [row for row in rows if row]
+    for index, row in enumerate(rows):
+        if not _is_separator_row(row):
+            continue
+        if index == 0:
+            continue
+        header = rows[index - 1]
+        data_rows = [
+            candidate for candidate in rows[index + 1 :] if not _is_separator_row(candidate)
+        ]
+        return header, data_rows
+    return [], []
+
+
+def _split_markdown_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return []
+    return [cell.strip() for cell in stripped.strip("|").split("|")]
+
+
+def _is_separator_row(row: list[str]) -> bool:
+    return bool(row) and all(set(cell.replace(" ", "")) <= {"-", ":"} for cell in row)
+
+
+def _normalize_table_cell(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def _score_guardrail_case(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:

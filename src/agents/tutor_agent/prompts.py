@@ -1,6 +1,6 @@
 VISION_TOOL_DESCRIPTION = (
     "Analyzes uploaded IIT JEE question attempt images with a vision-capable LLM "
-    "and returns coaching-style feedback."
+    "and returns a mistake-diagnosis markdown table."
 )
 
 TUTOR_AGENT_ROLE = "Expert STEM IIT JEE tutor & mentor"

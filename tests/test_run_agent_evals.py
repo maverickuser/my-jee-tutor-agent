@@ -1,10 +1,57 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from scripts.run_agent_evals import _run_case_with_retries
+from scripts.run_agent_evals import _run_case_with_retries, _score_markdown_table_case
 
 
 class RunAgentEvalsTest(unittest.TestCase):
+    def test_score_markdown_table_case_passes_required_columns_and_rows(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "required_columns": [
+                "Question Number",
+                "Chapter",
+                "Topic",
+                "What You Thought",
+                "Why That Thought Is Wrong",
+                "Exact Concept Gap",
+                "What You Must Deep-Dive",
+            ],
+            "min_required_columns": 7,
+            "min_data_rows": 1,
+        }
+        response = {
+            "analysis": (
+                "| Question Number | Chapter | Topic | What You Thought | "
+                "Why That Thought Is Wrong | Exact Concept Gap | What You Must Deep-Dive |\n"
+                "| --- | --- | --- | --- | --- | --- | --- |\n"
+                "| Q1 | Parabola | Focal chord | Used area directly | Missed chord relation | "
+                "Focal chord geometry | Revise focal chord properties |"
+            )
+        }
+
+        result = _score_markdown_table_case(case, response)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["data_row_count"], 1)
+        self.assertEqual(len(result["matched_columns"]), 7)
+
+    def test_score_markdown_table_case_fails_missing_columns(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "required_columns": ["Question Number", "Chapter", "Exact Concept Gap"],
+            "min_required_columns": 3,
+            "min_data_rows": 1,
+        }
+        response = {"analysis": ("| Question Number | Chapter |\n| --- | --- |\n| Q1 | Parabola |")}
+
+        result = _score_markdown_table_case(case, response)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["matched_columns"], ["Question Number", "Chapter"])
+
     def test_run_case_retries_retryable_errors(self):
         case = {"id": "case-1", "type": "analysis"}
         sleep = Mock()

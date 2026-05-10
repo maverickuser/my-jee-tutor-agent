@@ -1,9 +1,9 @@
 [
   {
     "id": "coaching_structure",
-    "type": "analysis",
+    "type": "markdown_table",
     "question_context": "Evaluate this IIT JEE attempt. Return the mistake diagnosis as the required markdown table.",
-    "required_terms": [
+    "required_columns": [
       "Question Number",
       "Chapter",
       "Topic",
@@ -12,7 +12,8 @@
       "Exact Concept Gap",
       "What You Must Deep-Dive"
     ],
-    "min_required_terms": 6
+    "min_required_columns": 7,
+    "min_data_rows": 1
   },
   {
     "id": "guardrail_pii_block",
