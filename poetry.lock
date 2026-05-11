@@ -3851,6 +3851,21 @@ docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
 tests = ["coverage[toml] (==7.10.7)", "pytest (>=8.4.2,<9.0.0)"]
 
 [[package]]
+name = "pypandoc"
+version = "1.17"
+description = "Thin wrapper for pandoc."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "pypandoc-1.17-py3-none-any.whl", hash = "sha256:01fdbffa61edb9f8e82e8faad6954efcb7b6f8f0634aead4d89e322a00225a67"},
+    {file = "pypandoc-1.17.tar.gz", hash = "sha256:51179abfd6e582a25ed03477541b48836b5bba5a4c3b282a547630793934d799"},
+]
+
+[package.extras]
+tinytex = ["pytinytex"]
+
+[[package]]
 name = "pypdfium2"
 version = "5.7.1"
 description = "Python bindings to PDFium"
@@ -5418,4 +5433,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "c0eb8e23e3a3e66af8d1c675dab26acf0848cfd541510ae5dabd9a869be6798d"
+content-hash = "67a63305b1016a5217439c6888f732275f3d44312adc512c5430c369a49f1674"

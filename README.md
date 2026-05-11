@@ -168,6 +168,7 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 ## Terraform Notes
 
 - Terraform provisions an ECR repository, AgentCore execution role, AgentCore runtime, and default runtime endpoint.
+- Terraform manages the AgentCore runtime CloudWatch log group with 14-day retention by default.
 - Terraform creates an S3 image input bucket with `physics/`, `chemistry/`, and `maths/` prefixes.
 - Terraform creates a Bedrock Guardrail for the tutor and injects its ID into the AgentCore runtime.
 - Build the container from `src/Dockerfile`.
@@ -257,6 +258,14 @@ bedrock_guardrail_version = "DRAFT"
 ```
 
 Leave `bedrock_guardrail_id` empty to use the Terraform-created guardrail. Set it only when you want the AgentCore runtime to use a pre-existing Bedrock Guardrail.
+
+Terraform also exposes AgentCore log retention:
+
+```hcl
+cloudwatch_log_retention_days = 14
+```
+
+For GitHub Actions deployments, override it with the repository variable `CLOUDWATCH_LOG_RETENTION_DAYS` if needed. If the AgentCore log group already exists before Terraform manages it, import it once with the `agentcore_log_group_name` output value.
 
 Terraform also exposes S3 image input permissions:
 

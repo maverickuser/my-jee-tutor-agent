@@ -114,6 +114,12 @@ Return ONLY a markdown table with the following columns in exactly this order:
 - If there is uncertainty, choose the most probable diagnosis.
 - Use concise but highly specific entries.
 - Preserve mathematical precision.
+- Make the markdown Pandoc/XeLaTeX friendly:
+  - Wrap inline mathematics and physics formulas in `$...$`.
+  - Use `$$...$$` for longer display formulas if a cell needs a full equation.
+  - Use chemistry notation such as `$\\ce{H2 + I2 <=> 2HI}$` for reactions.
+  - Do not use raw `|` characters inside table cells; use `\\lvert ... \\rvert`,
+    "or", commas, or words instead so the markdown table remains valid.
 
 ## Special Cases
 
@@ -158,7 +164,7 @@ Convert every mistake into a targeted learning diagnosis so the student knows ex
     Analyze mistakes into the following 7-column table structure:
     | Question Number | Chapter | Topic | What You Thought | Why That Thought Is Wrong | Exact Concept Gap | What You Must Deep-Dive |
     REFERENCE SAMPLE REPORT:
-    | Q1 | Parabola | Focal Chord & Area | You used Area = 1/2 * base * height without solving for the specific coordinates of P and Q. | Focal chord length is a function of the angle alpha it makes with the axis: l = 4a csc^2 alpha. You missed the relation between l and the coordinates. | Relationship between focal chord length a(t + 1/t)^2 and the area of the triangle formed with vertex | Property of focal chords: prove that area $\\Delta = a^2$
+    | Q1 | Parabola | Focal Chord & Area | You used $A = \\frac{1}{2} \\times \\text{base} \\times \\text{height}$ without solving for the specific coordinates of P and Q. | Focal chord length depends on the angle $\\alpha$ it makes with the axis: $l = 4a\\csc^2\\alpha$. You missed the relation between $l$ and the coordinates. | Relationship between focal chord length $a(t + 1/t)^2$ and the area of the triangle formed with the vertex. | Property of focal chords: prove that area $\\Delta = a^2$. |
     """
     ),
     TUTOR_AGENT_BACKSTORY: (
@@ -252,6 +258,12 @@ Requirements:
 - Ensure Question Number is always present.
 - If the chapter or topic cannot be determined with certainty, make the best
   probable classification based on the question.
+- Use Pandoc/XeLaTeX-friendly notation:
+  - Wrap inline math and physics formulas in `$...$`.
+  - Use `$$...$$` only when a longer formula needs display formatting.
+  - Use chemistry notation such as `$\\ce{H2 + I2 <=> 2HI}$` for reactions.
+  - Do not place raw `|` characters inside cells because they break markdown
+    tables. Use `\\lvert ... \\rvert`, commas, or words instead.
 
 Return Requirements:
 - Return the markdown table directly in the response.

@@ -12,6 +12,7 @@ bedrock-agentcore = "^1.6.2"
 crewai = "0.130.0"
 langfuse = "^3.0.0"
 litellm = "1.72.0"
+pypandoc = "^1.15"
 pydantic = "2.11.4"
 
 [tool.poetry.group.dev.dependencies]

@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from analysis_artifacts import AnalysisArtifactWriter
 from agents.tutor_agent import run_tutor_workflow
 from agents.tutor_agent.guardrails import RuntimeGuardrail
 from agents.tutor_agent.observability import LangfuseObservability
@@ -21,11 +22,13 @@ class TutorInvocationService:
         guardrail: RuntimeGuardrail | None = None,
         observability: LangfuseObservability | None = None,
         workflow: TutorWorkflow | None = None,
+        artifact_writer: AnalysisArtifactWriter | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
         self.observability = observability or LangfuseObservability()
         self.workflow = workflow or run_tutor_workflow
+        self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -99,7 +102,7 @@ class TutorInvocationService:
                     or "I cannot return that response because it was blocked by a runtime guardrail."
                 )
 
-            response = TutorInvocationResponse(analysis=analysis).model_dump()
+            response = self._success_response(analysis, invocation)
             self._finish_invocation(span, response, invocation)
             return response
 
@@ -117,6 +120,37 @@ class TutorInvocationService:
     @staticmethod
     def _error_response(error: str, details: list[str] | None = None) -> dict[str, Any]:
         return ErrorResponse(error=error, details=details or []).model_dump()
+
+    def _success_response(
+        self,
+        analysis: str,
+        invocation: TutorInvocationPayload,
+    ) -> dict[str, Any]:
+        analysis_pdf_uri = None
+        analysis_markdown_uri = None
+        artifact_errors: list[str] = []
+        if invocation.save_analysis_pdf:
+            try:
+                artifact_result = self.artifact_writer.write_for_invocation(
+                    analysis_markdown=analysis,
+                    invocation=invocation,
+                )
+                analysis_pdf_uri = artifact_result.pdf_uri
+                analysis_markdown_uri = artifact_result.markdown_uri
+                artifact_errors.extend(artifact_result.errors)
+            except Exception as exc:
+                artifact_errors.append(
+                    f"Failed to write analysis artifacts: {exc.__class__.__name__}: "
+                    f"{exc or '[no message]'}"
+                )
+                print(f"analysis_artifact_error error_type={exc.__class__.__name__} error={exc}")
+
+        return TutorInvocationResponse(
+            analysis=analysis,
+            analysis_pdf_uri=analysis_pdf_uri,
+            analysis_markdown_uri=analysis_markdown_uri,
+            artifact_errors=artifact_errors,
+        ).model_dump(exclude_none=True, exclude_defaults=True)
 
     @staticmethod
     def _workflow_error_details(

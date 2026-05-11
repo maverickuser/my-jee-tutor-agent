@@ -98,6 +98,12 @@ variable "bedrock_guardrail_include_image" {
   default     = true
 }
 
+variable "cloudwatch_log_retention_days" {
+  description = "Number of days to retain AgentCore runtime CloudWatch logs."
+  type        = number
+  default     = 14
+}
+
 variable "s3_image_input_bucket_arns" {
   description = "S3 bucket ARNs the AgentCore runtime can list for image_s3_prefix inputs."
   type        = list(string)

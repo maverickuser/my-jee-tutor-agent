@@ -60,6 +60,11 @@ resource "aws_s3_object" "image_input_prefixes" {
   content_type = "application/x-directory"
 }
 
+resource "aws_cloudwatch_log_group" "agentcore_runtime" {
+  name              = "/aws/bedrock-agentcore/runtimes/${local.agentcore_runtime_name}"
+  retention_in_days = var.cloudwatch_log_retention_days
+}
+
 resource "aws_iam_role" "agentcore_runtime" {
   name = "${var.project_name}-agentcore-role"
 
@@ -259,7 +264,10 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     network_mode = "PUBLIC"
   }
 
-  depends_on = [aws_iam_role_policy.agentcore_runtime_access]
+  depends_on = [
+    aws_cloudwatch_log_group.agentcore_runtime,
+    aws_iam_role_policy.agentcore_runtime_access,
+  ]
 }
 
 resource "awscc_bedrockagentcore_runtime_endpoint" "tutor_default" {
@@ -279,6 +287,10 @@ output "image_input_bucket_name" {
 
 output "image_input_subject_prefixes" {
   value = local.s3_image_prefixes
+}
+
+output "agentcore_log_group_name" {
+  value = aws_cloudwatch_log_group.agentcore_runtime.name
 }
 
 output "agentcore_runtime_arn" {

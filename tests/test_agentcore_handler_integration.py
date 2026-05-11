@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 from agents.tutor_agent.guardrails import GuardrailCheck
 from agentcore_handler import handle_tutor_invocation
+from tutor_invocation_service import TutorInvocationService
 
 
 class FakeRuntimeGuardrail:
@@ -25,6 +26,19 @@ class FakeRuntimeGuardrail:
     def check_output(self, analysis):
         self.calls.append(("output", analysis))
         return self.output_result
+
+
+class FakeArtifactWriter:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    def write_for_invocation(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.result
 
 
 class AgentCoreHandlerIntegrationTest(unittest.TestCase):
@@ -171,6 +185,118 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response, {"analysis": "Sanitized guardrail response."})
 
+    def test_successful_s3_invocation_returns_pdf_uri(self):
+        from analysis_artifacts import AnalysisArtifactResult
+
+        artifact_writer = FakeArtifactWriter(
+            AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/analysis.pdf")
+        )
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=artifact_writer,
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
+            }
+        )
+
+        self.assertEqual(
+            response,
+            {
+                "analysis": "analysis markdown",
+                "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
+            },
+        )
+        self.assertEqual(artifact_writer.calls[0]["analysis_markdown"], "analysis markdown")
+
+    def test_pdf_artifact_failure_is_returned_without_dropping_analysis(self):
+        from analysis_artifacts import AnalysisArtifactResult
+
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(
+                AnalysisArtifactResult(
+                    markdown_uri="s3://attempt-bucket/maths/analysis.md",
+                    errors=["Failed to write analysis PDF: RuntimeError: no tex"],
+                )
+            ),
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
+            }
+        )
+
+        self.assertEqual(response["analysis"], "analysis markdown")
+        self.assertEqual(response["analysis_markdown_uri"], "s3://attempt-bucket/maths/analysis.md")
+        self.assertEqual(
+            response["artifact_errors"],
+            ["Failed to write analysis PDF: RuntimeError: no tex"],
+        )
+
+    def test_pdf_and_markdown_artifact_failures_keep_analysis(self):
+        from analysis_artifacts import AnalysisArtifactResult
+
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(
+                AnalysisArtifactResult(
+                    errors=[
+                        "Failed to write analysis PDF: RuntimeError: no tex",
+                        "Failed to write analysis markdown fallback: RuntimeError: s3 denied",
+                    ],
+                )
+            ),
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
+            }
+        )
+
+        self.assertEqual(response["analysis"], "analysis markdown")
+        self.assertNotIn("analysis_pdf_uri", response)
+        self.assertNotIn("analysis_markdown_uri", response)
+        self.assertEqual(
+            response["artifact_errors"],
+            [
+                "Failed to write analysis PDF: RuntimeError: no tex",
+                "Failed to write analysis markdown fallback: RuntimeError: s3 denied",
+            ],
+        )
+
+    def test_pdf_artifact_can_be_disabled_per_invocation(self):
+        from analysis_artifacts import AnalysisArtifactResult
+
+        artifact_writer = FakeArtifactWriter(
+            AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/analysis.pdf")
+        )
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=artifact_writer,
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "save_analysis_pdf": False,
+            }
+        )
+
+        self.assertEqual(response, {"analysis": "analysis markdown"})
+        self.assertEqual(artifact_writer.calls, [])
+
     def test_workflow_failure_returns_descriptive_error_response(self):
         with (
             patch(
@@ -234,6 +360,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             ),
             patch.dict("os.environ", {"GOOGLE_API_KEY": "google-key"}),
             patch("image_inputs.boto3.client", return_value=fake_s3_client),
+            patch("analysis_artifacts.boto3.client", return_value=fake_s3_client),
+            patch(
+                "analysis_artifacts.PandocPdfRenderer",
+                return_value=Mock(render=Mock(return_value=b"%PDF fake report")),
+            ),
             patch(
                 "agents.tutor_agent.workflow.build_tutor_crew", side_effect=fake_build_tutor_crew
             ),
@@ -247,11 +378,21 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 }
             )
 
-        self.assertEqual(response, {"analysis": "s3 analysis"})
+        self.assertEqual(
+            response,
+            {
+                "analysis": "s3 analysis",
+                "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
+            },
+        )
         messages = completion.call_args.kwargs["messages"]
         image_url = messages[1]["content"][1]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
         self.assertNotEqual(image_url, "input_file_0.png")
+        _, put_kwargs = fake_s3_client.put_object.call_args
+        self.assertEqual(put_kwargs["Bucket"], "attempt-bucket")
+        self.assertEqual(put_kwargs["Key"], "maths/analysis.pdf")
+        self.assertTrue(put_kwargs["Body"].startswith(b"%PDF"))
 
 
 if __name__ == "__main__":
