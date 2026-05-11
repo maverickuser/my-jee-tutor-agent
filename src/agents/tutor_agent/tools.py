@@ -41,16 +41,48 @@ class VisionAnalysisTool(BaseTool):
         image_data_uris: list[str] | None = None,
         user_prompt: str = DEFAULT_VISION_USER_PROMPT,
     ) -> str:
-        resolved_images = self._resolve_tool_images(image_data_uris or [])
-        return self.llm_client.analyze_vision(resolved_images, user_prompt)
+        resolved_images, image_source = self._resolve_tool_images(image_data_uris or [])
+        self._log_tool_context(
+            image_source=image_source,
+            image_count=len(resolved_images),
+            user_prompt=user_prompt,
+        )
+        if not resolved_images:
+            raise ValueError(
+                "Vision analyzer received no images. Provide image_data_uri, image_data_uris, "
+                "image_folder, image_s3_uri, image_s3_prefix, or media with type=image."
+            )
+        try:
+            return self.llm_client.analyze_vision(resolved_images, user_prompt)
+        except Exception as exc:
+            raise RuntimeError(
+                "Vision analyzer failed after resolving "
+                f"{len(resolved_images)} image(s) from {image_source}. "
+                f"Upstream error: {exc.__class__.__name__}: {exc or '[no message]'}"
+            ) from exc
 
-    def _resolve_tool_images(self, image_data_uris: list[str]) -> list[str]:
+    def _resolve_tool_images(self, image_data_uris: list[str]) -> tuple[list[str], str]:
         valid_images = [image for image in image_data_uris if image.startswith("data:image/")]
         if valid_images:
-            return valid_images
+            return valid_images, "tool_input_data_uris"
         if self.preloaded_image_data_uris:
-            return self.preloaded_image_data_uris
-        return image_data_uris
+            return self.preloaded_image_data_uris, "preloaded_invocation_images"
+        if image_data_uris:
+            return image_data_uris, "tool_input_non_data_uris"
+        return [], "empty_tool_input"
+
+    @staticmethod
+    def _log_tool_context(
+        *,
+        image_source: str,
+        image_count: int,
+        user_prompt: str,
+    ) -> None:
+        print(
+            "jee_question_vision_analyzer "
+            f"image_source={image_source} image_count={image_count} "
+            f"user_prompt_chars={len(user_prompt)}"
+        )
 
 
 def build_vision_tool(

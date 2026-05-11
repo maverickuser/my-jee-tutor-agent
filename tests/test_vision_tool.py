@@ -5,11 +5,14 @@ from agents.tutor_agent.tools import DEFAULT_VISION_USER_PROMPT, VisionAnalysisT
 
 
 class FakeVisionLLMClient(VisionLLMClient):
-    def __init__(self):
+    def __init__(self, error=None):
         self.calls = []
+        self.error = error
 
     def analyze_vision(self, image_data_uris, user_prompt):
         self.calls.append((image_data_uris, user_prompt))
+        if self.error:
+            raise self.error
         return "analysis"
 
 
@@ -60,6 +63,25 @@ class VisionToolTest(unittest.TestCase):
             llm_client.calls,
             [(["data:image/png;base64,dG9vbA=="], "diagnose")],
         )
+
+    def test_tool_failure_includes_image_resolution_context(self):
+        tool = VisionAnalysisTool(
+            llm_client=FakeVisionLLMClient(error=ConnectionError("server disconnected")),
+            preloaded_image_data_uris=["data:image/png;base64,cHJlbG9hZGVk"],
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Vision analyzer failed after resolving 1 image\\(s\\) "
+            "from preloaded_invocation_images",
+        ):
+            tool._run(["input_file_0.png"], "diagnose")
+
+    def test_tool_rejects_empty_image_input_with_clear_error(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+
+        with self.assertRaisesRegex(ValueError, "Vision analyzer received no images"):
+            tool._run([], "diagnose")
 
 
 if __name__ == "__main__":

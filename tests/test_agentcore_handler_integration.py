@@ -171,6 +171,33 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response, {"analysis": "Sanitized guardrail response."})
 
+    def test_workflow_failure_returns_descriptive_error_response(self):
+        with (
+            patch(
+                "tutor_invocation_service.RuntimeGuardrail",
+                return_value=FakeRuntimeGuardrail(),
+            ),
+            patch(
+                "tutor_invocation_service.run_tutor_workflow",
+                side_effect=RuntimeError("Vision analyzer failed after resolving 1 image(s)."),
+            ),
+        ):
+            response = handle_tutor_invocation(
+                {
+                    "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                    "question_context": "diagnose failed attempt",
+                }
+            )
+
+        self.assertEqual(response["error"], "Tutor workflow failed while analyzing images.")
+        self.assertIn("Resolved image count: 1.", response["details"])
+        self.assertIn("Question context provided: True.", response["details"])
+        self.assertIn("Exception type: RuntimeError.", response["details"])
+        self.assertIn(
+            "Exception message: Vision analyzer failed after resolving 1 image(s).",
+            response["details"],
+        )
+
     def test_s3_prefix_images_are_preloaded_for_tool_placeholder_calls(self):
         captured_tool = {}
 

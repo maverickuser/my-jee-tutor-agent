@@ -74,10 +74,24 @@ class TutorInvocationService:
                 self._finish_invocation(span, response, invocation)
                 return response
 
-            analysis = self.workflow(
-                image_data_uris=image_data_uris,
-                question_context=invocation.resolved_question_context,
-            )
+            try:
+                analysis = self.workflow(
+                    image_data_uris=image_data_uris,
+                    question_context=invocation.resolved_question_context,
+                )
+            except Exception as exc:
+                response = self._error_response(
+                    "Tutor workflow failed while analyzing images.",
+                    self._workflow_error_details(exc, image_data_uris, invocation),
+                )
+                print(
+                    "tutor_workflow_error "
+                    f"image_count={len(image_data_uris)} "
+                    f"error_type={exc.__class__.__name__} error={exc or '[no message]'}"
+                )
+                self._finish_invocation(span, response, invocation)
+                return response
+
             output_guardrail = self.guardrail.check_output(analysis)
             if not output_guardrail.allowed:
                 analysis = (
@@ -103,3 +117,16 @@ class TutorInvocationService:
     @staticmethod
     def _error_response(error: str, details: list[str] | None = None) -> dict[str, Any]:
         return ErrorResponse(error=error, details=details or []).model_dump()
+
+    @staticmethod
+    def _workflow_error_details(
+        exc: Exception,
+        image_data_uris: list[str],
+        invocation: TutorInvocationPayload,
+    ) -> list[str]:
+        return [
+            f"Resolved image count: {len(image_data_uris)}.",
+            f"Question context provided: {bool(invocation.resolved_question_context)}.",
+            f"Exception type: {exc.__class__.__name__}.",
+            f"Exception message: {exc or '[no message]'}",
+        ]
