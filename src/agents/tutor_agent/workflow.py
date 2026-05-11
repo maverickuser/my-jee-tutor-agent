@@ -16,10 +16,10 @@ def run_tutor_workflow(
     prompt_provider: PromptProvider | None = None,
 ) -> str:
     resolved_image_data_uris = image_data_uris or ([image_data_uri] if image_data_uri else [])
-    crew = build_tutor_crew(llm_client, prompt_provider)
+    crew = build_tutor_crew(llm_client, prompt_provider, resolved_image_data_uris)
     result = crew.kickoff(
         inputs={
-            "image_data_uris": resolved_image_data_uris,
+            "image_data_uris": "[preloaded in vision tool]",
             "image_count": len(resolved_image_data_uris),
             "question_context": question_context or DEFAULT_QUESTION_CONTEXT,
         }

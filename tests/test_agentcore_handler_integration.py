@@ -1,7 +1,7 @@
 import base64
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from agents.tutor_agent.guardrails import GuardrailCheck
 from agentcore_handler import handle_tutor_invocation
@@ -170,6 +170,61 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             )
 
         self.assertEqual(response, {"analysis": "Sanitized guardrail response."})
+
+    def test_s3_prefix_images_are_preloaded_for_tool_placeholder_calls(self):
+        captured_tool = {}
+
+        def fake_build_tutor_crew(llm_client, prompt_provider, image_data_uris):
+            from agents.tutor_agent.llm_client import VisionLLMClient
+            from agents.tutor_agent.tools import VisionAnalysisTool
+
+            vision_client = llm_client or VisionLLMClient(completion_fn=completion)
+            tool = VisionAnalysisTool(
+                llm_client=vision_client,
+                preloaded_image_data_uris=image_data_uris or [],
+            )
+            captured_tool["tool"] = tool
+
+            class FakeCrew:
+                def kickoff(self, inputs):
+                    self.inputs = inputs
+                    return tool._run(["input_file_0.png"], "diagnose")
+
+            return FakeCrew()
+
+        fake_s3_client = Mock()
+        fake_s3_client.get_paginator.return_value.paginate.return_value = [
+            {"Contents": [{"Key": "maths/page-1.png"}]}
+        ]
+        fake_s3_client.get_object.return_value = {
+            "Body": Mock(read=Mock(return_value=b"s3-image-bytes"))
+        }
+
+        with (
+            patch(
+                "tutor_invocation_service.RuntimeGuardrail",
+                return_value=FakeRuntimeGuardrail(),
+            ),
+            patch.dict("os.environ", {"GOOGLE_API_KEY": "google-key"}),
+            patch("image_inputs.boto3.client", return_value=fake_s3_client),
+            patch(
+                "agents.tutor_agent.workflow.build_tutor_crew", side_effect=fake_build_tutor_crew
+            ),
+            patch("agents.tutor_agent.llm_client.completion") as completion,
+        ):
+            completion.return_value = {"choices": [{"message": {"content": "s3 analysis"}}]}
+            response = handle_tutor_invocation(
+                {
+                    "image_s3_prefix": "s3://attempt-bucket/maths/",
+                    "question_context": "diagnose maths attempt",
+                }
+            )
+
+        self.assertEqual(response, {"analysis": "s3 analysis"})
+        messages = completion.call_args.kwargs["messages"]
+        image_url = messages[1]["content"][1]["image_url"]["url"]
+        self.assertTrue(image_url.startswith("data:image/png;base64,"))
+        self.assertNotEqual(image_url, "input_file_0.png")
 
 
 if __name__ == "__main__":

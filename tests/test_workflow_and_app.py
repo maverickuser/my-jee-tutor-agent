@@ -24,14 +24,19 @@ class WorkflowAndAppTest(unittest.TestCase):
     def test_run_tutor_workflow_uses_single_image_and_default_context(self):
         crew = FakeCrew()
 
-        with patch("agents.tutor_agent.workflow.build_tutor_crew", return_value=crew):
+        with patch("agents.tutor_agent.workflow.build_tutor_crew", return_value=crew) as build_crew:
             result = run_tutor_workflow(image_data_uri="data:image/png;base64,ZmFrZQ==")
 
         self.assertEqual(result, "final analysis")
+        build_crew.assert_called_once_with(
+            None,
+            None,
+            ["data:image/png;base64,ZmFrZQ=="],
+        )
         self.assertEqual(
             crew.inputs,
             {
-                "image_data_uris": ["data:image/png;base64,ZmFrZQ=="],
+                "image_data_uris": "[preloaded in vision tool]",
                 "image_count": 1,
                 "question_context": DEFAULT_QUESTION_CONTEXT,
             },
@@ -45,16 +50,19 @@ class WorkflowAndAppTest(unittest.TestCase):
         with (
             patch("agents.tutor_agent.crew.PromptProvider") as prompt_provider_class,
             patch("agents.tutor_agent.crew.VisionLLMClient") as llm_client_class,
-            patch("agents.tutor_agent.crew.build_vision_tool", return_value=fake_tool),
+            patch(
+                "agents.tutor_agent.crew.build_vision_tool", return_value=fake_tool
+            ) as build_tool,
             patch("agents.tutor_agent.crew.build_tutor_agent", return_value=fake_agent),
             patch("agents.tutor_agent.crew.build_diagnosis_task", return_value=fake_task),
             patch("agents.tutor_agent.crew.Crew") as crew_class,
         ):
             prompts = prompt_provider_class.return_value
             llm_client = llm_client_class.return_value
-            build_tutor_crew()
+            build_tutor_crew(image_data_uris=["data:image/png;base64,ZmFrZQ=="])
 
         llm_client_class.assert_called_once_with(prompt_provider=prompts)
+        build_tool.assert_called_once_with(llm_client, ["data:image/png;base64,ZmFrZQ=="])
         crew_class.assert_called_once()
         _, kwargs = crew_class.call_args
         self.assertEqual(kwargs["agents"], [fake_agent])
