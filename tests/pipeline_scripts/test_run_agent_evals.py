@@ -2,7 +2,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts.run_agent_evals import (
+    RetryableEvalError,
     _retryable_response_error_reason,
+    _run_case,
     _run_case_with_retries,
     _score_markdown_table_case,
 )
@@ -114,7 +116,38 @@ class RunAgentEvalsTest(unittest.TestCase):
         reason = _retryable_response_error_reason(response)
 
         self.assertIsNotNone(reason)
-        self.assertIn("retryable error response", reason)
+        self.assertIn("workflow failed before producing analysis", reason)
+
+    def test_workflow_failure_response_without_provider_details_is_detected(self):
+        response = {
+            "error": "Tutor workflow failed while analyzing images.",
+            "details": [
+                "Resolved image count: 1.",
+                "Question context provided: True.",
+                "Exception type: RuntimeError.",
+                "Exception message: [no message]",
+            ],
+        }
+
+        reason = _retryable_response_error_reason(response)
+
+        self.assertIsNotNone(reason)
+        self.assertIn("workflow failed before producing analysis", reason)
+
+    def test_run_case_retries_workflow_failure_error_response_before_scoring(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "question_context": "diagnose wrong answers",
+        }
+        response = {
+            "error": "Tutor workflow failed while analyzing images.",
+            "details": ["Exception message: [no message]"],
+        }
+
+        with patch("jee_tutor.handler.handle_tutor_invocation", return_value=response):
+            with self.assertRaises(RetryableEvalError):
+                _run_case(case, "images")
 
     def test_non_retryable_handler_error_response_is_not_transient(self):
         response = {

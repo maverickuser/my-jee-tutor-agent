@@ -10,6 +10,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+TUTOR_WORKFLOW_FAILURE_ERROR = "Tutor workflow failed while analyzing images."
+
 
 class RetryableEvalError(RuntimeError):
     """Raised when an eval case hit transient provider/runtime infrastructure."""
@@ -262,6 +264,9 @@ def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
 
     details = response.get("details", [])
     text = " ".join([str(response.get("error", "")), *(str(detail) for detail in details)])
+    if response.get("error") == TUTOR_WORKFLOW_FAILURE_ERROR:
+        return f"Tutor invocation workflow failed before producing analysis: {_truncate(text, 500)}"
+
     try:
         from jee_tutor.agent.rate_limit import is_retryable_gemini_error
 
