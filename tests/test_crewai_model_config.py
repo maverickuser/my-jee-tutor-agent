@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.factories import (
+from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.factories import (
     RateLimitedLLM,
     build_crewai_llm,
     build_diagnosis_task,
     build_tutor_agent,
 )
-from agents.tutor_agent.model_config import VisionModelConfig
+from jee_tutor.agent.model_config import VisionModelConfig
 
 
 class CrewAIModelConfigTest(unittest.TestCase):
@@ -24,7 +24,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             config=config,
         )
 
-        with patch("agents.tutor_agent.factories.LLM") as llm_class:
+        with patch("jee_tutor.agent.factories.LLM") as llm_class:
             build_crewai_llm(model_config)
 
         llm_class.assert_called_once_with(
@@ -45,7 +45,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             config=config,
         )
 
-        with patch("agents.tutor_agent.factories.LLM") as llm_class:
+        with patch("jee_tutor.agent.factories.LLM") as llm_class:
             build_crewai_llm(model_config)
 
         llm_class.assert_called_once_with(
@@ -67,8 +67,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
         llm = object()
 
         with (
-            patch("agents.tutor_agent.factories.Agent") as agent_class,
-            patch("agents.tutor_agent.factories.Task") as task_class,
+            patch("jee_tutor.agent.factories.Agent") as agent_class,
+            patch("jee_tutor.agent.factories.Task") as task_class,
         ):
             agent = build_tutor_agent(vision_tool, prompt_provider, llm)
             build_diagnosis_task(agent, prompt_provider)

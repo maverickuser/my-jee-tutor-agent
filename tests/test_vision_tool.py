@@ -1,7 +1,7 @@
 import unittest
 
-from agents.tutor_agent.llm_client import VisionLLMClient
-from agents.tutor_agent.tools import DEFAULT_VISION_USER_PROMPT, VisionAnalysisTool, VisionInput
+from jee_tutor.agent.llm_client import VisionLLMClient
+from jee_tutor.agent.tools import DEFAULT_VISION_USER_PROMPT, VisionAnalysisTool, VisionInput
 
 
 class FakeVisionLLMClient(VisionLLMClient):

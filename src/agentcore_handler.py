@@ -1,12 +1,3 @@
-from typing import Any
+from jee_tutor.handler import handle_tutor_invocation, validate_tutor_invocation
 
-from invocation_models import TutorInvocationPayload
-from tutor_invocation_service import TutorInvocationService
-
-
-def validate_tutor_invocation(payload: dict[str, Any]) -> TutorInvocationPayload:
-    return TutorInvocationPayload.model_validate(payload)
-
-
-def handle_tutor_invocation(payload: dict[str, Any]) -> dict[str, Any]:
-    return TutorInvocationService().handle(payload)
+__all__ = ["handle_tutor_invocation", "validate_tutor_invocation"]

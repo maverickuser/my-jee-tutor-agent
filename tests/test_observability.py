@@ -3,8 +3,8 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.observability import EvaluationScore, LangfuseObservability
+from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
 
 
 class FakePrompt:
@@ -92,9 +92,9 @@ class ObservabilityTest(unittest.TestCase):
                 },
                 clear=True,
             ),
-            patch("agents.tutor_agent.observability.get_client", return_value=client),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
             patch(
-                "agents.tutor_agent.observability.propagate_attributes",
+                "jee_tutor.agent.observability.propagate_attributes",
                 side_effect=fake_attribute_context,
             ),
         ):
@@ -140,7 +140,7 @@ class ObservabilityTest(unittest.TestCase):
                 {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
                 clear=True,
             ),
-            patch("agents.tutor_agent.observability.get_client", return_value=client),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
         ):
             text, prompt = LangfuseObservability(LLMConfig({})).get_text_prompt(
                 "prompt-name", "fallback"
@@ -159,7 +159,7 @@ class ObservabilityTest(unittest.TestCase):
                 {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
                 clear=True,
             ),
-            patch("agents.tutor_agent.observability.get_client", return_value=client),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
         ):
             text, prompt = LangfuseObservability(LLMConfig({})).get_text_prompt(
                 "prompt-name", "fallback"

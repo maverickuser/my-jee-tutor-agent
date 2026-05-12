@@ -1,13 +1,13 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.factories import RateLimitedLLM, build_crewai_llm
-from agents.tutor_agent.llm_client import VisionLLMClient
-from agents.tutor_agent.model_config import VisionModelConfig
-from agents.tutor_agent.observability import LangfuseObservability
-from agents.tutor_agent.prompt_provider import PromptProvider
-from agents.tutor_agent.rate_limit import DEFAULT_GEMINI_REQUESTS_PER_MINUTE, GeminiRateLimiter
+from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.factories import RateLimitedLLM, build_crewai_llm
+from jee_tutor.agent.llm_client import VisionLLMClient
+from jee_tutor.agent.model_config import VisionModelConfig
+from jee_tutor.agent.observability import LangfuseObservability
+from jee_tutor.agent.prompt_provider import PromptProvider
+from jee_tutor.agent.rate_limit import DEFAULT_GEMINI_REQUESTS_PER_MINUTE, GeminiRateLimiter
 
 
 class DisabledObservability(LangfuseObservability):
@@ -96,7 +96,7 @@ class GeminiRateLimitTest(unittest.TestCase):
             completion_fn=completion,
         )
 
-        with patch("agents.tutor_agent.llm_client.gemini_rate_limiter") as limiter:
+        with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
             limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
             self.assertEqual(
                 client.analyze_vision("data:image/png;base64,AA==", "prompt"), "analysis"
@@ -112,7 +112,7 @@ class GeminiRateLimitTest(unittest.TestCase):
             config=config,
         )
 
-        with patch("agents.tutor_agent.factories.LLM") as llm_class:
+        with patch("jee_tutor.agent.factories.LLM") as llm_class:
             llm = build_crewai_llm(model_config)
 
         self.assertIsInstance(llm, RateLimitedLLM)

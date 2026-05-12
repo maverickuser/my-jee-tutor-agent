@@ -25,7 +25,7 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            from agentcore_handler import handle_tutor_invocation
+            from jee_tutor.handler import handle_tutor_invocation
 
             request = self._read_json()
             prompt = str(request.get("text", ""))

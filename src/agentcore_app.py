@@ -1,14 +1,6 @@
-from bedrock_agentcore import BedrockAgentCoreApp
+from jee_tutor.app import app, invoke_tutor
 
-from agentcore_handler import handle_tutor_invocation
-
-
-app = BedrockAgentCoreApp()
-
-
-@app.entrypoint
-def invoke_tutor(payload: dict, context) -> dict:
-    return handle_tutor_invocation(payload)
+__all__ = ["app", "invoke_tutor"]
 
 
 if __name__ == "__main__":

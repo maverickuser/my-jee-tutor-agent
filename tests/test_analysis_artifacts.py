@@ -2,9 +2,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from analysis_artifacts import AnalysisArtifactWriter
-from analysis_pdf import PANDOC_LATEX_HEADER, PANDOC_PDF_ARGS, PandocPdfRenderer
-from invocation_models import TutorInvocationPayload
+from jee_tutor.artifacts.writer import AnalysisArtifactWriter
+from jee_tutor.artifacts.pdf import PANDOC_LATEX_HEADER, PANDOC_PDF_ARGS, PandocPdfRenderer
+from jee_tutor.invocation.models import TutorInvocationPayload
 
 
 class FakePandocConverter:

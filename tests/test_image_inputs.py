@@ -2,7 +2,7 @@ import base64
 import tempfile
 import unittest
 
-from image_inputs import ImageInputResolver
+from jee_tutor.invocation.image_inputs import ImageInputResolver
 
 
 class FakeBody:
@@ -119,7 +119,9 @@ class ImageInputResolverTest(unittest.TestCase):
     def test_lazy_s3_client_is_created_once(self):
         fake_client = FakeS3Client({("bucket", "image.png"): b"image"})
 
-        with unittest.mock.patch("image_inputs.boto3.client", return_value=fake_client) as client:
+        with unittest.mock.patch(
+            "jee_tutor.invocation.image_inputs.boto3.client", return_value=fake_client
+        ) as client:
             resolver = ImageInputResolver()
             resolver.resolve(image_s3_uri="s3://bucket/image.png")
             resolver.resolve(image_s3_uri="s3://bucket/image.png")

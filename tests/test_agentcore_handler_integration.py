@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from agents.tutor_agent.guardrails import GuardrailCheck
-from agentcore_handler import handle_tutor_invocation
-from tutor_invocation_service import TutorInvocationService
+from jee_tutor.agent.guardrails import GuardrailCheck
+from jee_tutor.handler import handle_tutor_invocation
+from jee_tutor.invocation.service import TutorInvocationService
 
 
 class FakeRuntimeGuardrail:
@@ -47,11 +47,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(calls=guardrail_calls),
             ),
             patch(
-                "tutor_invocation_service.run_tutor_workflow",
+                "jee_tutor.invocation.service.run_tutor_workflow",
                 return_value="coaching analysis",
             ) as run_tutor_workflow,
         ):
@@ -92,11 +92,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(),
             ),
             patch(
-                "tutor_invocation_service.run_tutor_workflow",
+                "jee_tutor.invocation.service.run_tutor_workflow",
                 return_value="folder analysis",
             ) as run_tutor_workflow,
         ):
@@ -119,7 +119,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_input_guardrail_intervention_skips_workflow(self):
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(
                     input_result=GuardrailCheck(
                         allowed=False,
@@ -128,7 +128,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                     )
                 ),
             ),
-            patch("tutor_invocation_service.run_tutor_workflow") as run_tutor_workflow,
+            patch("jee_tutor.invocation.service.run_tutor_workflow") as run_tutor_workflow,
         ):
             response = handle_tutor_invocation(
                 {
@@ -164,7 +164,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_output_guardrail_intervention_replaces_analysis(self):
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(
                     output_result=GuardrailCheck(
                         allowed=False,
@@ -173,7 +173,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 ),
             ),
             patch(
-                "tutor_invocation_service.run_tutor_workflow",
+                "jee_tutor.invocation.service.run_tutor_workflow",
                 return_value="raw unsafe analysis",
             ),
         ):
@@ -186,7 +186,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(response, {"analysis": "Sanitized guardrail response."})
 
     def test_successful_s3_invocation_returns_pdf_uri(self):
-        from analysis_artifacts import AnalysisArtifactResult
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
 
         artifact_writer = FakeArtifactWriter(
             AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/analysis.pdf")
@@ -214,7 +214,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(artifact_writer.calls[0]["analysis_markdown"], "analysis markdown")
 
     def test_pdf_artifact_failure_is_returned_without_dropping_analysis(self):
-        from analysis_artifacts import AnalysisArtifactResult
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
 
         service = TutorInvocationService(
             guardrail=FakeRuntimeGuardrail(),
@@ -242,7 +242,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
 
     def test_pdf_and_markdown_artifact_failures_keep_analysis(self):
-        from analysis_artifacts import AnalysisArtifactResult
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
 
         service = TutorInvocationService(
             guardrail=FakeRuntimeGuardrail(),
@@ -276,7 +276,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
 
     def test_pdf_artifact_can_be_disabled_per_invocation(self):
-        from analysis_artifacts import AnalysisArtifactResult
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
 
         artifact_writer = FakeArtifactWriter(
             AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/analysis.pdf")
@@ -300,11 +300,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_workflow_failure_returns_descriptive_error_response(self):
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(),
             ),
             patch(
-                "tutor_invocation_service.run_tutor_workflow",
+                "jee_tutor.invocation.service.run_tutor_workflow",
                 side_effect=RuntimeError("Vision analyzer failed after resolving 1 image(s)."),
             ),
         ):
@@ -328,8 +328,8 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         captured_tool = {}
 
         def fake_build_tutor_crew(llm_client, prompt_provider, image_data_uris):
-            from agents.tutor_agent.llm_client import VisionLLMClient
-            from agents.tutor_agent.tools import VisionAnalysisTool
+            from jee_tutor.agent.llm_client import VisionLLMClient
+            from jee_tutor.agent.tools import VisionAnalysisTool
 
             vision_client = llm_client or VisionLLMClient(completion_fn=completion)
             tool = VisionAnalysisTool(
@@ -355,20 +355,18 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         with (
             patch(
-                "tutor_invocation_service.RuntimeGuardrail",
+                "jee_tutor.invocation.service.RuntimeGuardrail",
                 return_value=FakeRuntimeGuardrail(),
             ),
             patch.dict("os.environ", {"GOOGLE_API_KEY": "google-key"}),
-            patch("image_inputs.boto3.client", return_value=fake_s3_client),
-            patch("analysis_artifacts.boto3.client", return_value=fake_s3_client),
+            patch("jee_tutor.invocation.image_inputs.boto3.client", return_value=fake_s3_client),
+            patch("jee_tutor.artifacts.writer.boto3.client", return_value=fake_s3_client),
             patch(
-                "analysis_artifacts.PandocPdfRenderer",
+                "jee_tutor.artifacts.writer.PandocPdfRenderer",
                 return_value=Mock(render=Mock(return_value=b"%PDF fake report")),
             ),
-            patch(
-                "agents.tutor_agent.workflow.build_tutor_crew", side_effect=fake_build_tutor_crew
-            ),
-            patch("agents.tutor_agent.llm_client.completion") as completion,
+            patch("jee_tutor.agent.workflow.build_tutor_crew", side_effect=fake_build_tutor_crew),
+            patch("jee_tutor.agent.llm_client.completion") as completion,
         ):
             completion.return_value = {"choices": [{"message": {"content": "s3 analysis"}}]}
             response = handle_tutor_invocation(

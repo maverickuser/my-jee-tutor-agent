@@ -89,7 +89,7 @@ def _run_case_with_retries(
 
 
 def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
-    from agentcore_handler import handle_tutor_invocation
+    from jee_tutor.handler import handle_tutor_invocation
 
     payload = {
         "image_folder": image_folder,
@@ -239,7 +239,7 @@ def _failed_case_result(case: dict[str, Any], exc: Exception, attempts: int) -> 
 
 def _is_retryable_eval_error(exc: Exception) -> bool:
     try:
-        from agents.tutor_agent.rate_limit import is_retryable_gemini_error
+        from jee_tutor.agent.rate_limit import is_retryable_gemini_error
 
         return is_retryable_gemini_error(exc)
     except Exception:
@@ -263,7 +263,7 @@ def _truncate(value: str, limit: int = 1000) -> str:
 
 def _publish_langfuse_summary(report: dict[str, Any]) -> None:
     try:
-        from agents.tutor_agent.observability import EvaluationScore, LangfuseObservability
+        from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
 
         passed = int(report["passed"])
         total = int(report.get("scored_total", report["total"]))

@@ -2,8 +2,8 @@ import base64
 import unittest
 from unittest.mock import patch
 
-from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.guardrails import (
+from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.guardrails import (
     BedrockGuardrailContentBuilder,
     GuardrailSettings,
     RuntimeGuardrail,
@@ -271,7 +271,7 @@ class RuntimeGuardrailTest(unittest.TestCase):
             )
         )
 
-        with patch("agents.tutor_agent.guardrails.boto3.client") as boto_client:
+        with patch("jee_tutor.agent.guardrails.boto3.client") as boto_client:
             self.assertIs(guardrail.client, boto_client.return_value)
 
         boto_client.assert_called_once_with("bedrock-runtime", region_name="us-east-1")

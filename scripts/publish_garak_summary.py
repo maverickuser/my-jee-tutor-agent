@@ -71,7 +71,7 @@ def _summary_payload(
 
 def _publish_langfuse_summary(payload: dict[str, Any]) -> None:
     try:
-        from agents.tutor_agent.observability import EvaluationScore, LangfuseObservability
+        from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
 
         enabled = bool(payload["enabled"])
         hit_count = int(payload["hit_count"])

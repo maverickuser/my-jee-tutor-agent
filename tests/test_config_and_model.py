@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agents.tutor_agent.config_loader import LLMConfig
-from agents.tutor_agent.model_config import ModelSettings, VisionModelConfig
+from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.model_config import ModelSettings, VisionModelConfig
 
 
 class ConfigAndModelTest(unittest.TestCase):
