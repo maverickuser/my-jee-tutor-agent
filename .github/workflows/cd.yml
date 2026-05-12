@@ -158,6 +158,8 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/arm64 \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
             --tag "$ECR_REPOSITORY_URL:$IMAGE_TAG" \
             --tag "$ECR_REPOSITORY_URL:latest" \
             --push \
