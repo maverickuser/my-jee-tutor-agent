@@ -11,6 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 
+class RetryableEvalError(RuntimeError):
+    """Raised when an eval case hit transient provider/runtime infrastructure."""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CD evals for the JEE tutor agent.")
     parser.add_argument("--cases", default="evals/jee_tutor_eval_cases.json")
@@ -55,6 +59,7 @@ def main() -> None:
         f"agent_eval_score={score:.2f} "
         f"({passed}/{len(scored_results)} scored cases passed, {skipped} skipped)"
     )
+    _print_failed_case_summary(results)
     if score < args.min_score:
         raise SystemExit(f"Agent eval score {score:.2f} is below required {args.min_score:.2f}")
 
@@ -98,6 +103,9 @@ def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
         "tags": ["cd-evals", case["id"]],
     }
     response = handle_tutor_invocation(payload)
+    retryable_response_error = _retryable_response_error_reason(response)
+    if retryable_response_error:
+        raise RetryableEvalError(retryable_response_error)
 
     if case["type"] == "analysis":
         return _score_analysis_case(case, response)
@@ -238,12 +246,30 @@ def _failed_case_result(case: dict[str, Any], exc: Exception, attempts: int) -> 
 
 
 def _is_retryable_eval_error(exc: Exception) -> bool:
+    if isinstance(exc, RetryableEvalError):
+        return True
     try:
         from jee_tutor.agent.rate_limit import is_retryable_gemini_error
 
         return is_retryable_gemini_error(exc)
     except Exception:
         return False
+
+
+def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
+    if "error" not in response:
+        return None
+
+    details = response.get("details", [])
+    text = " ".join([str(response.get("error", "")), *(str(detail) for detail in details)])
+    try:
+        from jee_tutor.agent.rate_limit import is_retryable_gemini_error
+
+        if is_retryable_gemini_error(RuntimeError(text)):
+            return f"Tutor invocation returned retryable error response: {_truncate(text, 500)}"
+    except Exception:
+        return None
+    return None
 
 
 def _redacted_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -259,6 +285,15 @@ def _truncate(value: str, limit: int = 1000) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "...[truncated]"
+
+
+def _print_failed_case_summary(results: list[dict[str, Any]]) -> None:
+    for result in results:
+        if result.get("passed"):
+            continue
+        status = "skipped" if result.get("skipped") else "failed"
+        reason = _truncate(str(result.get("reason") or "No reason provided."), 500)
+        print(f"eval_case_{status} id={result.get('id')} type={result.get('type')} reason={reason}")
 
 
 def _publish_langfuse_summary(report: dict[str, Any]) -> None:

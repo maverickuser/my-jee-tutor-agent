@@ -86,7 +86,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
 
     def test_folder_invocation_loads_multiple_images(self):
-        image_folder = Path(__file__).parent / "fixtures" / "image_folder"
+        image_folder = Path(__file__).parents[1] / "fixtures" / "image_folder"
         first_image = (image_folder / "attempt-1.png").read_bytes()
         second_image = (image_folder / "attempt-2.jpg").read_bytes()
 

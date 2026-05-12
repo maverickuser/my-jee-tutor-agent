@@ -1,7 +1,11 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from scripts.run_agent_evals import _run_case_with_retries, _score_markdown_table_case
+from scripts.run_agent_evals import (
+    _retryable_response_error_reason,
+    _run_case_with_retries,
+    _score_markdown_table_case,
+)
 
 
 class RunAgentEvalsTest(unittest.TestCase):
@@ -96,6 +100,29 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertEqual(result["id"], "case-1")
         self.assertEqual(result["exception_type"], "Exception")
         self.assertIn("2 attempt", result["reason"])
+
+    def test_retryable_handler_error_response_is_detected(self):
+        response = {
+            "error": "Tutor workflow failed while analyzing images.",
+            "details": [
+                "Resolved image count: 1.",
+                "Exception type: APIConnectionError.",
+                "Exception message: Server disconnected without sending a response.",
+            ],
+        }
+
+        reason = _retryable_response_error_reason(response)
+
+        self.assertIsNotNone(reason)
+        self.assertIn("retryable error response", reason)
+
+    def test_non_retryable_handler_error_response_is_not_transient(self):
+        response = {
+            "error": "Invalid tutor invocation payload.",
+            "details": ["At least one image input is required."],
+        }
+
+        self.assertIsNone(_retryable_response_error_reason(response))
 
 
 if __name__ == "__main__":

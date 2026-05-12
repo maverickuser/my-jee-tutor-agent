@@ -4,7 +4,6 @@ from jee_tutor.invocation.models import (
     TutorInvocationPayload,
     TutorInvocationResponse,
 )
-from jee_tutor.invocation.service import TutorInvocationService
 
 __all__ = [
     "ErrorResponse",
@@ -14,3 +13,11 @@ __all__ = [
     "TutorInvocationResponse",
     "TutorInvocationService",
 ]
+
+
+def __getattr__(name):
+    if name == "TutorInvocationService":
+        from jee_tutor.invocation.service import TutorInvocationService
+
+        return TutorInvocationService
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
