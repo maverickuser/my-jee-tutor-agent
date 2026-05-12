@@ -1,4 +1,4 @@
-﻿name: CD
+name: CD
 
 on:
   push:
@@ -21,11 +21,14 @@ env:
   BEDROCK_GUARDRAIL_VERSION: ${{ vars.BEDROCK_GUARDRAIL_VERSION || 'DRAFT' }}
 
 jobs:
-  deploy:
+  prepare_infra:
+    name: Prepare ECR and Terraform Outputs
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+    outputs:
+      ecr_repo_url: ${{ steps.tf_outputs.outputs.ecr_repo_url }}
 
     steps:
       - name: Checkout repository
@@ -57,7 +60,6 @@ jobs:
           aws bedrock list-guardrails --region "$AWS_REGION" --max-results 1
 
       - name: Create ECR repository
-        id: infra
         working-directory: terraform
         env:
           TF_VAR_project_name: ${{ env.PROJECT_NAME }}
@@ -80,11 +82,29 @@ jobs:
       - name: Read Terraform outputs
         id: tf_outputs
         working-directory: terraform
-        run: |
-          echo "ecr_repo_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+        run: echo "ecr_repo_url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+
+  build_image:
+    name: Build and Push AgentCore Image
+    runs-on: ubuntu-latest
+    needs: prepare_infra
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_uri: ${{ steps.image.outputs.image_uri }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up QEMU
@@ -98,7 +118,7 @@ jobs:
       - name: Build, tag, and push AgentCore image
         id: image
         env:
-          ECR_REPOSITORY_URL: ${{ steps.tf_outputs.outputs.ecr_repo_url }}
+          ECR_REPOSITORY_URL: ${{ needs.prepare_infra.outputs.ecr_repo_url }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker buildx build \
@@ -108,6 +128,41 @@ jobs:
             --push \
             -f src/Dockerfile .
           echo "image_uri=$ECR_REPOSITORY_URL:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+  deploy_runtime:
+    name: Deploy AgentCore Runtime
+    runs-on: ubuntu-latest
+    needs: build_image
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      guardrail_id: ${{ steps.security_outputs.outputs.guardrail_id }}
+      guardrail_version: ${{ steps.security_outputs.outputs.guardrail_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_DYNAMODB_TABLE}"
 
       - name: Terraform apply AgentCore runtime
         working-directory: terraform
@@ -120,7 +175,7 @@ jobs:
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
           TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
-          TF_VAR_agentcore_image_uri: ${{ steps.image.outputs.image_uri }}
+          TF_VAR_agentcore_image_uri: ${{ needs.build_image.outputs.image_uri }}
           TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
@@ -136,7 +191,25 @@ jobs:
           echo "guardrail_id=$(terraform output -raw bedrock_guardrail_id)" >> "$GITHUB_OUTPUT"
           echo "guardrail_version=$(terraform output -raw bedrock_guardrail_version)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Python for evals and garak
+  agent_evals:
+    name: Run Agent Evals
+    runs-on: ubuntu-latest
+    needs: deploy_runtime
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -148,13 +221,74 @@ jobs:
           virtualenvs-create: false
 
       - name: Install agent dependencies
+        run: poetry install --with dev --no-interaction --no-ansi
+
+      - name: Run agent evals
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+          BEDROCK_GUARDRAIL_ENABLED: ${{ needs.deploy_runtime.outputs.guardrail_id != '' }}
+          BEDROCK_GUARDRAIL_ID: ${{ needs.deploy_runtime.outputs.guardrail_id }}
+          BEDROCK_GUARDRAIL_VERSION: ${{ needs.deploy_runtime.outputs.guardrail_version }}
+          BEDROCK_GUARDRAIL_REGION: ${{ env.AWS_REGION }}
+          BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
         run: |
-          poetry install --with dev --no-interaction --no-ansi
+          poetry run python scripts/run_agent_evals.py \
+            --cases evals/jee_tutor_eval_cases.json \
+            --image-folder tests/fixtures/image_folder \
+            --output eval_runs/agent-evals.json \
+            --min-score "$CD_EVAL_MIN_SCORE"
+
+      - name: Upload eval reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-reports
+          path: eval_runs/**
+          if-no-files-found: ignore
+
+  garak_scan:
+    name: Run Garak Scan
+    runs-on: ubuntu-latest
+    needs: deploy_runtime
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          virtualenvs-create: false
+
+      - name: Install agent dependencies
+        run: poetry install --with dev --no-interaction --no-ansi
 
       - name: Install garak dependencies
         if: env.GARAK_SCAN_ENABLED == 'true'
-        run: |
-          poetry run python -m pip install --upgrade garak
+        run: poetry run python -m pip install --upgrade garak
 
       - name: Start garak AgentCore adapter
         if: env.GARAK_SCAN_ENABLED == 'true'
@@ -169,9 +303,9 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
-          BEDROCK_GUARDRAIL_ENABLED: ${{ steps.security_outputs.outputs.guardrail_id != '' }}
-          BEDROCK_GUARDRAIL_ID: ${{ steps.security_outputs.outputs.guardrail_id }}
-          BEDROCK_GUARDRAIL_VERSION: ${{ steps.security_outputs.outputs.guardrail_version }}
+          BEDROCK_GUARDRAIL_ENABLED: ${{ needs.deploy_runtime.outputs.guardrail_id != '' }}
+          BEDROCK_GUARDRAIL_ID: ${{ needs.deploy_runtime.outputs.guardrail_id }}
+          BEDROCK_GUARDRAIL_VERSION: ${{ needs.deploy_runtime.outputs.guardrail_version }}
           BEDROCK_GUARDRAIL_REGION: ${{ env.AWS_REGION }}
           BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
         run: |
@@ -187,29 +321,6 @@ jobs:
           done
           cat garak_adapter.log
           exit 1
-
-      - name: Run agent evals
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
-          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
-          BEDROCK_GUARDRAIL_ENABLED: ${{ steps.security_outputs.outputs.guardrail_id != '' }}
-          BEDROCK_GUARDRAIL_ID: ${{ steps.security_outputs.outputs.guardrail_id }}
-          BEDROCK_GUARDRAIL_VERSION: ${{ steps.security_outputs.outputs.guardrail_version }}
-          BEDROCK_GUARDRAIL_REGION: ${{ env.AWS_REGION }}
-          BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
-        run: |
-          poetry run python scripts/run_agent_evals.py \
-            --cases evals/jee_tutor_eval_cases.json \
-            --image-folder tests/fixtures/image_folder \
-            --output eval_runs/agent-evals.json \
-            --min-score "$CD_EVAL_MIN_SCORE"
 
       - name: Publish disabled garak summary
         if: env.GARAK_SCAN_ENABLED != 'true'
@@ -285,7 +396,6 @@ jobs:
           name: garak-security-reports
           path: |
             garak_runs/**
-            eval_runs/**
             garak.log
             garak_adapter.log
           if-no-files-found: ignore
