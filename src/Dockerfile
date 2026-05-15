@@ -5,6 +5,7 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        lmodern \
         pandoc \
         texlive-fonts-recommended \
         texlive-latex-extra \
