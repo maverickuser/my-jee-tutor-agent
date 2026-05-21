@@ -10,6 +10,28 @@ class HandlerAndAppTest(unittest.TestCase):
 
         self.assertEqual(payload.image_data_uri, "data:image/png;base64,ZmFrZQ==")
 
+    def test_validate_tutor_invocation_accepts_agentcore_json_contract(self):
+        payload = validate_tutor_invocation(
+            {
+                "task": "diagnose this attempt",
+                "attempt_id": "attempt-123",
+                "email": "student@example.com",
+                "user_name": "Student Name",
+                "subject": "maths",
+                "s3_bucket": "attempt-bucket",
+                "s3_prefix": "maths/attempt-123/",
+                "s3_uri": "s3://attempt-bucket/maths/attempt-123/page-1.png",
+                "image_count": 1,
+                "source": "web",
+            }
+        )
+
+        self.assertEqual(payload.resolved_question_context, "diagnose this attempt")
+        self.assertEqual(payload.image_s3_uri, "s3://attempt-bucket/maths/attempt-123/page-1.png")
+        self.assertEqual(payload.image_s3_prefix, "s3://attempt-bucket/maths/attempt-123/")
+        self.assertEqual(payload.attempt_id, "attempt-123")
+        self.assertEqual(payload.subject, "maths")
+
     def test_agentcore_app_entrypoint_delegates_to_handler(self):
         with patch("jee_tutor.app.handle_tutor_invocation", return_value={"analysis": "ok"}):
             from agentcore_app import invoke_tutor

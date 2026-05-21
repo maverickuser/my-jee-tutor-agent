@@ -14,6 +14,7 @@ data "aws_caller_identity" "current" {}
 resource "aws_ecr_repository" "agentcore_repo" {
   name                 = local.ecr_repo_name
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -21,7 +22,8 @@ resource "aws_ecr_repository" "agentcore_repo" {
 }
 
 resource "aws_s3_bucket" "image_inputs" {
-  bucket = local.s3_image_bucket_name
+  bucket        = local.s3_image_bucket_name
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "image_inputs" {
@@ -209,7 +211,7 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           }
         }
       }
-    ],
+      ],
       length(var.s3_image_input_object_arns) > 0 ? [
         {
           Sid      = "S3ImageObjectRead"

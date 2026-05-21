@@ -1,0 +1,91 @@
+name: Destroy AWS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type destroy to confirm all Terraform-managed AWS infrastructure should be destroyed.
+        required: true
+        type: string
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'jee-tutor-agent' }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
+  TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'jee-tutor-agent/terraform.tfstate' }}
+  TF_STATE_DYNAMODB_TABLE: ${{ vars.TF_STATE_DYNAMODB_TABLE || 'jee-tutor-agent-terraform-locks' }}
+  BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}
+  BEDROCK_GUARDRAIL_ID: ${{ vars.BEDROCK_GUARDRAIL_ID || '' }}
+  BEDROCK_GUARDRAIL_VERSION: ${{ vars.BEDROCK_GUARDRAIL_VERSION || 'DRAFT' }}
+
+jobs:
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirmation == 'destroy' }}
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: terraform-${{ vars.PROJECT_NAME || 'jee-tutor-agent' }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform init
+        working-directory: terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_STATE_DYNAMODB_TABLE}"
+
+      - name: Terraform destroy plan
+        working-directory: terraform
+        env:
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_litellm_api_key: ${{ secrets.LITELLM_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
+          TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+          TF_VAR_agentcore_image_uri: "111111111111.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.PROJECT_NAME }}-repo:destroy-placeholder"
+          TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
+          TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
+          TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
+          TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '14' }}
+          TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '[]' }}
+          TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '[]' }}
+        run: terraform plan -destroy -out=tfdestroy.plan
+
+      - name: Terraform destroy
+        working-directory: terraform
+        run: terraform apply -auto-approve tfdestroy.plan
+
+  invalid_confirmation:
+    name: Invalid Confirmation
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirmation != 'destroy' }}
+
+    steps:
+      - name: Stop before destroy
+        run: |
+          echo "Destroy was not run because confirmation was not exactly: destroy"
+          exit 1

@@ -85,6 +85,42 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             ],
         )
 
+    def test_agentcore_json_contract_uses_task_and_s3_fields(self):
+        image_resolver = Mock()
+        image_resolver.resolve.return_value = ["data:image/png;base64,ZmFrZQ=="]
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **kwargs: kwargs["question_context"],
+            artifact_writer=FakeArtifactWriter(),
+        )
+
+        response = service.handle(
+            {
+                "task": "diagnose maths attempt",
+                "attempt_id": "attempt-123",
+                "email": "student@example.com",
+                "user_name": "Student Name",
+                "subject": "maths",
+                "s3_bucket": "attempt-bucket",
+                "s3_prefix": "maths/attempt-123/",
+                "s3_uri": "s3://attempt-bucket/maths/attempt-123/page-1.png",
+                "image_count": 1,
+                "source": "web",
+                "save_analysis_pdf": False,
+            }
+        )
+
+        self.assertEqual(response, {"analysis": "diagnose maths attempt"})
+        image_resolver.resolve.assert_called_once_with(
+            image_data_uri=None,
+            image_data_uris=[],
+            image_folder=None,
+            image_s3_uri="s3://attempt-bucket/maths/attempt-123/page-1.png",
+            image_s3_prefix="s3://attempt-bucket/maths/attempt-123/",
+            media=None,
+        )
+
     def test_folder_invocation_loads_multiple_images(self):
         image_folder = Path(__file__).parents[1] / "fixtures" / "image_folder"
         first_image = (image_folder / "attempt-1.png").read_bytes()
