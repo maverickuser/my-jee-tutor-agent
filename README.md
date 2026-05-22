@@ -38,7 +38,7 @@ S3 object payload:
 
 ```json
 {
-  "image_s3_uri": "s3://jee-tutor-agent-123456789012-ap-south-1-images/physics/student-123/page-1.png",
+  "image_s3_uri": "s3://web-scraper-dev-055173110395-ap-south-1-screenshots/maths/attempt-123/page-1.png",
   "question_context": "Optional student/question context"
 }
 ```
@@ -47,7 +47,7 @@ S3 prefix payload:
 
 ```json
 {
-  "image_s3_prefix": "s3://jee-tutor-agent-123456789012-ap-south-1-images/maths/student-123/",
+  "image_s3_prefix": "s3://web-scraper-dev-055173110395-ap-south-1-screenshots/maths/attempt-123/",
   "question_context": "Optional student/question context"
 }
 ```
@@ -55,24 +55,7 @@ S3 prefix payload:
 S3 prefixes are folder-like object prefixes, not local folders. Supported image
 extensions are `.png`, `.jpg`, `.jpeg`, and `.webp`; objects are loaded in key
 order. The AgentCore runtime role must have `s3:GetObject` for S3 objects and
-`s3:ListBucket` for S3 prefixes. The Terraform-managed bucket also grants the
-runtime write access to objects under the subject prefixes.
-
-Terraform creates an image input bucket with these subject prefixes:
-
-```text
-physics/
-chemistry/
-maths/
-```
-
-Read the bucket name after deployment with:
-
-```powershell
-terraform -chdir=terraform output -raw image_input_bucket_name
-```
-
-For additional external S3 buckets, configure access with GitHub repository
+`s3:ListBucket` for S3 prefixes. Configure access with GitHub repository
 variables formatted as Terraform JSON lists:
 
 ```text
@@ -169,14 +152,14 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 
 - Terraform provisions an ECR repository, AgentCore execution role, AgentCore runtime, and default runtime endpoint.
 - Terraform manages the AgentCore runtime CloudWatch log group with 14-day retention by default.
-- Terraform creates an S3 image input bucket with `physics/`, `chemistry/`, and `maths/` prefixes.
+- Terraform grants the AgentCore runtime access to configured S3 image input buckets.
 - Terraform creates a Bedrock Guardrail for the tutor and injects its ID into the AgentCore runtime.
 - Build the container from `src/Dockerfile`.
 - Push that image to ECR.
 - Pass the pushed image URI as `agentcore_image_uri`.
 - `bedrock/...` model calls use the AgentCore runtime IAM role; no external API key is needed for Bedrock models.
 - Runtime guardrails use the same role with `bedrock:ApplyGuardrail`. By default, Terraform uses the guardrail it creates; set `bedrock_guardrail_id` only to use an existing guardrail instead.
-- S3 image inputs use the AgentCore runtime role. The Terraform-created image bucket grants read/write access to `physics/`, `chemistry/`, and `maths/`; external buckets require explicit ARN variables.
+- S3 image inputs use the AgentCore runtime role. Configure bucket and object ARNs with `S3_IMAGE_INPUT_BUCKET_ARNS` and `S3_IMAGE_INPUT_OBJECT_ARNS`.
 - Langfuse keys are passed as AgentCore runtime environment variables when configured.
 
 The role used by GitHub Actions in `AWS_ROLE_TO_ASSUME` must be able to manage
@@ -274,11 +257,8 @@ s3_image_input_bucket_arns = ["arn:aws:s3:::web-scraper-dev-055173110395-ap-sout
 s3_image_input_object_arns = ["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]
 ```
 
-These optional variables are only needed for external buckets. Bucket ARNs grant
-`s3:ListBucket`; object ARNs grant `s3:GetObject`, `s3:PutObject`, and
-`s3:AbortMultipartUpload`. The Terraform-managed image input bucket is always
-created and grants the AgentCore runtime read/write access to the subject
-prefixes.
+Bucket ARNs grant `s3:ListBucket`; object ARNs grant `s3:GetObject`,
+`s3:PutObject`, and `s3:AbortMultipartUpload`.
 
 ## Langfuse
 
