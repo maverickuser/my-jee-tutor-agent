@@ -76,8 +76,8 @@ For additional external S3 buckets, configure access with GitHub repository
 variables formatted as Terraform JSON lists:
 
 ```text
-S3_IMAGE_INPUT_BUCKET_ARNS=["arn:aws:s3:::my-attempt-bucket"]
-S3_IMAGE_INPUT_OBJECT_ARNS=["arn:aws:s3:::my-attempt-bucket/attempts/*"]
+S3_IMAGE_INPUT_BUCKET_ARNS=["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]
+S3_IMAGE_INPUT_OBJECT_ARNS=["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]
 ```
 
 Single-image payload:
@@ -270,11 +270,15 @@ For GitHub Actions deployments, override it with the repository variable `CLOUDW
 Terraform also exposes S3 image input permissions:
 
 ```hcl
-s3_image_input_bucket_arns = ["arn:aws:s3:::my-attempt-bucket"]
-s3_image_input_object_arns = ["arn:aws:s3:::my-attempt-bucket/attempts/*"]
+s3_image_input_bucket_arns = ["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]
+s3_image_input_object_arns = ["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]
 ```
 
-These optional variables are only needed for external buckets. The Terraform-managed image input bucket is always created and grants the AgentCore runtime read/write access to the subject prefixes.
+These optional variables are only needed for external buckets. Bucket ARNs grant
+`s3:ListBucket`; object ARNs grant `s3:GetObject`, `s3:PutObject`, and
+`s3:AbortMultipartUpload`. The Terraform-managed image input bucket is always
+created and grants the AgentCore runtime read/write access to the subject
+prefixes.
 
 ## Langfuse
 

@@ -111,7 +111,7 @@ variable "s3_image_input_bucket_arns" {
 }
 
 variable "s3_image_input_object_arns" {
-  description = "S3 object ARNs the AgentCore runtime can read for image_s3_uri and image_s3_prefix inputs."
+  description = "S3 object ARNs the AgentCore runtime can read and write for image_s3_uri, image_s3_prefix, and analysis artifacts."
   type        = list(string)
   default     = []
 }

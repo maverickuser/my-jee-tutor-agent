@@ -214,9 +214,13 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
       ],
       length(var.s3_image_input_object_arns) > 0 ? [
         {
-          Sid      = "S3ImageObjectRead"
-          Effect   = "Allow"
-          Action   = ["s3:GetObject"]
+          Sid    = "S3ImageObjectReadWrite"
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:AbortMultipartUpload"
+          ]
           Resource = var.s3_image_input_object_arns
         }
       ] : [],
