@@ -1,6 +1,8 @@
 from collections.abc import Callable
+import logging
+from typing import Any
 
-from litellm import completion
+from litellm import completion, completion_cost
 
 from jee_tutor.agent.model_config import VisionModelConfig
 from jee_tutor.agent.observability import LangfuseObservability
@@ -10,6 +12,7 @@ from jee_tutor.agent.rate_limit import gemini_rate_limiter, is_gemini_model
 
 
 CompletionFunction = Callable[..., dict]
+logger = logging.getLogger(__name__)
 
 
 class VisionMessageFactory:
@@ -87,7 +90,10 @@ class VisionLLMClient:
             response = self._complete_with_rate_limit(model_settings.model, request_kwargs)
             analysis = response["choices"][0]["message"]["content"].strip()
             if generation:
-                generation.update(output=analysis)
+                generation.update(
+                    output=analysis,
+                    **self._generation_accounting(response, model_settings.model),
+                )
             return analysis
 
     def _complete_with_rate_limit(self, model: str, request_kwargs: dict) -> dict:
@@ -104,3 +110,83 @@ class VisionLLMClient:
         }
         redacted["messages"] = "[redacted: contains image payload]"
         return redacted
+
+    @classmethod
+    def _generation_accounting(cls, response: Any, model: str) -> dict[str, dict]:
+        accounting: dict[str, dict] = {}
+        usage_details = cls._usage_details(response)
+        if usage_details:
+            accounting["usage_details"] = usage_details
+
+        cost_details = cls._cost_details(response, model)
+        if cost_details:
+            accounting["cost_details"] = cost_details
+
+        return accounting
+
+    @staticmethod
+    def _usage_details(response: Any) -> dict[str, Any]:
+        usage = _response_value(response, "usage")
+        if not usage:
+            return {}
+
+        if isinstance(usage, dict):
+            usage_dict = dict(usage)
+        elif hasattr(usage, "model_dump"):
+            usage_dict = usage.model_dump(exclude_none=True)
+        else:
+            usage_dict = {
+                key: value
+                for key, value in vars(usage).items()
+                if value is not None and not key.startswith("_")
+            }
+
+        return {
+            key: _compact_token_detail(value)
+            for key, value in usage_dict.items()
+            if value is not None
+        }
+
+    @staticmethod
+    def _cost_details(response: Any, model: str) -> dict[str, float]:
+        hidden_params = _response_value(response, "_hidden_params")
+        if isinstance(hidden_params, dict):
+            response_cost = hidden_params.get("response_cost")
+            if isinstance(response_cost, int | float):
+                return {"total": float(response_cost)}
+
+        try:
+            cost = completion_cost(completion_response=response, model=model)
+        except Exception as exc:
+            logger.warning(
+                "completion_cost_calculation_failed model=%s error_type=%s error=%s",
+                model,
+                exc.__class__.__name__,
+                exc or "[no message]",
+                exc_info=True,
+            )
+            return {}
+
+        if isinstance(cost, int | float):
+            return {"total": float(cost)}
+        return {}
+
+
+def _response_value(response: Any, key: str) -> Any:
+    if isinstance(response, dict):
+        return response.get(key)
+    return getattr(response, key, None)
+
+
+def _compact_token_detail(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: nested for key, nested in value.items() if nested is not None}
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True)
+    if hasattr(value, "__dict__"):
+        return {
+            key: nested
+            for key, nested in vars(value).items()
+            if nested is not None and not key.startswith("_")
+        }
+    return value

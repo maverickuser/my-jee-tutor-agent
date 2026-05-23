@@ -144,14 +144,16 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
         )
         invocation = TutorInvocationPayload(image_s3_prefix="s3://attempt-bucket/maths/")
 
-        result = writer.write_for_invocation(
-            analysis_markdown="markdown analysis",
-            invocation=invocation,
-        )
+        with self.assertLogs("jee_tutor.artifacts.writer", level="ERROR") as logs:
+            result = writer.write_for_invocation(
+                analysis_markdown="markdown analysis",
+                invocation=invocation,
+            )
 
         self.assertIsNone(result.pdf_uri)
         self.assertEqual(result.markdown_uri, "s3://attempt-bucket/maths/analysis.md")
         self.assertEqual(result.errors, ["Failed to write analysis PDF: RuntimeError: no tex"])
+        self.assertTrue(any("analysis_pdf_error" in line for line in logs.output))
         _, kwargs = s3_client.put_object.call_args
         self.assertEqual(kwargs["Key"], "maths/analysis.md")
         self.assertEqual(kwargs["Body"], b"markdown analysis")

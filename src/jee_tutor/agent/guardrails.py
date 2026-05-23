@@ -1,5 +1,6 @@
 import base64
 import binascii
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -8,6 +9,9 @@ from typing import Any, Literal
 import boto3
 
 from jee_tutor.agent.config_loader import LLMConfig
+
+
+logger = logging.getLogger(__name__)
 
 
 GuardrailSource = Literal["INPUT", "OUTPUT"]
@@ -125,6 +129,13 @@ class RuntimeGuardrail:
                 outputScope=self.settings.output_scope,
             )
         except Exception as exc:
+            logger.exception(
+                "bedrock_guardrail_check_failed source=%s fail_closed=%s error_type=%s error=%s",
+                source,
+                self.settings.fail_closed,
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
             if self.settings.fail_closed:
                 return GuardrailCheck(
                     allowed=False,

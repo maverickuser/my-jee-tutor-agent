@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
@@ -8,6 +9,9 @@ import boto3
 
 from jee_tutor.artifacts.pdf import PandocPdfRenderer
 from jee_tutor.invocation.models import TutorInvocationPayload
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,26 +46,38 @@ class AnalysisArtifactWriter:
             pdf_bytes = self.pdf_renderer.render(analysis_markdown)
             self._upload(pdf_uri, pdf_bytes, "application/pdf")
             result.pdf_uri = pdf_uri
-            print(f"analysis_pdf_upload uri={pdf_uri} bytes={len(pdf_bytes)}")
+            logger.info("analysis_pdf_upload uri=%s bytes=%s", pdf_uri, len(pdf_bytes))
             return result
         except Exception as exc:
             result.errors.append(
                 f"Failed to write analysis PDF: {exc.__class__.__name__}: {exc or '[no message]'}"
             )
-            print(f"analysis_pdf_error error_type={exc.__class__.__name__} error={exc}")
+            logger.exception(
+                "analysis_pdf_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
 
         markdown_uri = self._markdown_uri_for_pdf_uri(pdf_uri)
         try:
             markdown_bytes = analysis_markdown.encode("utf-8")
             self._upload(markdown_uri, markdown_bytes, "text/markdown; charset=utf-8")
             result.markdown_uri = markdown_uri
-            print(f"analysis_markdown_upload uri={markdown_uri} bytes={len(markdown_bytes)}")
+            logger.info(
+                "analysis_markdown_upload uri=%s bytes=%s",
+                markdown_uri,
+                len(markdown_bytes),
+            )
         except Exception as exc:
             result.errors.append(
                 f"Failed to write analysis markdown fallback: {exc.__class__.__name__}: "
                 f"{exc or '[no message]'}"
             )
-            print(f"analysis_markdown_error error_type={exc.__class__.__name__} error={exc}")
+            logger.exception(
+                "analysis_markdown_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
 
         return result
 

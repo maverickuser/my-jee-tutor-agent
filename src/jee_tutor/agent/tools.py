@@ -1,8 +1,13 @@
+import logging
+
 from crewai.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.prompts import VISION_TOOL_DESCRIPTION
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_VISION_USER_PROMPT = (
@@ -55,6 +60,13 @@ class VisionAnalysisTool(BaseTool):
         try:
             return self.llm_client.analyze_vision(resolved_images, user_prompt)
         except Exception as exc:
+            logger.exception(
+                "vision_analyzer_failed image_source=%s image_count=%s error_type=%s error=%s",
+                image_source,
+                len(resolved_images),
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
             raise RuntimeError(
                 "Vision analyzer failed after resolving "
                 f"{len(resolved_images)} image(s) from {image_source}. "
@@ -78,10 +90,11 @@ class VisionAnalysisTool(BaseTool):
         image_count: int,
         user_prompt: str,
     ) -> None:
-        print(
-            "jee_question_vision_analyzer "
-            f"image_source={image_source} image_count={image_count} "
-            f"user_prompt_chars={len(user_prompt)}"
+        logger.info(
+            "jee_question_vision_analyzer image_source=%s image_count=%s user_prompt_chars=%s",
+            image_source,
+            image_count,
+            len(user_prompt),
         )
 
 

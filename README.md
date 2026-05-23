@@ -151,7 +151,7 @@ BEDROCK_GUARDRAIL_VERSION=DRAFT
 ## Terraform Notes
 
 - Terraform provisions an ECR repository, AgentCore execution role, AgentCore runtime, and default runtime endpoint.
-- Terraform manages the AgentCore runtime CloudWatch log group with 14-day retention by default.
+- Terraform manages the AgentCore runtime CloudWatch log group with 3-day retention by default.
 - Terraform grants the AgentCore runtime access to configured S3 image input buckets.
 - Terraform creates a Bedrock Guardrail for the tutor and injects its ID into the AgentCore runtime.
 - Build the container from `src/Dockerfile`.
@@ -245,10 +245,51 @@ Leave `bedrock_guardrail_id` empty to use the Terraform-created guardrail. Set i
 Terraform also exposes AgentCore log retention:
 
 ```hcl
-cloudwatch_log_retention_days = 14
+cloudwatch_log_retention_days = 3
 ```
 
 For GitHub Actions deployments, override it with the repository variable `CLOUDWATCH_LOG_RETENTION_DAYS` if needed. If the AgentCore log group already exists before Terraform manages it, import it once with the `agentcore_log_group_name` output value.
+
+### New Relic Log Forwarding
+
+AgentCore writes runtime logs to CloudWatch Logs. Terraform can deploy New Relic's CloudWatch log ingestion Lambda and subscribe the AgentCore runtime log group to it.
+
+For GitHub Actions deployments, add this repository secret:
+
+```text
+NEW_RELIC_LICENSE_KEY=your-new-relic-ingest-license-key
+```
+
+When that secret is present, CD sets `newrelic_log_forwarding_enabled=true` and Terraform creates:
+
+- A New Relic log ingestion Lambda from `newrelic/aws-log-ingestion`
+- A CloudWatch Logs subscription filter from the AgentCore log group to that Lambda
+
+Optional repository variables:
+
+```text
+NEW_RELIC_LOG_FORWARDER_NAME=jee-tutor-newrelic-log-ingestion
+NEW_RELIC_LOG_FILTER_PATTERN=
+NEW_RELIC_LOG_TAGS=["environment:prod","team:learning"]
+```
+
+The app log lines include `service=jee-tutor-agent` by default, and the forwarder adds New Relic tags including `service:<project_name>`, `source:bedrock-agentcore`, and the CloudWatch log group name.
+
+The runtime also emits one invocation metric log per request:
+
+```text
+agent_invocation metric_name=agent.invocations metric_value=1 metric_unit=Count
+```
+
+In New Relic Logs, this can be queried directly:
+
+```sql
+SELECT count(*) FROM Log
+WHERE service = 'jee-tutor-agent'
+  AND metric_name = 'agent.invocations'
+```
+
+Or create a New Relic log-based metric named `agent.invocations` using `metric_value` as the count value.
 
 Terraform also exposes S3 image input permissions:
 

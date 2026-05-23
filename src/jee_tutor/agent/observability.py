@@ -1,5 +1,6 @@
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
+import logging
 import os
 from typing import Any, Iterator
 
@@ -11,6 +12,9 @@ try:
 except ImportError:  # pragma: no cover - keeps local imports resilient before install
     get_client = None
     propagate_attributes = None
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -111,7 +115,14 @@ class LangfuseObservability:
         try:
             prompt = get_client().get_prompt(name, type="text", fallback=fallback)
             return prompt.compile(), prompt
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "langfuse_prompt_fetch_failed prompt_name=%s error_type=%s error=%s",
+                name,
+                exc.__class__.__name__,
+                exc or "[no message]",
+                exc_info=True,
+            )
             return fallback, None
 
     def score_current_trace(self, scores: list[EvaluationScore]) -> None:

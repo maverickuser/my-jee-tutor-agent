@@ -25,8 +25,8 @@ class FakeObservation:
     def __exit__(self, exc_type, exc, traceback):
         return False
 
-    def update(self, output):
-        self.updated_outputs.append(output)
+    def update(self, **kwargs):
+        self.updated_outputs.append(kwargs)
 
 
 class FakeLangfuseClient:

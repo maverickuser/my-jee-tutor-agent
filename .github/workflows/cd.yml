@@ -74,7 +74,12 @@ jobs:
           TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
-          TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '14' }}
+          TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
+          TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
+          TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}
+          TF_VAR_newrelic_log_filter_pattern: ${{ vars.NEW_RELIC_LOG_FILTER_PATTERN || '' }}
+          TF_VAR_newrelic_log_tags: ${{ vars.NEW_RELIC_LOG_TAGS || '[]' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
         run: terraform apply -target=aws_ecr_repository.agentcore_repo -auto-approve
@@ -211,7 +216,12 @@ jobs:
           TF_VAR_bedrock_guardrail_enabled: ${{ env.BEDROCK_GUARDRAIL_ENABLED }}
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
-          TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '14' }}
+          TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
+          TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
+          TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}
+          TF_VAR_newrelic_log_filter_pattern: ${{ vars.NEW_RELIC_LOG_FILTER_PATTERN || '' }}
+          TF_VAR_newrelic_log_tags: ${{ vars.NEW_RELIC_LOG_TAGS || '[]' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
         run: terraform apply -auto-approve

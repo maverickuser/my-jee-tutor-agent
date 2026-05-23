@@ -183,19 +183,26 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         run_tutor_workflow.assert_not_called()
 
     def test_non_image_media_payload_is_rejected(self):
-        response = handle_tutor_invocation(
-            {
-                "media": {
-                    "type": "text",
-                    "format": "plain",
-                    "data": "ZmFrZQ==",
-                },
-                "prompt": "student context",
-            }
-        )
+        with self.assertLogs("jee_tutor.invocation.service", level="INFO") as logs:
+            response = handle_tutor_invocation(
+                {
+                    "media": {
+                        "type": "text",
+                        "format": "plain",
+                        "data": "ZmFrZQ==",
+                    },
+                    "prompt": "student context",
+                }
+            )
 
         self.assertEqual(response["error"], "Invalid tutor invocation payload.")
         self.assertTrue(response["details"])
+        self.assertTrue(
+            any(
+                "agent_invocation metric_name=agent.invocations metric_value=1" in line
+                for line in logs.output
+            )
+        )
 
     def test_output_guardrail_intervention_replaces_analysis(self):
         with (
@@ -334,24 +341,26 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(artifact_writer.calls, [])
 
     def test_workflow_failure_returns_descriptive_error_response(self):
-        with (
-            patch(
-                "jee_tutor.invocation.service.RuntimeGuardrail",
-                return_value=FakeRuntimeGuardrail(),
-            ),
-            patch(
-                "jee_tutor.invocation.service.run_tutor_workflow",
-                side_effect=RuntimeError("Vision analyzer failed after resolving 1 image(s)."),
-            ),
-        ):
-            response = handle_tutor_invocation(
-                {
-                    "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                    "question_context": "diagnose failed attempt",
-                }
-            )
+        with self.assertLogs("jee_tutor.invocation.service", level="ERROR") as logs:
+            with (
+                patch(
+                    "jee_tutor.invocation.service.RuntimeGuardrail",
+                    return_value=FakeRuntimeGuardrail(),
+                ),
+                patch(
+                    "jee_tutor.invocation.service.run_tutor_workflow",
+                    side_effect=RuntimeError("Vision analyzer failed after resolving 1 image(s)."),
+                ),
+            ):
+                response = handle_tutor_invocation(
+                    {
+                        "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                        "question_context": "diagnose failed attempt",
+                    }
+                )
 
         self.assertEqual(response["error"], "Tutor workflow failed while analyzing images.")
+        self.assertTrue(any("tutor_workflow_error image_count=1" in line for line in logs.output))
         self.assertIn("Resolved image count: 1.", response["details"])
         self.assertIn("Question context provided: True.", response["details"])
         self.assertIn("Exception type: RuntimeError.", response["details"])

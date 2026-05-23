@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import logging
 from typing import Any
 
 from pydantic import ValidationError
@@ -16,6 +17,7 @@ from jee_tutor.invocation.models import (
 
 
 TutorWorkflow = Callable[..., str]
+logger = logging.getLogger(__name__)
 
 
 class TutorInvocationService:
@@ -35,9 +37,16 @@ class TutorInvocationService:
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        logger.info(
+            "agent_invocation metric_name=agent.invocations metric_value=1 metric_unit=Count"
+        )
         try:
             invocation = TutorInvocationPayload.model_validate(payload)
         except ValidationError as exc:
+            logger.warning(
+                "invalid_tutor_invocation_payload validation_errors=%s",
+                [error["msg"] for error in exc.errors()],
+            )
             return self._error_response(
                 "Invalid tutor invocation payload.",
                 [error["msg"] for error in exc.errors()],
@@ -53,6 +62,7 @@ class TutorInvocationService:
                 media=invocation.media,
             )
         except ValueError as exc:
+            logger.warning("invalid_tutor_invocation_payload error=%s", exc)
             return self._error_response("Invalid tutor invocation payload.", [str(exc)])
 
         return self._run_guarded_workflow(invocation, image_data_uris)
@@ -74,6 +84,10 @@ class TutorInvocationService:
                 image_data_uris=image_data_uris,
             )
             if not input_guardrail.allowed:
+                logger.warning(
+                    "tutor_invocation_blocked_by_input_guardrail reason=%s",
+                    input_guardrail.action_reason,
+                )
                 response = self._error_response(
                     input_guardrail.message or "Tutor invocation blocked by runtime guardrail.",
                     [input_guardrail.action_reason] if input_guardrail.action_reason else [],
@@ -91,16 +105,22 @@ class TutorInvocationService:
                     "Tutor workflow failed while analyzing images.",
                     self._workflow_error_details(exc, image_data_uris, invocation),
                 )
-                print(
+                logger.exception(
                     "tutor_workflow_error "
-                    f"image_count={len(image_data_uris)} "
-                    f"error_type={exc.__class__.__name__} error={exc or '[no message]'}"
+                    "image_count=%s error_type=%s error=%s",
+                    len(image_data_uris),
+                    exc.__class__.__name__,
+                    exc or "[no message]",
                 )
                 self._finish_invocation(span, response, invocation)
                 return response
 
             output_guardrail = self.guardrail.check_output(analysis)
             if not output_guardrail.allowed:
+                logger.warning(
+                    "tutor_invocation_output_blocked_by_guardrail reason=%s",
+                    output_guardrail.action_reason,
+                )
                 analysis = (
                     output_guardrail.message
                     or "I cannot return that response because it was blocked by a runtime guardrail."
@@ -147,7 +167,11 @@ class TutorInvocationService:
                     f"Failed to write analysis artifacts: {exc.__class__.__name__}: "
                     f"{exc or '[no message]'}"
                 )
-                print(f"analysis_artifact_error error_type={exc.__class__.__name__} error={exc}")
+                logger.exception(
+                    "analysis_artifact_error error_type=%s error=%s",
+                    exc.__class__.__name__,
+                    exc or "[no message]",
+                )
 
         return TutorInvocationResponse(
             analysis=analysis,

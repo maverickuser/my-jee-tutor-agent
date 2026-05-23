@@ -101,7 +101,50 @@ variable "bedrock_guardrail_include_image" {
 variable "cloudwatch_log_retention_days" {
   description = "Number of days to retain AgentCore runtime CloudWatch logs."
   type        = number
-  default     = 14
+  default     = 3
+}
+
+variable "newrelic_log_forwarding_enabled" {
+  description = "Deploy the New Relic CloudWatch log ingestion Lambda and subscribe the AgentCore log group."
+  type        = bool
+  default     = false
+}
+
+variable "newrelic_license_key" {
+  description = "New Relic ingest license key used by the CloudWatch log ingestion Lambda."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "newrelic_log_forwarder_name" {
+  description = "Name for the New Relic CloudWatch log ingestion Lambda."
+  type        = string
+  default     = "jee-tutor-newrelic-log-ingestion"
+}
+
+variable "newrelic_log_forwarder_memory_size" {
+  description = "Memory size for the New Relic CloudWatch log ingestion Lambda."
+  type        = number
+  default     = 128
+}
+
+variable "newrelic_log_forwarder_timeout" {
+  description = "Timeout in seconds for the New Relic CloudWatch log ingestion Lambda."
+  type        = number
+  default     = 30
+}
+
+variable "newrelic_log_filter_pattern" {
+  description = "CloudWatch Logs subscription filter pattern for logs forwarded to New Relic. Empty forwards all logs."
+  type        = string
+  default     = ""
+}
+
+variable "newrelic_log_tags" {
+  description = "Additional New Relic log tags in key:value format."
+  type        = list(string)
+  default     = []
 }
 
 variable "s3_image_input_bucket_arns" {

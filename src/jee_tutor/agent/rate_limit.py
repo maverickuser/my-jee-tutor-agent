@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
@@ -8,6 +9,7 @@ from typing import Any, TypeVar
 
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_REQUESTS_PER_MINUTE = 100
 
@@ -42,7 +44,17 @@ class GeminiRateLimiter:
             except Exception as exc:
                 if attempt == self.max_attempts or not is_retryable_gemini_error(exc):
                     raise
-                self.sleep(self._backoff_seconds(attempt))
+                backoff_seconds = self._backoff_seconds(attempt)
+                logger.warning(
+                    "gemini_retryable_error attempt=%s max_attempts=%s backoff_seconds=%.2f "
+                    "error_type=%s error=%s",
+                    attempt,
+                    self.max_attempts,
+                    backoff_seconds,
+                    exc.__class__.__name__,
+                    exc or "[no message]",
+                )
+                self.sleep(backoff_seconds)
 
         raise RuntimeError("Gemini rate limiter exhausted without returning or raising.")
 
