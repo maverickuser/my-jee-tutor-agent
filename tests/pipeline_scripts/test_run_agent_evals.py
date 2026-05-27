@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 from scripts.run_agent_evals import (
     RetryableEvalError,
+    _image_input_payload,
     _retryable_response_error_reason,
     _run_case,
     _run_case_with_retries,
@@ -156,6 +157,37 @@ class RunAgentEvalsTest(unittest.TestCase):
         }
 
         self.assertIsNone(_retryable_response_error_reason(response))
+
+    def test_image_s3_prefix_overrides_local_image_folder(self):
+        self.assertEqual(
+            _image_input_payload(
+                image_folder="tests/fixtures/image_folder",
+                image_s3_prefix="s3://state-bucket/cd-evals-images/",
+            ),
+            {"image_s3_prefix": "s3://state-bucket/cd-evals-images/"},
+        )
+
+    def test_run_case_sends_s3_prefix_payload(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "question_context": "diagnose wrong answers",
+            "required_columns": ["Question Number"],
+            "min_required_columns": 1,
+            "min_data_rows": 1,
+        }
+        response = {
+            "analysis": "| Question Number |\n| --- |\n| Q1 |",
+        }
+
+        with patch("jee_tutor.handler.handle_tutor_invocation", return_value=response) as handler:
+            result = _run_case(case, {"image_s3_prefix": "s3://state-bucket/cd-evals-images/"})
+
+        self.assertTrue(result["passed"])
+        handler.assert_called_once()
+        payload = handler.call_args.args[0]
+        self.assertEqual(payload["image_s3_prefix"], "s3://state-bucket/cd-evals-images/")
+        self.assertNotIn("image_folder", payload)
 
 
 if __name__ == "__main__":

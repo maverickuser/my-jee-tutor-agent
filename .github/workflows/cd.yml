@@ -16,6 +16,7 @@ env:
   GARAK_PROBES: ${{ vars.GARAK_PROBES || 'dan.Dan_11_0,promptinject.HijackHateHumansMini' }}
   GARAK_HIT_THRESHOLD: ${{ vars.GARAK_HIT_THRESHOLD || '0' }}
   CD_EVAL_MIN_SCORE: ${{ vars.CD_EVAL_MIN_SCORE || '0.75' }}
+  CD_EVAL_IMAGE_S3_PREFIX: ${{ vars.CD_EVAL_IMAGE_S3_PREFIX || '' }}
   BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}
   BEDROCK_GUARDRAIL_ID: ${{ vars.BEDROCK_GUARDRAIL_ID || '' }}
   BEDROCK_GUARDRAIL_VERSION: ${{ vars.BEDROCK_GUARDRAIL_VERSION || 'DRAFT' }}
@@ -284,7 +285,7 @@ jobs:
         run: |
           poetry run python scripts/run_agent_evals.py \
             --cases evals/jee_tutor_eval_cases.json \
-            --image-folder tests/fixtures/image_folder \
+            --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
             --output eval_runs/agent-evals.json \
             --min-score "$CD_EVAL_MIN_SCORE"
 
@@ -352,7 +353,7 @@ jobs:
           BEDROCK_GUARDRAIL_INCLUDE_IMAGE: "true"
         run: |
           poetry run python scripts/garak_agent_adapter.py \
-            --image-folder tests/fixtures/image_folder \
+            --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
             > garak_adapter.log 2>&1 &
           echo "$!" > garak_adapter.pid
           for attempt in {1..30}; do

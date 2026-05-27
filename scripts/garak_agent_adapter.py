@@ -11,7 +11,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 
 class GarakAgentHandler(BaseHTTPRequestHandler):
-    image_folder: str
+    image_input: dict[str, str]
 
     def do_GET(self) -> None:
         if self.path != "/health":
@@ -31,7 +31,7 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
             prompt = str(request.get("text", ""))
             agent_response = handle_tutor_invocation(
                 {
-                    "image_folder": self.image_folder,
+                    **self.image_input,
                     "question_context": prompt,
                     "metadata": {"source": "garak"},
                     "tags": ["garak", "cd-security-scan"],
@@ -80,10 +80,18 @@ def main() -> None:
         default="tests/fixtures/image_folder",
         help="Folder of sample attempt images supplied with each garak prompt.",
     )
+    parser.add_argument(
+        "--image-s3-prefix",
+        default=None,
+        help="S3 prefix containing live eval attempt images. Overrides --image-folder.",
+    )
     args = parser.parse_args()
 
-    image_folder = Path(args.image_folder).resolve()
-    GarakAgentHandler.image_folder = str(image_folder)
+    if args.image_s3_prefix:
+        GarakAgentHandler.image_input = {"image_s3_prefix": args.image_s3_prefix}
+    else:
+        image_folder = Path(args.image_folder).resolve()
+        GarakAgentHandler.image_input = {"image_folder": str(image_folder)}
     server = ThreadingHTTPServer((args.host, args.port), GarakAgentHandler)
     server.serve_forever()
 

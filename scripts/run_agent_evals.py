@@ -21,6 +21,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run CD evals for the JEE tutor agent.")
     parser.add_argument("--cases", default="evals/jee_tutor_eval_cases.json")
     parser.add_argument("--image-folder", default="tests/fixtures/image_folder")
+    parser.add_argument(
+        "--image-s3-prefix",
+        default=None,
+        help="S3 prefix containing live eval attempt images. Overrides --image-folder.",
+    )
     parser.add_argument("--output", default="eval_runs/agent-evals.json")
     parser.add_argument("--min-score", type=float, default=0.75)
     parser.add_argument("--case-attempts", type=int, default=3)
@@ -28,11 +33,14 @@ def main() -> None:
     args = parser.parse_args()
 
     cases = _load_json(Path(args.cases))
-    image_folder = str(Path(args.image_folder).resolve())
+    image_input = _image_input_payload(
+        image_folder=args.image_folder,
+        image_s3_prefix=args.image_s3_prefix,
+    )
     results = [
         _run_case_with_retries(
             case,
-            image_folder,
+            image_input,
             max_attempts=args.case_attempts,
             backoff_seconds=args.case_backoff_seconds,
         )
@@ -72,7 +80,7 @@ def _load_json(path: Path) -> list[dict[str, Any]]:
 
 def _run_case_with_retries(
     case: dict[str, Any],
-    image_folder: str,
+    image_input: dict[str, str],
     *,
     max_attempts: int,
     backoff_seconds: float,
@@ -80,7 +88,7 @@ def _run_case_with_retries(
 ) -> dict[str, Any]:
     for attempt in range(1, max_attempts + 1):
         try:
-            return _run_case(case, image_folder)
+            return _run_case(case, image_input)
         except Exception as exc:
             if attempt < max_attempts and _is_retryable_eval_error(exc):
                 wait_seconds = backoff_seconds * attempt
@@ -95,11 +103,11 @@ def _run_case_with_retries(
     raise RuntimeError("Eval retry loop exhausted without returning.")
 
 
-def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
+def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[str, Any]:
     from jee_tutor.handler import handle_tutor_invocation
 
     payload = {
-        "image_folder": image_folder,
+        **_normalized_image_input(image_input),
         "question_context": case["question_context"],
         "metadata": {"source": "cd-evals", "eval_case_id": case["id"]},
         "tags": ["cd-evals", case["id"]],
@@ -123,6 +131,22 @@ def _run_case(case: dict[str, Any], image_folder: str) -> dict[str, Any]:
         "reason": f"Unsupported eval case type: {case['type']}",
         "response": _redacted_response(response),
     }
+
+
+def _image_input_payload(
+    *,
+    image_folder: str,
+    image_s3_prefix: str | None,
+) -> dict[str, str]:
+    if image_s3_prefix:
+        return {"image_s3_prefix": image_s3_prefix}
+    return {"image_folder": str(Path(image_folder).resolve())}
+
+
+def _normalized_image_input(image_input: dict[str, str] | str) -> dict[str, str]:
+    if isinstance(image_input, str):
+        return {"image_folder": image_input}
+    return image_input
 
 
 def _score_analysis_case(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:

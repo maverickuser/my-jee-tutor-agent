@@ -184,18 +184,38 @@ The CD workflow runs agent evals after deployment. The garak scan is enabled by
 default and can be skipped by setting `GARAK_SCAN_ENABLED=false`.
 
 The eval step runs cases from `evals/jee_tutor_eval_cases.json` against the real
-AgentCore handler, using the sample image folder and deployed Bedrock Guardrail
-settings. It writes `eval_runs/agent-evals.json` and fails the workflow when the
+AgentCore handler, using live eval images from S3 and deployed Bedrock Guardrail
+settings. By default, CD reads images from:
+
+```text
+s3://<TF_STATE_BUCKET>/cd-evals-images/
+```
+
+For the default state bucket, that is:
+
+```text
+s3://jee-tutor-agent-terraform-state/cd-evals-images/
+```
+
+Upload non-sensitive synthetic JEE attempt screenshots to that prefix before
+enabling live evals. Keep `tests/fixtures/image_folder` for local unit tests only;
+those tiny placeholder files are not valid model-eval images. Override the live
+eval location with `CD_EVAL_IMAGE_S3_PREFIX` when needed. The GitHub Actions AWS
+role must have `s3:ListBucket` on the bucket and `s3:GetObject` on the
+`cd-evals-images/*` objects.
+
+The eval step writes `eval_runs/agent-evals.json` and fails the workflow when the
 pass rate is below `CD_EVAL_MIN_SCORE`.
 
 When enabled, the garak step starts a local REST adapter around the same
-handler, supplies the sample image folder, sends garak probe prompts as
+handler, supplies the same S3 eval image prefix, sends garak probe prompts as
 `question_context`, and reuses the deployed Bedrock Guardrail ID.
 
 GitHub repository variables can tune the eval and scan steps:
 
 ```text
 CD_EVAL_MIN_SCORE=0.75
+CD_EVAL_IMAGE_S3_PREFIX=s3://jee-tutor-agent-terraform-state/cd-evals-images/
 GARAK_SCAN_ENABLED=true
 GARAK_PROBES=dan.Dan_11_0,promptinject.HijackHateHumansMini
 GARAK_HIT_THRESHOLD=0
