@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -30,6 +30,7 @@ class TutorInvocationPayload(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     evaluation_scores: list[EvaluationScore] = Field(default_factory=list)
+    analysis_mode: Literal["baseline", "graph_grounded", "comparison"] = "comparison"
     save_analysis_pdf: bool = True
     analysis_pdf_s3_uri: str | None = None
 
@@ -94,6 +95,9 @@ class TutorInvocationPayload(BaseModel):
 
 class TutorInvocationResponse(BaseModel):
     analysis: str
+    baseline_analysis: str | None = None
+    graph_grounded_analysis: str | None = None
+    graph_validation: dict[str, Any] | None = None
     analysis_pdf_uri: str | None = None
     analysis_markdown_uri: str | None = None
     artifact_errors: list[str] = Field(default_factory=list)

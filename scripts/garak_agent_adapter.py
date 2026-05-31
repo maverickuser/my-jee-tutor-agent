@@ -33,6 +33,8 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
                 {
                     **self.image_input,
                     "question_context": prompt,
+                    "analysis_mode": "baseline",
+                    "save_analysis_pdf": False,
                     "metadata": {"source": "garak"},
                     "tags": ["garak", "cd-security-scan"],
                 }

@@ -20,6 +20,10 @@ env:
   BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}
   BEDROCK_GUARDRAIL_ID: ${{ vars.BEDROCK_GUARDRAIL_ID || '' }}
   BEDROCK_GUARDRAIL_VERSION: ${{ vars.BEDROCK_GUARDRAIL_VERSION || 'DRAFT' }}
+  CONCEPT_GRAPH_ENABLED: ${{ vars.CONCEPT_GRAPH_ENABLED || 'false' }}
+  CONCEPT_GRAPH_TABLE_NAME: ${{ vars.CONCEPT_GRAPH_TABLE_NAME || '' }}
+  CONCEPT_GRAPH_REGION: ${{ vars.CONCEPT_GRAPH_REGION || vars.AWS_REGION || 'ap-south-1' }}
+  CONCEPT_GRAPH_MAX_DEPTH: ${{ vars.CONCEPT_GRAPH_MAX_DEPTH || '2' }}
 
 jobs:
   prepare_infra:
@@ -76,6 +80,10 @@ jobs:
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
           TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
+          TF_VAR_concept_graph_enabled: ${{ env.CONCEPT_GRAPH_ENABLED }}
+          TF_VAR_concept_graph_table_name: ${{ env.CONCEPT_GRAPH_TABLE_NAME }}
+          TF_VAR_concept_graph_region: ${{ env.CONCEPT_GRAPH_REGION }}
+          TF_VAR_concept_graph_max_depth: ${{ env.CONCEPT_GRAPH_MAX_DEPTH }}
           TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
           TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}
@@ -218,6 +226,10 @@ jobs:
           TF_VAR_bedrock_guardrail_id: ${{ env.BEDROCK_GUARDRAIL_ID }}
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
           TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
+          TF_VAR_concept_graph_enabled: ${{ env.CONCEPT_GRAPH_ENABLED }}
+          TF_VAR_concept_graph_table_name: ${{ env.CONCEPT_GRAPH_TABLE_NAME }}
+          TF_VAR_concept_graph_region: ${{ env.CONCEPT_GRAPH_REGION }}
+          TF_VAR_concept_graph_max_depth: ${{ env.CONCEPT_GRAPH_MAX_DEPTH }}
           TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
           TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}

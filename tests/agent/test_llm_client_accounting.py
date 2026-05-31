@@ -107,9 +107,9 @@ class LLMClientAccountingTest(unittest.TestCase):
                 {
                     "output": "analysis",
                     "usage_details": {
-                        "prompt_tokens": 100,
-                        "completion_tokens": 25,
-                        "total_tokens": 125,
+                        "input": 100,
+                        "output": 25,
+                        "total": 125,
                     },
                     "cost_details": {"total": 0.00042},
                 }
@@ -132,9 +132,9 @@ class LLMClientAccountingTest(unittest.TestCase):
             accounting,
             {
                 "usage_details": {
-                    "prompt_tokens": 100,
-                    "completion_tokens": 25,
-                    "total_tokens": 125,
+                    "input": 100,
+                    "output": 25,
+                    "total": 125,
                 }
             },
         )
@@ -185,8 +185,8 @@ class LLMClientAccountingTest(unittest.TestCase):
         self.assertEqual(
             VisionLLMClient._usage_details(response),
             {
-                "prompt_tokens": 10,
-                "total_tokens": 12,
+                "input": 10,
+                "total": 12,
             },
         )
 
@@ -196,9 +196,9 @@ class LLMClientAccountingTest(unittest.TestCase):
         self.assertEqual(
             VisionLLMClient._usage_details(response),
             {
-                "prompt_tokens": 10,
-                "total_tokens": 12,
                 "prompt_tokens_details": {"cached_tokens": 3},
+                "input": 10,
+                "total": 12,
             },
         )
 
@@ -214,6 +214,27 @@ class LLMClientAccountingTest(unittest.TestCase):
         self.assertEqual(
             VisionLLMClient._usage_details({"usage": {"prompt_tokens_details": TokenDetailModel()}}),
             {"prompt_tokens_details": {"cached_tokens": 3}},
+        )
+
+    def test_usage_details_preserve_native_langfuse_fields_and_gemini_extras(self):
+        response = {
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "input": 12,
+                "output_reasoning_tokens": 2,
+            }
+        }
+
+        self.assertEqual(
+            VisionLLMClient._usage_details(response),
+            {
+                "input": 12,
+                "output_reasoning_tokens": 2,
+                "output": 5,
+                "total": 15,
+            },
         )
 
 

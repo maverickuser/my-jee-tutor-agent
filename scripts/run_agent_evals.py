@@ -109,6 +109,8 @@ def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[s
     payload = {
         **_normalized_image_input(image_input),
         "question_context": case["question_context"],
+        "analysis_mode": "baseline",
+        "save_analysis_pdf": False,
         "metadata": {"source": "cd-evals", "eval_case_id": case["id"]},
         "tags": ["cd-evals", case["id"]],
     }

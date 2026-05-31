@@ -8,6 +8,7 @@ from jee_tutor.artifacts.writer import AnalysisArtifactWriter
 from jee_tutor.agent import run_tutor_workflow
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
+from jee_tutor.concepts.grounding import ConceptGraphGrounder
 from jee_tutor.invocation.image_inputs import ImageInputResolver
 from jee_tutor.invocation.models import (
     ErrorResponse,
@@ -29,12 +30,14 @@ class TutorInvocationService:
         observability: LangfuseObservability | None = None,
         workflow: TutorWorkflow | None = None,
         artifact_writer: AnalysisArtifactWriter | None = None,
+        graph_grounder: ConceptGraphGrounder | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
         self.observability = observability or LangfuseObservability()
         self.workflow = workflow or run_tutor_workflow
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
+        self.graph_grounder = graph_grounder or ConceptGraphGrounder()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -96,10 +99,7 @@ class TutorInvocationService:
                 return response
 
             try:
-                analysis = self.workflow(
-                    image_data_uris=image_data_uris,
-                    question_context=invocation.resolved_question_context,
-                )
+                analysis_result = self._run_analysis_mode(invocation, image_data_uris)
             except Exception as exc:
                 response = self._error_response(
                     "Tutor workflow failed while analyzing images.",
@@ -115,6 +115,7 @@ class TutorInvocationService:
                 self._finish_invocation(span, response, invocation)
                 return response
 
+            analysis = str(analysis_result["analysis"])
             output_guardrail = self.guardrail.check_output(analysis)
             if not output_guardrail.allowed:
                 logger.warning(
@@ -126,9 +127,53 @@ class TutorInvocationService:
                     or "I cannot return that response because it was blocked by a runtime guardrail."
                 )
 
-            response = self._success_response(analysis, invocation)
+                analysis_result = {"analysis": analysis}
+
+            response = self._success_response(
+                analysis,
+                invocation,
+                baseline_analysis=analysis_result.get("baseline_analysis"),
+                graph_grounded_analysis=analysis_result.get("graph_grounded_analysis"),
+                graph_validation=analysis_result.get("graph_validation"),
+            )
             self._finish_invocation(span, response, invocation)
             return response
+
+    def _run_analysis_mode(
+        self,
+        invocation: TutorInvocationPayload,
+        image_data_uris: list[str],
+    ) -> dict[str, Any]:
+        if invocation.analysis_mode == "baseline":
+            baseline_analysis = self._run_workflow(invocation, image_data_uris)
+            return {"analysis": baseline_analysis}
+
+        if invocation.analysis_mode == "graph_grounded":
+            baseline_analysis = self._run_workflow(invocation, image_data_uris)
+            grounded = self.graph_grounder.ground(baseline_analysis, subject=invocation.subject)
+            return {
+                "analysis": grounded.analysis,
+                "graph_validation": grounded.validation,
+            }
+
+        baseline_analysis = self._run_workflow(invocation, image_data_uris)
+        grounded = self.graph_grounder.ground(baseline_analysis, subject=invocation.subject)
+        return {
+            "analysis": grounded.analysis,
+            "baseline_analysis": baseline_analysis,
+            "graph_grounded_analysis": grounded.analysis,
+            "graph_validation": grounded.validation,
+        }
+
+    def _run_workflow(
+        self,
+        invocation: TutorInvocationPayload,
+        image_data_uris: list[str],
+    ) -> str:
+        return self.workflow(
+            image_data_uris=image_data_uris,
+            question_context=invocation.resolved_question_context,
+        )
 
     def _finish_invocation(
         self,
@@ -149,6 +194,10 @@ class TutorInvocationService:
         self,
         analysis: str,
         invocation: TutorInvocationPayload,
+        *,
+        baseline_analysis: str | None = None,
+        graph_grounded_analysis: str | None = None,
+        graph_validation: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         analysis_pdf_uri = None
         analysis_markdown_uri = None
@@ -175,6 +224,9 @@ class TutorInvocationService:
 
         return TutorInvocationResponse(
             analysis=analysis,
+            baseline_analysis=baseline_analysis,
+            graph_grounded_analysis=graph_grounded_analysis,
+            graph_validation=graph_validation,
             analysis_pdf_uri=analysis_pdf_uri,
             analysis_markdown_uri=analysis_markdown_uri,
             artifact_errors=artifact_errors,

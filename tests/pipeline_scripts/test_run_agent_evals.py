@@ -187,6 +187,8 @@ class RunAgentEvalsTest(unittest.TestCase):
         handler.assert_called_once()
         payload = handler.call_args.args[0]
         self.assertEqual(payload["image_s3_prefix"], "s3://state-bucket/cd-evals-images/")
+        self.assertEqual(payload["analysis_mode"], "baseline")
+        self.assertFalse(payload["save_analysis_pdf"])
         self.assertNotIn("image_folder", payload)
 
 

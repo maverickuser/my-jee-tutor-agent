@@ -104,6 +104,30 @@ variable "cloudwatch_log_retention_days" {
   default     = 3
 }
 
+variable "concept_graph_enabled" {
+  description = "Enable DynamoDB concept graph lookup at runtime."
+  type        = bool
+  default     = false
+}
+
+variable "concept_graph_table_name" {
+  description = "DynamoDB table name that stores the concept graph item model."
+  type        = string
+  default     = ""
+}
+
+variable "concept_graph_region" {
+  description = "AWS region for the DynamoDB concept graph table. Defaults to aws_region."
+  type        = string
+  default     = ""
+}
+
+variable "concept_graph_max_depth" {
+  description = "Maximum prerequisite depth returned from the concept graph."
+  type        = number
+  default     = 2
+}
+
 variable "newrelic_log_forwarding_enabled" {
   description = "Deploy the New Relic CloudWatch log ingestion Lambda and subscribe the AgentCore log group."
   type        = bool

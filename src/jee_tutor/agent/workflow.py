@@ -3,6 +3,7 @@ from typing import Optional
 from jee_tutor.agent.crew import build_tutor_crew
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.prompt_provider import PromptProvider
+from jee_tutor.concepts.tool import ConceptGraphTool
 
 
 DEFAULT_QUESTION_CONTEXT = "No additional context provided."
@@ -14,9 +15,13 @@ def run_tutor_workflow(
     question_context: Optional[str] = None,
     llm_client: VisionLLMClient | None = None,
     prompt_provider: PromptProvider | None = None,
+    concept_graph_tool: ConceptGraphTool | None = None,
 ) -> str:
     resolved_image_data_uris = image_data_uris or ([image_data_uri] if image_data_uri else [])
-    crew = build_tutor_crew(llm_client, prompt_provider, resolved_image_data_uris)
+    crew_kwargs = {}
+    if concept_graph_tool is not None:
+        crew_kwargs["concept_graph_tool"] = concept_graph_tool
+    crew = build_tutor_crew(llm_client, prompt_provider, resolved_image_data_uris, **crew_kwargs)
     result = crew.kickoff(
         inputs={
             "image_data_uris": "[preloaded in vision tool]",

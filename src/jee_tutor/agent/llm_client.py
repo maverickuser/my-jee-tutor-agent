@@ -141,11 +141,25 @@ class VisionLLMClient:
                 if value is not None and not key.startswith("_")
             }
 
-        return {
+        compacted = {
             key: _compact_token_detail(value)
             for key, value in usage_dict.items()
             if value is not None
         }
+        normalized = {
+            key: value
+            for key, value in compacted.items()
+            if key not in {"prompt_tokens", "completion_tokens", "total_tokens"}
+        }
+        aliases = {
+            "prompt_tokens": "input",
+            "completion_tokens": "output",
+            "total_tokens": "total",
+        }
+        for source_key, target_key in aliases.items():
+            if target_key not in normalized and source_key in compacted:
+                normalized[target_key] = compacted[source_key]
+        return normalized
 
     @staticmethod
     def _cost_details(response: Any, model: str) -> dict[str, float]:
