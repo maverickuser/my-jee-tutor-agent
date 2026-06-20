@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from jee_tutor.agent.guardrails import GuardrailCheck
-from jee_tutor.concepts.grounding import GraphGroundingResult
 from jee_tutor.handler import handle_tutor_invocation
 from jee_tutor.invocation.service import TutorInvocationService
 
@@ -42,17 +41,6 @@ class FakeArtifactWriter:
         return self.result
 
 
-class FakeGraphGrounder:
-    def __init__(self, analysis="graph analysis", validation=None):
-        self.analysis = analysis
-        self.validation = validation or {"rows": [{"matched": True}]}
-        self.calls = []
-
-    def ground(self, analysis, *, subject=None):
-        self.calls.append({"analysis": analysis, "subject": subject})
-        return GraphGroundingResult(analysis=self.analysis, validation=self.validation)
-
-
 class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_successful_invocation_checks_guardrails_around_workflow(self):
         guardrail_calls = []
@@ -75,7 +63,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                         "data": "ZmFrZQ==",
                     },
                     "prompt": "student context",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -120,7 +107,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 "s3_uri": "s3://attempt-bucket/maths/attempt-123/page-1.png",
                 "image_count": 1,
                 "source": "web",
-                "analysis_mode": "baseline",
                 "save_analysis_pdf": False,
             }
         )
@@ -135,59 +121,22 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             media=None,
         )
 
-    def test_default_comparison_returns_baseline_graph_analysis_and_validation(self):
-        graph_grounder = FakeGraphGrounder(
-            analysis="graph grounded analysis",
-            validation={"rows": [{"concept_id": "physics.motion"}]},
-        )
-        service = TutorInvocationService(
-            guardrail=FakeRuntimeGuardrail(),
-            workflow=Mock(return_value="baseline analysis"),
-            artifact_writer=FakeArtifactWriter(),
-            graph_grounder=graph_grounder,
-        )
-
-        response = service.handle(
-            {
-                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "subject": "physics",
-                "save_analysis_pdf": False,
-            }
-        )
-
-        self.assertEqual(response["analysis"], "graph grounded analysis")
-        self.assertEqual(response["baseline_analysis"], "baseline analysis")
-        self.assertEqual(response["graph_grounded_analysis"], "graph grounded analysis")
-        self.assertEqual(response["graph_validation"], {"rows": [{"concept_id": "physics.motion"}]})
-        self.assertEqual(
-            graph_grounder.calls,
-            [{"analysis": "baseline analysis", "subject": "physics"}],
-        )
-        workflow_kwargs = service.workflow.call_args.kwargs
-        self.assertNotIn("concept_graph_tool", workflow_kwargs)
-
-    def test_graph_grounded_mode_returns_graph_output_without_baseline_field(self):
+    def test_default_invocation_returns_workflow_analysis(self):
         workflow = Mock(return_value="baseline analysis")
         service = TutorInvocationService(
             guardrail=FakeRuntimeGuardrail(),
             workflow=workflow,
             artifact_writer=FakeArtifactWriter(),
-            graph_grounder=FakeGraphGrounder(analysis="graph analysis"),
         )
 
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_mode": "graph_grounded",
                 "save_analysis_pdf": False,
             }
         )
 
-        self.assertEqual(response["analysis"], "graph analysis")
-        self.assertNotIn("baseline_analysis", response)
-        self.assertEqual(response["graph_validation"], {"rows": [{"matched": True}]})
-        workflow_kwargs = workflow.call_args.kwargs
-        self.assertNotIn("concept_graph_tool", workflow_kwargs)
+        self.assertEqual(response, {"analysis": "baseline analysis"})
         self.assertEqual(workflow.call_count, 1)
 
     def test_folder_invocation_loads_multiple_images(self):
@@ -209,7 +158,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 {
                     "image_folder": str(image_folder),
                     "question_context": "multi-page attempt",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -240,7 +188,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 {
                     "image_data_uri": "data:image/png;base64,ZmFrZQ==",
                     "question_context": "blocked context",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -263,7 +210,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                         "data": "ZmFrZQ==",
                     },
                     "prompt": "student context",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -295,7 +241,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response = handle_tutor_invocation(
                 {
                     "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -316,7 +261,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_mode": "baseline",
                 "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
@@ -325,6 +269,12 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response,
             {
                 "analysis": "analysis markdown",
+                "message": (
+                    "Your analysis PDF will be available at "
+                    "s3://attempt-bucket/maths/analysis.pdf. "
+                    "Please wait 5 minutes before opening it."
+                ),
+                "pdf_wait_minutes": 5,
                 "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
             },
         )
@@ -347,7 +297,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_mode": "baseline",
                 "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
@@ -378,7 +327,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_mode": "baseline",
                 "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
@@ -409,7 +357,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_mode": "baseline",
                 "save_analysis_pdf": False,
             }
         )
@@ -433,7 +380,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                     {
                         "image_data_uri": "data:image/png;base64,ZmFrZQ==",
                         "question_context": "diagnose failed attempt",
-                        "analysis_mode": "baseline",
                     }
                 )
 
@@ -496,7 +442,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 {
                     "image_s3_prefix": "s3://attempt-bucket/maths/",
                     "question_context": "diagnose maths attempt",
-                    "analysis_mode": "baseline",
                 }
             )
 
@@ -504,6 +449,12 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response,
             {
                 "analysis": "s3 analysis",
+                "message": (
+                    "Your analysis PDF will be available at "
+                    "s3://attempt-bucket/maths/analysis.pdf. "
+                    "Please wait 5 minutes before opening it."
+                ),
+                "pdf_wait_minutes": 5,
                 "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
             },
         )

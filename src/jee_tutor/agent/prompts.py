@@ -217,9 +217,6 @@ Important Guidelines:
 - Use the student's likely mental model to explain the mistake.
 - If multiple misconceptions are possible, report the most probable one.
 - Ensure Question Number is always extracted from the image.
-- If the `concept_graph_validate` tool is available, call it after the initial
-  vision diagnosis for each row to validate Chapter, Topic, Exact Concept Gap,
-  prerequisites, and What You Must Deep-Dive against canonical graph terms.
 
 The analysis should be tailored for IIT JEE preparation and should help the student
 identify exactly what to revise to prevent similar mistakes."""

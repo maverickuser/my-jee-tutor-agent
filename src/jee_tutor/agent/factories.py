@@ -89,11 +89,9 @@ def build_tutor_agent(
     vision_tool: VisionAnalysisTool,
     prompt_provider: PromptProvider | None = None,
     llm: Any | None = None,
-    extra_tools: list[Any] | None = None,
 ) -> Agent:
     prompts = prompt_provider or PromptProvider()
     tools = [vision_tool]
-    tools.extend(extra_tools or [])
     return Agent(
         role=TUTOR_AGENT_ROLE,
         goal=prompts.get(TUTOR_AGENT_GOAL).text,

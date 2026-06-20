@@ -246,18 +246,6 @@ class CrewAIModelConfigTest(unittest.TestCase):
         self.assertFalse(agent_kwargs["allow_delegation"])
         task_class.assert_called_once()
 
-    def test_build_agent_can_include_concept_graph_tool(self):
-        prompt_provider = Mock()
-        prompt_provider.get.side_effect = lambda key: Mock(text=f"text:{key}")
-        vision_tool = object()
-        graph_tool = object()
-
-        with patch("jee_tutor.agent.factories.Agent") as agent_class:
-            build_tutor_agent(vision_tool, prompt_provider, object(), extra_tools=[graph_tool])
-
-        _, agent_kwargs = agent_class.call_args
-        self.assertEqual(agent_kwargs["tools"], [vision_tool, graph_tool])
-
 
 if __name__ == "__main__":
     unittest.main()

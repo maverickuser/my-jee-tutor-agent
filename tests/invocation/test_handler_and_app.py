@@ -1,8 +1,6 @@
 import unittest
 from unittest.mock import patch
 
-from pydantic import ValidationError
-
 from jee_tutor.handler import validate_tutor_invocation
 
 
@@ -11,16 +9,6 @@ class HandlerAndAppTest(unittest.TestCase):
         payload = validate_tutor_invocation({"image_data_uri": "data:image/png;base64,ZmFrZQ=="})
 
         self.assertEqual(payload.image_data_uri, "data:image/png;base64,ZmFrZQ==")
-        self.assertEqual(payload.analysis_mode, "comparison")
-
-    def test_validate_tutor_invocation_rejects_invalid_analysis_mode(self):
-        with self.assertRaises(ValidationError):
-            validate_tutor_invocation(
-                {
-                    "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                    "analysis_mode": "experimental",
-                }
-            )
 
     def test_validate_tutor_invocation_accepts_agentcore_json_contract(self):
         payload = validate_tutor_invocation(

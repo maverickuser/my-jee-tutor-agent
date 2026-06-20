@@ -55,7 +55,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
 
         llm_client_class.assert_called_once_with(prompt_provider=prompts)
         build_tool.assert_called_once_with(llm_client, ["data:image/png;base64,ZmFrZQ=="])
-        build_agent.assert_called_once_with(fake_tool, prompts, extra_tools=None)
+        build_agent.assert_called_once_with(fake_tool, prompts)
         crew_class.assert_called_once()
         _, kwargs = crew_class.call_args
         self.assertEqual(kwargs["agents"], [fake_agent])

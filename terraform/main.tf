@@ -10,7 +10,6 @@ locals {
 
   # Use created guardrail if not overridden via var.bedrock_guardrail_id
   bedrock_guardrail_id = var.bedrock_guardrail_id != "" ? var.bedrock_guardrail_id : try(awscc_bedrock_guardrail.jee_tutor[0].guardrail_id, "")
-  concept_graph_region = var.concept_graph_region != "" ? var.concept_graph_region : var.aws_region
 }
 
 data "aws_caller_identity" "current" {}
@@ -197,20 +196,6 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Action   = ["s3:ListBucket"]
           Resource = var.s3_image_input_bucket_arns
         }
-      ] : [],
-      var.concept_graph_enabled && var.concept_graph_table_name != "" ? [
-        {
-          Sid    = "ConceptGraphDynamoDBRead"
-          Effect = "Allow"
-          Action = [
-            "dynamodb:GetItem",
-            "dynamodb:Query",
-            "dynamodb:BatchGetItem"
-          ]
-          Resource = [
-            "arn:aws:dynamodb:${local.concept_graph_region}:${data.aws_caller_identity.current.account_id}:table/${var.concept_graph_table_name}"
-          ]
-        }
       ] : []
     )
   })
@@ -244,11 +229,6 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     BEDROCK_GUARDRAIL_OUTPUT_SCOPE  = var.bedrock_guardrail_output_scope
     BEDROCK_GUARDRAIL_FAIL_CLOSED   = tostring(var.bedrock_guardrail_fail_closed)
     BEDROCK_GUARDRAIL_INCLUDE_IMAGE = tostring(var.bedrock_guardrail_include_image)
-
-    CONCEPT_GRAPH_ENABLED    = tostring(var.concept_graph_enabled)
-    CONCEPT_GRAPH_TABLE_NAME = var.concept_graph_table_name
-    CONCEPT_GRAPH_REGION     = local.concept_graph_region
-    CONCEPT_GRAPH_MAX_DEPTH  = tostring(var.concept_graph_max_depth)
   }
 
   network_configuration = {
