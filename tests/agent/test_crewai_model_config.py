@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from crewai.utilities.llm_utils import create_llm
+
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.factories import (
     RateLimitedLLM,
@@ -9,6 +11,35 @@ from jee_tutor.agent.factories import (
     build_tutor_agent,
 )
 from jee_tutor.agent.model_config import VisionModelConfig
+
+
+class DummyGeminiLLM:
+    def __init__(self, error: Exception | None = None):
+        self.model = "gemini/gemini-3-flash-preview"
+        self.temperature = 0.2
+        self.stop = []
+        self.error = error
+        self.calls = []
+
+    def call(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        if self.error:
+            raise self.error
+        return "analysis"
+
+    def supports_stop_words(self):
+        return True
+
+    def supports_function_calling(self):
+        return False
+
+    def get_context_window_size(self):
+        return 4096
+
+
+class FakeGeminiError(Exception):
+    status_code = 400
+    litellm_debug_info = "provider=gemini"
 
 
 class CrewAIModelConfigTest(unittest.TestCase):
@@ -59,6 +90,30 @@ class CrewAIModelConfigTest(unittest.TestCase):
         wrapped.name = "wrapped"
 
         self.assertEqual(RateLimitedLLM(wrapped).name, "wrapped")
+
+    def test_rate_limited_llm_is_preserved_by_crewai_create_llm(self):
+        wrapped = RateLimitedLLM(DummyGeminiLLM())
+
+        self.assertIs(create_llm(wrapped), wrapped)
+
+    def test_rate_limited_llm_wraps_failures_with_context(self):
+        wrapped = RateLimitedLLM(DummyGeminiLLM(error=FakeGeminiError("model unavailable")))
+
+        with patch("jee_tutor.agent.factories.gemini_rate_limiter") as limiter:
+            limiter.call.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+
+            with self.assertRaises(RuntimeError) as exc_info:
+                wrapped.call([{"role": "user", "content": "hello"}])
+
+        message = str(exc_info.exception)
+        self.assertIn(
+            "CrewAI agent LLM call failed for model=gemini/gemini-3-flash-preview",
+            message,
+        )
+        self.assertIn("provider=gemini", message)
+        self.assertIn("status_code=400", message)
+        self.assertIn("FakeGeminiError: model unavailable", message)
+        self.assertIn("supports_function_calling=False", message)
 
     def test_build_agent_and_task_use_prompt_provider(self):
         prompt_provider = Mock()

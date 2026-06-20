@@ -32,6 +32,17 @@
       "Resource": "*"
     },
     {
+      "Sid": "TerraformBedrockAgentCoreIdentityServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::*:role/aws-service-role/runtime-identity.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreRuntimeIdentity",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "runtime-identity.bedrock-agentcore.amazonaws.com"
+        }
+      }
+    },
+    {
       "Sid": "TerraformBedrockKmsDiscovery",
       "Effect": "Allow",
       "Action": [

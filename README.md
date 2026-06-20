@@ -169,6 +169,12 @@ Bedrock Guardrails through the AWS Cloud Control API. If Terraform fails with
 deploy role. `bedrock:TagResource` is required because the Terraform guardrail
 resource creates tags.
 
+AgentCore runtimes created on or after October 13, 2025 also require the deploy
+role to allow `iam:CreateServiceLinkedRole` for
+`runtime-identity.bedrock-agentcore.amazonaws.com` so AgentCore can create
+`AWSServiceRoleForBedrockAgentCoreRuntimeIdentity` during runtime deployment.
+That statement is included in [docs/aws-deploy-role-policy.json](docs/aws-deploy-role-policy.json).
+
 The CD workflow prints the effective AWS caller and runs `bedrock
 list-guardrails` before Terraform applies the guardrail. If that preflight fails,
 the assumed deploy role, permission boundary, SCP, or selected region is blocking
