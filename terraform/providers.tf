@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/awscc"
       version = "~> 1.78"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12"
+    }
   }
 
   # Keep the backend partial so CI or operators can inject real values without

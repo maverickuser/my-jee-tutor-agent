@@ -201,6 +201,15 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
   })
 }
 
+resource "time_sleep" "agentcore_iam_propagation" {
+  create_duration = "45s"
+
+  depends_on = [
+    aws_iam_role.agentcore_runtime,
+    aws_iam_role_policy.agentcore_runtime_access,
+  ]
+}
+
 resource "awscc_bedrockagentcore_runtime" "tutor" {
   agent_runtime_name     = local.agentcore_runtime_name
   description            = "IIT JEE tutor agent runtime"
@@ -237,7 +246,7 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
 
   depends_on = [
     aws_cloudwatch_log_group.agentcore_runtime,
-    aws_iam_role_policy.agentcore_runtime_access,
+    time_sleep.agentcore_iam_propagation,
   ]
 }
 
