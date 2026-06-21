@@ -22,8 +22,8 @@ class VisionInput(BaseModel):
     image_data_uris: list[str] = Field(
         default_factory=list,
         description=(
-            "Optional image data URIs. The tool uses preloaded invocation images when this "
-            "field is omitted or CrewAI supplies placeholder filenames."
+            "Optional image data URIs. Leave this as an empty list to analyze the "
+            "preloaded invocation images."
         ),
     )
     user_prompt: str = Field(
@@ -36,7 +36,10 @@ class VisionAnalysisTool(BaseTool):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     name: str = "jee_question_vision_analyzer"
-    description: str = VISION_TOOL_DESCRIPTION
+    description: str = (
+        f"{VISION_TOOL_DESCRIPTION} Call this tool with an empty JSON object, "
+        "for example {}. The uploaded attempt images are already preloaded."
+    )
     args_schema: type[BaseModel] = VisionInput
     llm_client: VisionLLMClient = Field(default_factory=VisionLLMClient, exclude=True)
     preloaded_image_data_uris: list[str] = Field(default_factory=list, exclude=True)

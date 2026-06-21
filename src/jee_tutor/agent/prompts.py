@@ -217,6 +217,8 @@ Important Guidelines:
 - Use the student's likely mental model to explain the mistake.
 - If multiple misconceptions are possible, report the most probable one.
 - Ensure Question Number is always extracted from the image.
+- When calling `jee_question_vision_analyzer`, use an empty JSON object as the
+  tool input: `{}`. The attempt images are already preloaded by the runtime.
 
 The analysis should be tailored for IIT JEE preparation and should help the student
 identify exactly what to revise to prevent similar mistakes."""

@@ -17,6 +17,12 @@ class FakeVisionLLMClient(VisionLLMClient):
 
 
 class VisionToolTest(unittest.TestCase):
+    def test_tool_description_instructs_empty_json_input_for_preloaded_images(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+
+        self.assertIn("for example {}", tool.description)
+        self.assertIn("preloaded", tool.description)
+
     def test_vision_input_defaults_missing_user_prompt(self):
         parsed = VisionInput.model_validate({})
 

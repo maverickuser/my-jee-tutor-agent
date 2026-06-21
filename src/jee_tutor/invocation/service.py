@@ -68,6 +68,16 @@ class TutorInvocationService:
         except ValueError as exc:
             logger.warning("invalid_tutor_invocation_payload error=%s", exc)
             return self._error_response("Invalid tutor invocation payload.", [str(exc)])
+        except Exception as exc:
+            logger.exception(
+                "tutor_image_resolution_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
+            return self._error_response(
+                "Tutor invocation failed while resolving image inputs.",
+                self._image_resolution_error_details(exc, invocation),
+            )
 
         return self._run_guarded_workflow(invocation, image_data_uris)
 
@@ -214,6 +224,29 @@ class TutorInvocationService:
         return [
             f"Resolved image count: {len(image_data_uris)}.",
             f"Question context provided: {bool(invocation.resolved_question_context)}.",
+            f"Exception type: {exc.__class__.__name__}.",
+            f"Exception message: {exc or '[no message]'}",
+        ]
+
+    @staticmethod
+    def _image_resolution_error_details(
+        exc: Exception,
+        invocation: TutorInvocationPayload,
+    ) -> list[str]:
+        image_sources = [
+            source
+            for source, value in (
+                ("image_data_uri", invocation.image_data_uri),
+                ("image_data_uris", invocation.image_data_uris),
+                ("image_folder", invocation.image_folder),
+                ("image_s3_uri", invocation.image_s3_uri),
+                ("image_s3_prefix", invocation.image_s3_prefix),
+                ("media", invocation.media),
+            )
+            if value
+        ]
+        return [
+            f"Image sources provided: {', '.join(image_sources) or 'none'}.",
             f"Exception type: {exc.__class__.__name__}.",
             f"Exception message: {exc or '[no message]'}",
         ]

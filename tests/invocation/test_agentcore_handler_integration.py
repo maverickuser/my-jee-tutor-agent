@@ -393,6 +393,32 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response["details"],
         )
 
+    def test_image_resolution_failure_returns_json_error(self):
+        image_resolver = Mock()
+        image_resolver.resolve.side_effect = RuntimeError("s3 access denied")
+        workflow = Mock()
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=workflow,
+            artifact_writer=FakeArtifactWriter(),
+        )
+
+        with self.assertLogs("jee_tutor.invocation.service", level="ERROR") as logs:
+            response = service.handle(
+                {
+                    "image_s3_prefix": "s3://attempt-bucket/maths/",
+                    "question_context": "diagnose maths attempt",
+                }
+            )
+
+        self.assertEqual(response["error"], "Tutor invocation failed while resolving image inputs.")
+        self.assertIn("Image sources provided: image_s3_prefix.", response["details"])
+        self.assertIn("Exception type: RuntimeError.", response["details"])
+        self.assertIn("Exception message: s3 access denied", response["details"])
+        self.assertTrue(any("tutor_image_resolution_error" in line for line in logs.output))
+        workflow.assert_not_called()
+
     def test_s3_prefix_images_are_preloaded_for_tool_placeholder_calls(self):
         captured_tool = {}
 
