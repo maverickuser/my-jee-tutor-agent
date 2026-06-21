@@ -250,13 +250,6 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
   ]
 }
 
-resource "awscc_bedrockagentcore_runtime_endpoint" "tutor_default" {
-  agent_runtime_id      = awscc_bedrockagentcore_runtime.tutor.agent_runtime_id
-  agent_runtime_version = awscc_bedrockagentcore_runtime.tutor.agent_runtime_version
-  name                  = local.agentcore_endpoint_name
-  description           = "Default endpoint for the IIT JEE tutor agent"
-}
-
 output "ecr_repository_url" {
   value = aws_ecr_repository.agentcore_repo.repository_url
 }
@@ -274,7 +267,7 @@ output "agentcore_runtime_id" {
 }
 
 output "agentcore_endpoint_arn" {
-  value = awscc_bedrockagentcore_runtime_endpoint.tutor_default.agent_runtime_endpoint_arn
+  value = "${awscc_bedrockagentcore_runtime.tutor.agent_runtime_arn}/runtime-endpoint/${local.agentcore_endpoint_name}"
 }
 
 output "newrelic_log_forwarder_arn" {
