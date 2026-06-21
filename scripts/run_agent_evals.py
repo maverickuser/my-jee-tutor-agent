@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 import os
 import sys
@@ -20,7 +21,11 @@ class RetryableEvalError(RuntimeError):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CD evals for the JEE tutor agent.")
     parser.add_argument("--cases", default="evals/jee_tutor_eval_cases.json")
-    parser.add_argument("--image-folder", default="tests/fixtures/image_folder")
+    parser.add_argument(
+        "--image-folder",
+        default="tests/fixtures/image_folder",
+        help="Local fixture folder used to build a single image_data_uri for non-S3 evals.",
+    )
     parser.add_argument(
         "--image-s3-prefix",
         default=None,
@@ -108,10 +113,8 @@ def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[s
 
     payload = {
         **_normalized_image_input(image_input),
-        "question_context": case["question_context"],
+        "task": case["task"],
         "save_analysis_pdf": False,
-        "metadata": {"source": "cd-evals", "eval_case_id": case["id"]},
-        "tags": ["cd-evals", case["id"]],
     }
     response = handle_tutor_invocation(payload)
     retryable_response_error = _retryable_response_error_reason(response)
@@ -141,13 +144,35 @@ def _image_input_payload(
 ) -> dict[str, str]:
     if image_s3_prefix:
         return {"image_s3_prefix": image_s3_prefix}
-    return {"image_folder": str(Path(image_folder).resolve())}
+    return {"image_data_uri": _first_folder_image_data_uri(Path(image_folder).resolve())}
 
 
 def _normalized_image_input(image_input: dict[str, str] | str) -> dict[str, str]:
     if isinstance(image_input, str):
-        return {"image_folder": image_input}
+        return {"image_data_uri": image_input}
     return image_input
+
+
+def _first_folder_image_data_uri(image_folder: Path) -> str:
+    supported_formats = {
+        ".jpg": "jpeg",
+        ".jpeg": "jpeg",
+        ".png": "png",
+        ".webp": "webp",
+    }
+    image_paths = sorted(
+        path
+        for path in image_folder.iterdir()
+        if path.is_file() and path.suffix.lower() in supported_formats
+    )
+    if not image_paths:
+        supported = ", ".join(sorted(supported_formats))
+        raise ValueError(f"Image folder contains no supported images ({supported}): {image_folder}")
+
+    image_path = image_paths[0]
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    image_format = supported_formats[image_path.suffix.lower()]
+    return f"data:image/{image_format};base64,{encoded}"
 
 
 def _score_analysis_case(case: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:

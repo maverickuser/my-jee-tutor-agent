@@ -7,7 +7,7 @@ from litellm import completion, completion_cost
 from jee_tutor.agent.model_config import VisionModelConfig
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.prompt_provider import PromptProvider
-from jee_tutor.agent.prompts import VISION_SYSTEM
+from jee_tutor.agent.prompts import VISION_SYSTEM, VISION_USER
 from jee_tutor.agent.rate_limit import gemini_rate_limiter, is_gemini_model
 
 
@@ -69,18 +69,27 @@ class VisionLLMClient:
         self.message_factory = message_factory or VisionMessageFactory()
         self.completion_fn = completion_fn
 
-    def analyze_vision(self, image_data_uris: list[str] | str, user_prompt: str) -> str:
+    def analyze_vision(
+        self,
+        image_data_uris: list[str] | str,
+        user_prompt: str | None = None,
+    ) -> str:
         model_settings = self.model_config.resolve()
         system_prompt = self.prompt_provider.get(VISION_SYSTEM)
+        if user_prompt is None:
+            user_prompt_text = self.prompt_provider.get(VISION_USER).text
+        else:
+            user_prompt_text = user_prompt
 
         request_kwargs = {
             **model_settings.to_litellm_kwargs(),
             "messages": self.message_factory.build(
                 system_prompt=system_prompt.text,
-                user_prompt=user_prompt,
+                user_prompt=user_prompt_text,
                 image_data_uris=image_data_uris,
             ),
         }
+        request_kwargs = self._stateless_completion_kwargs(request_kwargs)
 
         with self.observability.generation_span(
             model=model_settings.model,
@@ -100,6 +109,24 @@ class VisionLLMClient:
         if is_gemini_model(model):
             return gemini_rate_limiter.call(self.completion_fn, **request_kwargs)
         return self.completion_fn(**request_kwargs)
+
+    @staticmethod
+    def _stateless_completion_kwargs(request_kwargs: dict) -> dict:
+        stateless_kwargs = dict(request_kwargs)
+        stateless_kwargs["caching"] = False
+        stateless_kwargs["cache"] = {"no-cache": True}
+
+        for key in ["cached_content", "cachedContent", "preset_cache_key"]:
+            stateless_kwargs.pop(key, None)
+
+        extra_body = stateless_kwargs.get("extra_body")
+        if isinstance(extra_body, dict):
+            stateless_extra_body = dict(extra_body)
+            for key in ["cached_content", "cachedContent"]:
+                stateless_extra_body.pop(key, None)
+            stateless_kwargs["extra_body"] = stateless_extra_body
+
+        return stateless_kwargs
 
     @staticmethod
     def _redacted_generation_input(request_kwargs: dict) -> dict:

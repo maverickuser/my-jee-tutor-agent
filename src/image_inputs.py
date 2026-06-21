@@ -1,3 +1,3 @@
-from jee_tutor.invocation.image_inputs import ImageInputResolver, ImageMediaPayload
+from jee_tutor.invocation.image_inputs import ImageInputResolver
 
-__all__ = ["ImageInputResolver", "ImageMediaPayload"]
+__all__ = ["ImageInputResolver"]

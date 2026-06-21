@@ -10,14 +10,6 @@ from jee_tutor.agent.prompts import VISION_TOOL_DESCRIPTION
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_VISION_USER_PROMPT = (
-    "Analyze the provided IIT JEE question attempt image(s). For each question that is "
-    "wrong, unattempted, or partially correct, return a markdown table with columns: "
-    "| Question Number | Chapter | Topic | What You Thought | Why That Thought Is Wrong | "
-    "Exact Concept Gap | What You Must Deep-Dive |"
-)
-
-
 class VisionInput(BaseModel):
     image_data_uris: list[str] = Field(
         default_factory=list,
@@ -25,10 +17,6 @@ class VisionInput(BaseModel):
             "Optional image data URIs. Leave this as an empty list to analyze the "
             "preloaded invocation images."
         ),
-    )
-    user_prompt: str = Field(
-        default=DEFAULT_VISION_USER_PROMPT,
-        description="The pedagogical instructions the vision model must follow.",
     )
 
 
@@ -47,21 +35,19 @@ class VisionAnalysisTool(BaseTool):
     def _run(
         self,
         image_data_uris: list[str] | None = None,
-        user_prompt: str = DEFAULT_VISION_USER_PROMPT,
     ) -> str:
         resolved_images, image_source = self._resolve_tool_images(image_data_uris or [])
         self._log_tool_context(
             image_source=image_source,
             image_count=len(resolved_images),
-            user_prompt=user_prompt,
         )
         if not resolved_images:
             raise ValueError(
-                "Vision analyzer received no images. Provide image_data_uri, image_data_uris, "
-                "image_folder, image_s3_uri, image_s3_prefix, or media with type=image."
+                "Vision analyzer received no images. Provide image_data_uri or image_s3_prefix "
+                "in the invocation payload."
             )
         try:
-            return self.llm_client.analyze_vision(resolved_images, user_prompt)
+            return self.llm_client.analyze_vision(resolved_images)
         except Exception as exc:
             logger.exception(
                 "vision_analyzer_failed image_source=%s image_count=%s error_type=%s error=%s",
@@ -77,11 +63,19 @@ class VisionAnalysisTool(BaseTool):
             ) from exc
 
     def _resolve_tool_images(self, image_data_uris: list[str]) -> tuple[list[str], str]:
+        if self.preloaded_image_data_uris:
+            if image_data_uris:
+                logger.warning(
+                    "ignoring_tool_supplied_images_for_preloaded_invocation "
+                    "tool_image_count=%s preloaded_image_count=%s",
+                    len(image_data_uris),
+                    len(self.preloaded_image_data_uris),
+                )
+            return self.preloaded_image_data_uris, "preloaded_invocation_images"
+
         valid_images = [image for image in image_data_uris if image.startswith("data:image/")]
         if valid_images:
             return valid_images, "tool_input_data_uris"
-        if self.preloaded_image_data_uris:
-            return self.preloaded_image_data_uris, "preloaded_invocation_images"
         if image_data_uris:
             return image_data_uris, "tool_input_non_data_uris"
         return [], "empty_tool_input"
@@ -91,13 +85,11 @@ class VisionAnalysisTool(BaseTool):
         *,
         image_source: str,
         image_count: int,
-        user_prompt: str,
     ) -> None:
         logger.info(
-            "jee_question_vision_analyzer image_source=%s image_count=%s user_prompt_chars=%s",
+            "jee_question_vision_analyzer image_source=%s image_count=%s",
             image_source,
             image_count,
-            len(user_prompt),
         )
 
 

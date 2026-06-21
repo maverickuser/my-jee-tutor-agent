@@ -1,6 +1,4 @@
-import base64
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from jee_tutor.agent.guardrails import GuardrailCheck
@@ -57,12 +55,8 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         ):
             response = handle_tutor_invocation(
                 {
-                    "media": {
-                        "type": "image",
-                        "format": "png",
-                        "data": "ZmFrZQ==",
-                    },
-                    "prompt": "student context",
+                    "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                    "task": "student context",
                 }
             )
 
@@ -98,15 +92,8 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "task": "diagnose maths attempt",
-                "attempt_id": "attempt-123",
-                "email": "student@example.com",
-                "user_name": "Student Name",
                 "subject": "maths",
-                "s3_bucket": "attempt-bucket",
-                "s3_prefix": "maths/attempt-123/",
-                "s3_uri": "s3://attempt-bucket/maths/attempt-123/page-1.png",
-                "image_count": 1,
-                "source": "web",
+                "image_s3_prefix": "s3://attempt-bucket/maths/attempt-123/",
                 "save_analysis_pdf": False,
             }
         )
@@ -114,11 +101,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(response, {"analysis": "diagnose maths attempt"})
         image_resolver.resolve.assert_called_once_with(
             image_data_uri=None,
-            image_data_uris=[],
-            image_folder=None,
-            image_s3_uri="s3://attempt-bucket/maths/attempt-123/page-1.png",
             image_s3_prefix="s3://attempt-bucket/maths/attempt-123/",
-            media=None,
         )
 
     def test_default_invocation_returns_workflow_analysis(self):
@@ -139,35 +122,17 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(response, {"analysis": "baseline analysis"})
         self.assertEqual(workflow.call_count, 1)
 
-    def test_folder_invocation_loads_multiple_images(self):
-        image_folder = Path(__file__).parents[1] / "fixtures" / "image_folder"
-        first_image = (image_folder / "attempt-1.png").read_bytes()
-        second_image = (image_folder / "attempt-2.jpg").read_bytes()
+    def test_legacy_folder_invocation_is_rejected(self):
+        response = handle_tutor_invocation(
+            {
+                "image_folder": "/app/input/attempt-images",
+                "task": "multi-page attempt",
+            }
+        )
 
-        with (
-            patch(
-                "jee_tutor.invocation.service.RuntimeGuardrail",
-                return_value=FakeRuntimeGuardrail(),
-            ),
-            patch(
-                "jee_tutor.invocation.service.run_tutor_workflow",
-                return_value="folder analysis",
-            ) as run_tutor_workflow,
-        ):
-            response = handle_tutor_invocation(
-                {
-                    "image_folder": str(image_folder),
-                    "question_context": "multi-page attempt",
-                }
-            )
-
-        self.assertEqual(response, {"analysis": "folder analysis"})
-        run_tutor_workflow.assert_called_once_with(
-            image_data_uris=[
-                "data:image/png;base64," + base64.b64encode(first_image).decode("ascii"),
-                "data:image/jpeg;base64," + base64.b64encode(second_image).decode("ascii"),
-            ],
-            question_context="multi-page attempt",
+        self.assertEqual(response["error"], "Invalid tutor invocation payload.")
+        self.assertTrue(
+            any("Extra inputs are not permitted" in detail for detail in response["details"])
         )
 
     def test_input_guardrail_intervention_skips_workflow(self):
@@ -187,7 +152,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response = handle_tutor_invocation(
                 {
                     "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                    "question_context": "blocked context",
+                    "task": "blocked context",
                 }
             )
 
@@ -200,7 +165,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
         run_tutor_workflow.assert_not_called()
 
-    def test_non_image_media_payload_is_rejected(self):
+    def test_legacy_media_payload_is_rejected(self):
         with self.assertLogs("jee_tutor.invocation.service", level="INFO") as logs:
             response = handle_tutor_invocation(
                 {
@@ -261,7 +226,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
 
@@ -297,7 +261,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
 
@@ -327,7 +290,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         response = service.handle(
             {
                 "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                "analysis_pdf_s3_uri": "s3://attempt-bucket/maths/analysis.pdf",
             }
         )
 
@@ -379,7 +341,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 response = handle_tutor_invocation(
                     {
                         "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-                        "question_context": "diagnose failed attempt",
+                        "task": "diagnose failed attempt",
                     }
                 )
 
@@ -408,7 +370,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response = service.handle(
                 {
                     "image_s3_prefix": "s3://attempt-bucket/maths/",
-                    "question_context": "diagnose maths attempt",
+                    "task": "diagnose maths attempt",
                 }
             )
 
@@ -436,7 +398,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             class FakeCrew:
                 def kickoff(self, inputs):
                     self.inputs = inputs
-                    return tool._run(["input_file_0.png"], "diagnose")
+                    return tool._run(["input_file_0.png"])
 
             return FakeCrew()
 
@@ -467,7 +429,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             response = handle_tutor_invocation(
                 {
                     "image_s3_prefix": "s3://attempt-bucket/maths/",
-                    "question_context": "diagnose maths attempt",
+                    "task": "diagnose maths attempt",
                 }
             )
 

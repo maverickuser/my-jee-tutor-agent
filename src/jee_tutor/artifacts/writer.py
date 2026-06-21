@@ -83,19 +83,11 @@ class AnalysisArtifactWriter:
 
     @classmethod
     def _resolve_pdf_uri(cls, invocation: TutorInvocationPayload) -> str | None:
-        if invocation.analysis_pdf_s3_uri:
-            cls._parse_s3_uri(invocation.analysis_pdf_s3_uri)
-            return invocation.analysis_pdf_s3_uri
         if invocation.image_s3_prefix:
             bucket, prefix = cls._parse_s3_uri(invocation.image_s3_prefix)
             normalized_prefix = prefix.rstrip("/")
             key = f"{normalized_prefix}/analysis.pdf" if normalized_prefix else "analysis.pdf"
             return f"s3://{bucket}/{key}"
-        if invocation.image_s3_uri:
-            bucket, key = cls._parse_s3_uri(invocation.image_s3_uri)
-            parent = PurePosixPath(key).parent
-            output_key = str(parent / "analysis.pdf") if str(parent) != "." else "analysis.pdf"
-            return f"s3://{bucket}/{output_key}"
         return None
 
     @classmethod

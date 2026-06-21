@@ -6,6 +6,7 @@ from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.model_config import VisionModelConfig
 from jee_tutor.agent.prompt_provider import PromptProvider
+from jee_tutor.agent.prompts import VISION_SYSTEM, VISION_USER
 
 
 class RecordingGeneration:
@@ -19,12 +20,14 @@ class RecordingGeneration:
 class RecordingObservability:
     def __init__(self):
         self.generation = RecordingGeneration()
+        self.prompt_names = []
 
     @contextmanager
     def generation_span(self, **kwargs):
         yield self.generation
 
     def get_text_prompt(self, name, fallback):
+        self.prompt_names.append(name)
         return fallback, None
 
 
@@ -62,6 +65,89 @@ class TokenDetailObject:
 
 
 class LLMClientAccountingTest(unittest.TestCase):
+    def test_analyze_vision_resolves_system_and_user_prompts(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "gemini/gemini-3-flash-preview"},
+                "completion": {"temperature": 0.2},
+                "langfuse": {
+                    "prompts": {
+                        VISION_SYSTEM: "system-prompt-name",
+                        VISION_USER: "user-prompt-name",
+                    }
+                },
+            }
+        )
+        observability = RecordingObservability()
+        prompt_provider = PromptProvider(config=config, observability=observability)
+        model_config = VisionModelConfig(
+            environ={"GOOGLE_API_KEY": "google-key"},
+            config=config,
+        )
+        completion = Mock(return_value={"choices": [{"message": {"content": "analysis"}}]})
+        client = VisionLLMClient(
+            model_config=model_config,
+            observability=observability,
+            prompt_provider=prompt_provider,
+            completion_fn=completion,
+        )
+
+        with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
+            limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
+
+            self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
+
+        self.assertEqual(observability.prompt_names, ["system-prompt-name", "user-prompt-name"])
+        messages = completion.call_args.kwargs["messages"]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("Question Number", messages[1]["content"][0]["text"])
+
+    def test_analyze_vision_forces_stateless_completion_kwargs(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "gemini/gemini-3-flash-preview"},
+                "completion": {
+                    "temperature": 0.2,
+                    "caching": True,
+                    "cache": {"ttl": 300},
+                    "cached_content": "cachedContents/stale",
+                    "cachedContent": "cachedContents/staleCamel",
+                    "preset_cache_key": "stale-cache-key",
+                    "extra_body": {
+                        "cached_content": "cachedContents/stale-extra",
+                        "cachedContent": "cachedContents/stale-extra-camel",
+                        "safe": "kept",
+                    },
+                },
+            }
+        )
+        observability = RecordingObservability()
+        prompt_provider = PromptProvider(config=config, observability=observability)
+        model_config = VisionModelConfig(
+            environ={"GOOGLE_API_KEY": "google-key"},
+            config=config,
+        )
+        completion = Mock(return_value={"choices": [{"message": {"content": "analysis"}}]})
+        client = VisionLLMClient(
+            model_config=model_config,
+            observability=observability,
+            prompt_provider=prompt_provider,
+            completion_fn=completion,
+        )
+
+        with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
+            limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
+
+            self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
+
+        kwargs = completion.call_args.kwargs
+        self.assertFalse(kwargs["caching"])
+        self.assertEqual(kwargs["cache"], {"no-cache": True})
+        self.assertNotIn("cached_content", kwargs)
+        self.assertNotIn("cachedContent", kwargs)
+        self.assertNotIn("preset_cache_key", kwargs)
+        self.assertEqual(kwargs["extra_body"], {"safe": "kept"})
+
     def test_updates_langfuse_generation_with_usage_and_cost_details(self):
         config = LLMConfig(
             {

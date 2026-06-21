@@ -6,6 +6,7 @@ VISION_TOOL_DESCRIPTION = (
 TUTOR_AGENT_ROLE = "Expert STEM IIT JEE tutor & mentor"
 
 VISION_SYSTEM = "vision_system"
+VISION_USER = "vision_user"
 TUTOR_AGENT_GOAL = "tutor_agent_goal"
 TUTOR_AGENT_BACKSTORY = "tutor_agent_backstory"
 DIAGNOSIS_TASK_DESCRIPTION = "diagnosis_task_description"
@@ -33,6 +34,11 @@ For each question shown in the image:
 8. Recommend what the student must study in depth to master this type of question.
 9. If the question has multiple correct answers and the student missed one or more valid options, identify the overlooked concept.
 10. If the question was left unattempted, infer the most probable conceptual or strategic reason.
+
+Use only the questions visible in the attached invocation images. Do not use
+sample rows, previous reports, cached context, prior invocations, or any question
+not visible in the current images as evidence. If the question number or question
+text is unreadable, write "Unreadable from image" instead of inventing a value.
 
 ## Diagnostic Philosophy
 
@@ -141,6 +147,18 @@ Convert every mistake into a targeted learning diagnosis so the student knows ex
 - Which concept is missing
 - What to revise next"""
     ),
+    VISION_USER: (
+        "Analyze the provided IIT JEE question attempt image(s). For each question that is "
+        "visible in the attached invocation images only, extract the exact question number "
+        "shown in the screenshot. Do not use sample reports, previous invocations, cached "
+        "question details, or any question that is not visible in the attached images. "
+        "If a question number or statement is unreadable, write 'Unreadable from image' "
+        "instead of inventing it. "
+        "For each question that is "
+        "wrong, unattempted, or partially correct, return a markdown table with columns: "
+        "| Question Number | Chapter | Topic | What You Thought | Why That Thought Is Wrong | "
+        "Exact Concept Gap | What You Must Deep-Dive |"
+    ),
     TUTOR_AGENT_GOAL: (
         """
     Analyse a student's incorrect responses in tests across subjects such as Mathematics,
@@ -217,6 +235,11 @@ Important Guidelines:
 - Use the student's likely mental model to explain the mistake.
 - If multiple misconceptions are possible, report the most probable one.
 - Ensure Question Number is always extracted from the image.
+- Use only the questions visible in the attached invocation images. Do not use
+  sample rows, previous reports, cached context, prior invocations, or any
+  question not visible in the current images as evidence.
+- If the question number or question text is unreadable, write
+  "Unreadable from image" instead of inventing a value.
 - When calling `jee_question_vision_analyzer`, use an empty JSON object as the
   tool input: `{}`. The attempt images are already preloaded by the runtime.
 

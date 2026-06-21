@@ -78,46 +78,6 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
         self.assertEqual(kwargs["ContentType"], "application/pdf")
         self.assertTrue(kwargs["Body"].startswith(b"%PDF"))
 
-    def test_s3_uri_writes_analysis_pdf_next_to_image_file(self):
-        s3_client = Mock()
-        writer = AnalysisArtifactWriter(
-            s3_client=s3_client,
-            pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter()),
-        )
-        invocation = TutorInvocationPayload(
-            image_s3_uri="s3://attempt-bucket/physics/student-1/page-1.png"
-        )
-
-        result = writer.write_for_invocation(
-            analysis_markdown="analysis",
-            invocation=invocation,
-        )
-
-        self.assertEqual(result.pdf_uri, "s3://attempt-bucket/physics/student-1/analysis.pdf")
-        _, kwargs = s3_client.put_object.call_args
-        self.assertEqual(kwargs["Key"], "physics/student-1/analysis.pdf")
-
-    def test_explicit_output_uri_overrides_input_location(self):
-        s3_client = Mock()
-        writer = AnalysisArtifactWriter(
-            s3_client=s3_client,
-            pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter()),
-        )
-        invocation = TutorInvocationPayload(
-            image_s3_prefix="s3://attempt-bucket/maths/",
-            analysis_pdf_s3_uri="s3://report-bucket/reports/student-1.pdf",
-        )
-
-        result = writer.write_for_invocation(
-            analysis_markdown="analysis",
-            invocation=invocation,
-        )
-
-        self.assertEqual(result.pdf_uri, "s3://report-bucket/reports/student-1.pdf")
-        _, kwargs = s3_client.put_object.call_args
-        self.assertEqual(kwargs["Bucket"], "report-bucket")
-        self.assertEqual(kwargs["Key"], "reports/student-1.pdf")
-
     def test_non_s3_invocation_does_not_write_artifacts(self):
         s3_client = Mock()
         writer = AnalysisArtifactWriter(
@@ -182,23 +142,6 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
                 "Failed to write analysis markdown fallback: RuntimeError: s3 denied",
             ],
         )
-
-    def test_invalid_explicit_output_uri_is_rejected(self):
-        writer = AnalysisArtifactWriter(
-            s3_client=Mock(),
-            pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter()),
-        )
-        invocation = TutorInvocationPayload(
-            image_s3_prefix="s3://attempt-bucket/maths/",
-            analysis_pdf_s3_uri="https://example.com/report.pdf",
-        )
-
-        with self.assertRaisesRegex(ValueError, "Invalid S3 URI"):
-            writer.write_for_invocation(
-                analysis_markdown="analysis",
-                invocation=invocation,
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

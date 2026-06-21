@@ -9,7 +9,7 @@ The architecture favors small, replaceable components over a large handler funct
 ## 2. Design Goals
 
 - Keep AgentCore-specific code at the edge.
-- Accept multiple image input shapes without leaking transport details into the tutor workflow.
+- Accept exactly one image input shape per invocation without leaking transport details into the tutor workflow.
 - Apply input and output guardrails consistently around the workflow.
 - Keep prompt resolution, model configuration, and LiteLLM request construction separate.
 - Make core dependencies injectable for tests, evals, and future providers.
@@ -63,17 +63,16 @@ flowchart TD
 
 - `src/invocation_models.py` defines Pydantic request and response contracts.
 - `TutorInvocationPayload` accepts:
-  - `image_folder`
-  - `image_data_uris`
   - `image_data_uri`
-  - structured `media`
+  - `image_s3_prefix`
+- Payload validation rejects extra fields and requires exactly one of `image_data_uri` or `image_s3_prefix`.
 - `safe_trace_input()` removes image payloads before observability receives the request.
 
 ### Image Input Resolution
 
-- `src/image_inputs.py` converts supported input shapes into a list of image data URIs.
-- `ImageInputResolver` handles filesystem folder reads and structured media conversion.
-- Supported folder file types are `.png`, `.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
+- `src/image_inputs.py` converts the accepted image input into a list of image data URIs.
+- `ImageInputResolver` returns direct `image_data_uri` values as-is or loads supported S3 prefix objects.
+- Supported S3 file types are `.png`, `.jpg`, `.jpeg`, and `.webp`; objects are loaded in key order.
 
 ### Tutor Workflow
 
@@ -93,6 +92,7 @@ flowchart TD
 - `VisionAnalysisTool` calls `VisionLLMClient`; it does not know provider details.
 - `src/agents/tutor_agent/llm_client.py` owns LiteLLM calls.
 - `VisionMessageFactory` builds the provider-neutral multimodal message payload.
+- The vision system and user prompts are resolved through `PromptProvider`, with Langfuse names configured in `src/config/llm.toml` and local fallbacks in `prompts.py`.
 - `VisionModelConfig` resolves model, API key, API base, AWS region, and completion options.
 
 ### Guardrails
@@ -106,7 +106,7 @@ flowchart TD
 
 - `src/agents/tutor_agent/observability.py` wraps Langfuse.
 - If Langfuse is not configured, calls become no-ops.
-- Invocation spans, generation spans, managed prompt lookup, and optional evaluation scores live here.
+- Invocation spans, generation spans, managed prompt lookup, and CD summary publishing live here.
 
 ## 6. Patterns Applied
 
@@ -123,59 +123,41 @@ flowchart TD
 1. AgentCore calls `agentcore_app.py`.
 2. `handle_tutor_invocation(...)` delegates to `TutorInvocationService`.
 3. Pydantic validates the JSON payload.
-4. `ImageInputResolver` normalizes folder/media/data URI inputs into a list of image data URIs.
+4. `ImageInputResolver` normalizes `image_s3_prefix` or `image_data_uri` into a list of image data URIs.
 5. Langfuse invocation span starts with image fields excluded.
 6. Input guardrail checks text context and supported images.
 7. CrewAI runs the tutor workflow.
 8. `VisionLLMClient` builds a multimodal LiteLLM request and returns analysis text.
 9. Output guardrail checks the analysis.
-10. Langfuse scores are recorded if provided.
+10. Langfuse traces are flushed.
 11. The service returns either `{"analysis": "..."}` or `{"error": "...", "details": [...]}`.
 
 ## 8. Payload Contract
 
-Preferred folder input:
+S3 prefix input:
 
 ```json
 {
-  "image_folder": "/app/input/attempt-images",
-  "question_context": "Optional student/question context"
+  "task": "Diagnose this JEE attempt.",
+  "subject": "maths",
+  "image_s3_prefix": "s3://attempt-bucket/maths/student-1/",
+  "save_analysis_pdf": true
 }
 ```
 
-Multiple data URIs:
+Single image data URI input:
 
 ```json
 {
-  "image_data_uris": [
-    "data:image/png;base64,...",
-    "data:image/jpeg;base64,..."
-  ],
-  "question_context": "Optional student/question context"
-}
-```
-
-Single-image compatibility:
-
-```json
-{
+  "task": "Diagnose this JEE attempt.",
+  "subject": "maths",
   "image_data_uri": "data:image/png;base64,...",
-  "question_context": "Optional student/question context"
+  "save_analysis_pdf": false
 }
 ```
 
-Structured media compatibility:
-
-```json
-{
-  "media": {
-    "type": "image",
-    "format": "png",
-    "data": "base64..."
-  },
-  "prompt": "Optional student/question context"
-}
-```
+Exactly one of `image_s3_prefix` or `image_data_uri` is mandatory. Extra payload
+fields are rejected.
 
 ## 9. Configuration
 
@@ -227,7 +209,7 @@ Tunable repository variables:
 ## 11. Testing Strategy
 
 - Unit tests cover runtime guardrail behavior, PII response interpretation, and invocation orchestration.
-- Fixture images in `tests/fixtures/image_folder` verify folder-based multi-image input.
+- Fixture images in `tests/fixtures/image_folder` are converted to `image_data_uri` for local eval tests.
 - Constructor injection keeps tests from invoking CrewAI or external LLMs when orchestration behavior is under test.
 - CD evals exercise live model and guardrail behavior after deployment.
 - Garak scans probe jailbreak and prompt-injection classes through the same handler path.
@@ -242,7 +224,7 @@ Tunable repository variables:
 
 ## 13. Extension Guidelines
 
-When adding a new input shape, extend `ImageInputResolver` and keep the workflow input as `list[str]`.
+When adding a new input shape, update `TutorInvocationPayload`, `ImageInputResolver`, scripts, and docs together. Keep the workflow input as `list[str]`.
 
 When changing provider behavior, prefer `VisionModelConfig` or `VisionMessageFactory` over editing orchestration code.
 
@@ -254,7 +236,7 @@ When adding observability fields, make sure image payloads and secrets remain ex
 
 ## 14. Known Tradeoffs
 
-- Folder input assumes the folder is available inside the runtime container.
+- The runtime accepts only `image_s3_prefix` or `image_data_uri`; folder inputs must be converted before invocation.
 - Bedrock Guardrails currently accepts png/jpeg image content; unsupported formats are ignored for image guardrail checks even if the LLM can analyze them.
 - The eval harness uses deterministic structural checks, not a judge model, to keep CD cost and complexity low.
 - The runtime remains synchronous because AgentCore invokes a single request/response contract.

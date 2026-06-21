@@ -139,7 +139,7 @@ class RunAgentEvalsTest(unittest.TestCase):
         case = {
             "id": "coaching_structure",
             "type": "markdown_table",
-            "question_context": "diagnose wrong answers",
+            "task": "diagnose wrong answers",
         }
         response = {
             "error": "Tutor workflow failed while analyzing images.",
@@ -158,7 +158,7 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         self.assertIsNone(_retryable_response_error_reason(response))
 
-    def test_image_s3_prefix_overrides_local_image_folder(self):
+    def test_image_s3_prefix_overrides_local_fixture_data_uri(self):
         self.assertEqual(
             _image_input_payload(
                 image_folder="tests/fixtures/image_folder",
@@ -171,7 +171,7 @@ class RunAgentEvalsTest(unittest.TestCase):
         case = {
             "id": "coaching_structure",
             "type": "markdown_table",
-            "question_context": "diagnose wrong answers",
+            "task": "diagnose wrong answers",
             "required_columns": ["Question Number"],
             "min_required_columns": 1,
             "min_data_rows": 1,
@@ -187,8 +187,9 @@ class RunAgentEvalsTest(unittest.TestCase):
         handler.assert_called_once()
         payload = handler.call_args.args[0]
         self.assertEqual(payload["image_s3_prefix"], "s3://state-bucket/cd-evals-images/")
+        self.assertEqual(payload["task"], "diagnose wrong answers")
         self.assertFalse(payload["save_analysis_pdf"])
-        self.assertNotIn("image_folder", payload)
+        self.assertNotIn("image_data_uri", payload)
 
 
 if __name__ == "__main__":

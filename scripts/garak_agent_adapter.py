@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 import os
 import sys
@@ -32,10 +33,8 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
             agent_response = handle_tutor_invocation(
                 {
                     **self.image_input,
-                    "question_context": prompt,
+                    "task": prompt,
                     "save_analysis_pdf": False,
-                    "metadata": {"source": "garak"},
-                    "tags": ["garak", "cd-security-scan"],
                 }
             )
         except Exception as exc:
@@ -79,7 +78,7 @@ def main() -> None:
     parser.add_argument(
         "--image-folder",
         default="tests/fixtures/image_folder",
-        help="Folder of sample attempt images supplied with each garak prompt.",
+        help="Local fixture folder used to build a single image_data_uri for each garak prompt.",
     )
     parser.add_argument(
         "--image-s3-prefix",
@@ -92,9 +91,33 @@ def main() -> None:
         GarakAgentHandler.image_input = {"image_s3_prefix": args.image_s3_prefix}
     else:
         image_folder = Path(args.image_folder).resolve()
-        GarakAgentHandler.image_input = {"image_folder": str(image_folder)}
+        GarakAgentHandler.image_input = {
+            "image_data_uri": _first_folder_image_data_uri(image_folder)
+        }
     server = ThreadingHTTPServer((args.host, args.port), GarakAgentHandler)
     server.serve_forever()
+
+
+def _first_folder_image_data_uri(image_folder: Path) -> str:
+    supported_formats = {
+        ".jpg": "jpeg",
+        ".jpeg": "jpeg",
+        ".png": "png",
+        ".webp": "webp",
+    }
+    image_paths = sorted(
+        path
+        for path in image_folder.iterdir()
+        if path.is_file() and path.suffix.lower() in supported_formats
+    )
+    if not image_paths:
+        supported = ", ".join(sorted(supported_formats))
+        raise ValueError(f"Image folder contains no supported images ({supported}): {image_folder}")
+
+    image_path = image_paths[0]
+    encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+    image_format = supported_formats[image_path.suffix.lower()]
+    return f"data:image/{image_format};base64,{encoded}"
 
 
 if __name__ == "__main__":

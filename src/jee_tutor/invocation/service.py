@@ -59,11 +59,7 @@ class TutorInvocationService:
         try:
             image_data_uris = self.image_resolver.resolve(
                 image_data_uri=invocation.image_data_uri,
-                image_data_uris=invocation.image_data_uris,
-                image_folder=invocation.image_folder,
-                image_s3_uri=invocation.image_s3_uri,
                 image_s3_prefix=invocation.image_s3_prefix,
-                media=invocation.media,
             )
         except ValueError as exc:
             logger.warning("invalid_tutor_invocation_payload error=%s", exc)
@@ -88,10 +84,7 @@ class TutorInvocationService:
     ) -> dict[str, Any]:
         with self.observability.invocation_span(
             input_payload=invocation.safe_trace_input(),
-            user_id=invocation.user_id,
-            session_id=invocation.session_id,
-            tags=invocation.tags,
-            metadata=invocation.metadata,
+            metadata={"subject": invocation.subject} if invocation.subject else None,
         ) as span:
             input_guardrail = self.guardrail.check_input(
                 question_context=invocation.resolved_question_context,
@@ -159,7 +152,6 @@ class TutorInvocationService:
     ) -> None:
         if span:
             span.update(output=response)
-        self.observability.score_current_trace(invocation.evaluation_scores)
         self.observability.flush()
 
     @staticmethod
@@ -237,11 +229,7 @@ class TutorInvocationService:
             source
             for source, value in (
                 ("image_data_uri", invocation.image_data_uri),
-                ("image_data_uris", invocation.image_data_uris),
-                ("image_folder", invocation.image_folder),
-                ("image_s3_uri", invocation.image_s3_uri),
                 ("image_s3_prefix", invocation.image_s3_prefix),
-                ("media", invocation.media),
             )
             if value
         ]

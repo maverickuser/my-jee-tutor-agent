@@ -1,4 +1,4 @@
-from jee_tutor.invocation.image_inputs import ImageInputResolver, ImageMediaPayload
+from jee_tutor.invocation.image_inputs import ImageInputResolver
 from jee_tutor.invocation.models import (
     ErrorResponse,
     TutorInvocationPayload,
@@ -8,7 +8,6 @@ from jee_tutor.invocation.models import (
 __all__ = [
     "ErrorResponse",
     "ImageInputResolver",
-    "ImageMediaPayload",
     "TutorInvocationPayload",
     "TutorInvocationResponse",
     "TutorInvocationService",

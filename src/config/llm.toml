@@ -28,6 +28,7 @@ flush_after_invocation = false
 
 [langfuse.prompts]
 vision_system = "jee-tutor-vision-system-prompt"
+vision_user = "jee-tutor-vision-user-prompt"
 tutor_agent_goal = "jee-tutor-agent-goal"
 tutor_agent_backstory = "jee-tutor-agent-backstory"
 diagnosis_task_description = "jee-tutor-diagnosis-task-description"

@@ -1,5 +1,4 @@
 import base64
-import tempfile
 import unittest
 
 from jee_tutor.invocation.image_inputs import ImageInputResolver
@@ -40,20 +39,12 @@ class FakeS3Client:
 
 
 class ImageInputResolverTest(unittest.TestCase):
-    def test_s3_uri_loads_single_image_as_data_uri(self):
-        client = FakeS3Client({("attempt-bucket", "student/attempt.png"): b"png-bytes"})
-        resolver = ImageInputResolver(s3_client=client)
+    def test_image_data_uri_is_returned_as_single_image(self):
+        image_data_uri = "data:image/png;base64,ZmFrZQ=="
 
-        image_data_uris = resolver.resolve(image_s3_uri="s3://attempt-bucket/student/attempt.png")
+        image_data_uris = ImageInputResolver().resolve(image_data_uri=image_data_uri)
 
-        self.assertEqual(
-            image_data_uris,
-            ["data:image/png;base64," + base64.b64encode(b"png-bytes").decode("ascii")],
-        )
-        self.assertEqual(
-            client.get_object_calls,
-            [{"Bucket": "attempt-bucket", "Key": "student/attempt.png"}],
-        )
+        self.assertEqual(image_data_uris, [image_data_uri])
 
     def test_s3_prefix_loads_supported_images_in_key_order(self):
         client = FakeS3Client(
@@ -92,21 +83,34 @@ class ImageInputResolverTest(unittest.TestCase):
         resolver = ImageInputResolver(s3_client=FakeS3Client({}))
 
         with self.assertRaisesRegex(ValueError, "Invalid S3 URI"):
-            resolver.resolve(image_s3_uri="https://example.com/attempt.png")
+            resolver.resolve(image_s3_prefix="https://example.com/attempts/")
 
-    def test_s3_uri_with_unsupported_extension_is_rejected_before_fetch(self):
-        client = FakeS3Client({})
-        resolver = ImageInputResolver(s3_client=client)
+    def test_exactly_one_image_source_is_required(self):
+        resolver = ImageInputResolver(s3_client=FakeS3Client({}))
 
-        with self.assertRaisesRegex(ValueError, "Unsupported S3 image format"):
-            resolver.resolve(image_s3_uri="s3://attempt-bucket/student/notes.txt")
+        with self.assertRaisesRegex(ValueError, "exactly one image input"):
+            resolver.resolve()
 
-        self.assertEqual(client.get_object_calls, [])
+        with self.assertRaisesRegex(ValueError, "exactly one image input"):
+            resolver.resolve(
+                image_data_uri="data:image/png;base64,ZmFrZQ==",
+                image_s3_prefix="s3://attempt-bucket/attempts/",
+            )
 
-    def test_empty_folder_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(ValueError, "contains no supported images"):
-                ImageInputResolver().resolve(image_folder=tmpdir)
+    def test_s3_prefix_does_not_fetch_unsupported_objects(self):
+        client = FakeS3Client(
+            {("attempt-bucket", "attempts/page-1.png"): b"prefix-image"},
+            pages=[{"Contents": [{"Key": "attempts/page-1.png"}, {"Key": "attempts/notes.txt"}]}],
+        )
+
+        ImageInputResolver(s3_client=client).resolve(
+            image_s3_prefix="s3://attempt-bucket/attempts/",
+        )
+
+        self.assertEqual(
+            client.get_object_calls,
+            [{"Bucket": "attempt-bucket", "Key": "attempts/page-1.png"}],
+        )
 
     def test_s3_prefix_without_supported_images_is_rejected(self):
         client = FakeS3Client({}, pages=[{"Contents": [{"Key": "attempts/notes.txt"}]}])
@@ -117,14 +121,17 @@ class ImageInputResolverTest(unittest.TestCase):
             )
 
     def test_lazy_s3_client_is_created_once(self):
-        fake_client = FakeS3Client({("bucket", "image.png"): b"image"})
+        fake_client = FakeS3Client(
+            {("bucket", "image.png"): b"image"},
+            pages=[{"Contents": [{"Key": "image.png"}]}],
+        )
 
         with unittest.mock.patch(
             "jee_tutor.invocation.image_inputs.boto3.client", return_value=fake_client
         ) as client:
             resolver = ImageInputResolver()
-            resolver.resolve(image_s3_uri="s3://bucket/image.png")
-            resolver.resolve(image_s3_uri="s3://bucket/image.png")
+            resolver.resolve(image_s3_prefix="s3://bucket/images/")
+            resolver.resolve(image_s3_prefix="s3://bucket/images/")
 
         client.assert_called_once_with("s3")
 

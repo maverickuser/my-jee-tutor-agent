@@ -4,7 +4,7 @@ AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with Cr
 
 ## What It Does
 
-1. A client invokes the Bedrock AgentCore runtime with an image folder or image payload.
+1. A client invokes the Bedrock AgentCore runtime with an S3 image prefix or image data URI.
 2. `src/agentcore_app.py` receives the invocation on AgentCore's `/invocations` contract.
 3. `src/agentcore_handler.py` validates the payload and converts it into the tutor workflow input shape.
 4. CrewAI runs the IIT JEE tutor agent.
@@ -22,41 +22,23 @@ poetry install --with dev
 
 ## AgentCore Payload Shape
 
-Preferred folder payload:
+The runtime accepts a deliberately small payload. Send exactly one of
+`image_s3_prefix` or `image_data_uri`.
 
 ```json
 {
-  "image_folder": "/app/input/attempt-images",
-  "question_context": "Optional student/question context"
-}
-```
-
-The folder path must be available inside the runtime container. Supported files are `.png`,
-`.jpg`, `.jpeg`, and `.webp`; files are loaded in filename order.
-
-S3 object payload:
-
-```json
-{
-  "image_s3_uri": "s3://web-scraper-dev-055173110395-ap-south-1-screenshots/maths/attempt-123/page-1.png",
-  "question_context": "Optional student/question context"
-}
-```
-
-S3 prefix payload:
-
-```json
-{
-  "image_s3_prefix": "s3://web-scraper-dev-055173110395-ap-south-1-screenshots/maths/attempt-123/",
-  "question_context": "Optional student/question context"
+  "task": "Diagnose this JEE attempt.",
+  "subject": "maths",
+  "image_s3_prefix": "s3://attempt-bucket/maths/student-1/",
+  "save_analysis_pdf": true
 }
 ```
 
 S3 prefixes are folder-like object prefixes, not local folders. Supported image
 extensions are `.png`, `.jpg`, `.jpeg`, and `.webp`; objects are loaded in key
-order. The AgentCore runtime role must have `s3:GetObject` for S3 objects and
-`s3:ListBucket` for S3 prefixes. Configure access with GitHub repository
-variables formatted as Terraform JSON lists:
+order. The AgentCore runtime role must have `s3:GetObject` and `s3:ListBucket`
+for S3 prefixes. Configure access with GitHub repository variables formatted as
+Terraform JSON lists:
 
 ```text
 S3_IMAGE_INPUT_BUCKET_ARNS=["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]
@@ -67,21 +49,10 @@ Single-image payload:
 
 ```json
 {
+  "task": "Diagnose this JEE attempt.",
+  "subject": "maths",
   "image_data_uri": "data:image/png;base64,...",
-  "question_context": "Optional student/question context"
-}
-```
-
-Alternative media payload:
-
-```json
-{
-  "media": {
-    "type": "image",
-    "format": "png",
-    "data": "base64..."
-  },
-  "prompt": "Optional student/question context"
+  "save_analysis_pdf": false
 }
 ```
 
@@ -215,7 +186,7 @@ pass rate is below `CD_EVAL_MIN_SCORE`.
 
 When enabled, the garak step starts a local REST adapter around the same
 handler, supplies the same S3 eval image prefix, sends garak probe prompts as
-`question_context`, and reuses the deployed Bedrock Guardrail ID.
+`task`, and reuses the deployed Bedrock Guardrail ID.
 
 GitHub repository variables can tune the eval and scan steps:
 
@@ -333,30 +304,14 @@ Langfuse is optional and activates when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECR
 
 - Observability: AgentCore invocations are traced as spans, and LiteLLM calls are traced as generations.
 - Prompt management: create Langfuse text prompts for the behavioral prompt keys in `src/config/llm.toml`. If any prompt is missing, the local fallback in `prompts.py` is used.
-- Evaluation: include `evaluation_scores` in the invocation payload to attach scores to the active trace.
 
 Managed prompt names:
 
 ```text
 jee-tutor-vision-system-prompt
+jee-tutor-vision-user-prompt
 jee-tutor-agent-goal
 jee-tutor-agent-backstory
 jee-tutor-diagnosis-task-description
 jee-tutor-diagnosis-task-expected-output
-```
-
-Example score payload:
-
-```json
-{
-  "image_folder": "/app/input/attempt-images",
-  "evaluation_scores": [
-    {
-      "name": "helpfulness",
-      "value": 1,
-      "data_type": "NUMERIC",
-      "comment": "Useful hints without revealing the answer"
-    }
-  ]
-}
 ```

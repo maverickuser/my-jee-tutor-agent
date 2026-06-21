@@ -24,8 +24,9 @@ class GarakAgentAdapterTest(unittest.TestCase):
         tutor.assert_called_once()
         payload = tutor.call_args.args[0]
         self.assertEqual(payload["image_s3_prefix"], "s3://state-bucket/cd-evals-images/")
+        self.assertEqual(payload["task"], "probe")
         self.assertFalse(payload["save_analysis_pdf"])
-        self.assertEqual(payload["metadata"], {"source": "garak"})
+        self.assertNotIn("metadata", payload)
         send_json.assert_called_once_with({"text": "ok"})
 
 
