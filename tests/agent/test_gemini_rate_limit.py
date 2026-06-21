@@ -34,6 +34,22 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertEqual(len(sleeps), 1)
         self.assertAlmostEqual(sleeps[0], 0.6)
 
+    def test_limiter_defaults_to_two_attempts(self):
+        sleeps: list[float] = []
+        limiter = GeminiRateLimiter(
+            sleep=sleeps.append,
+            monotonic=lambda: 100.0,
+            jitter=lambda: 0.0,
+        )
+        action = Mock(side_effect=Exception("429 rate limit"))
+
+        with self.assertRaisesRegex(Exception, "429 rate limit"):
+            limiter.call(action)
+
+        self.assertEqual(limiter.max_attempts, 2)
+        self.assertEqual(action.call_count, 2)
+        self.assertEqual(sleeps[0], 2.0)
+
     def test_limiter_backs_off_and_retries_rate_limit_errors(self):
         sleeps: list[float] = []
         limiter = GeminiRateLimiter(

@@ -19,7 +19,7 @@ class GeminiRateLimiter:
         self,
         *,
         requests_per_minute: int = DEFAULT_GEMINI_REQUESTS_PER_MINUTE,
-        max_attempts: int = 4,
+        max_attempts: int = 2,
         initial_backoff_seconds: float = 2.0,
         max_backoff_seconds: float = 30.0,
         sleep: Callable[[float], None] = time.sleep,
