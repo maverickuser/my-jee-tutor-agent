@@ -1,40 +1,28 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from jee_tutor.agent.crew import build_tutor_crew
-from jee_tutor.agent.workflow import DEFAULT_QUESTION_CONTEXT, run_tutor_workflow
-
-
-class FakeCrew:
-    def __init__(self):
-        self.inputs = None
-
-    def kickoff(self, inputs):
-        self.inputs = inputs
-        return "  final analysis  "
+from jee_tutor.agent.workflow import run_tutor_workflow
 
 
 class WorkflowAndCrewTest(unittest.TestCase):
     def test_run_tutor_workflow_uses_single_image_and_default_context(self):
-        crew = FakeCrew()
+        llm_client = Mock()
+        llm_client.analyze_vision.return_value = "  final analysis  "
 
-        with patch("jee_tutor.agent.workflow.build_tutor_crew", return_value=crew) as build_crew:
-            result = run_tutor_workflow(image_data_uri="data:image/png;base64,ZmFrZQ==")
+        result = run_tutor_workflow(
+            image_data_uri="data:image/png;base64,ZmFrZQ==",
+            llm_client=llm_client,
+        )
 
         self.assertEqual(result, "final analysis")
-        build_crew.assert_called_once_with(
-            None,
-            None,
+        llm_client.analyze_vision.assert_called_once_with(
             ["data:image/png;base64,ZmFrZQ=="],
         )
-        self.assertEqual(
-            crew.inputs,
-            {
-                "image_data_uris": "[preloaded in vision tool]",
-                "image_count": 1,
-                "question_context": DEFAULT_QUESTION_CONTEXT,
-            },
-        )
+
+    def test_run_tutor_workflow_rejects_missing_images(self):
+        with self.assertRaisesRegex(ValueError, "received no images"):
+            run_tutor_workflow(llm_client=Mock())
 
     def test_build_tutor_crew_wires_agent_task_and_tool(self):
         fake_tool = object()

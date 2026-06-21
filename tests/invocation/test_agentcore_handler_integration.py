@@ -381,27 +381,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertTrue(any("tutor_image_resolution_error" in line for line in logs.output))
         workflow.assert_not_called()
 
-    def test_s3_prefix_images_are_preloaded_for_tool_placeholder_calls(self):
-        captured_tool = {}
-
-        def fake_build_tutor_crew(llm_client, prompt_provider, image_data_uris):
-            from jee_tutor.agent.llm_client import VisionLLMClient
-            from jee_tutor.agent.tools import VisionAnalysisTool
-
-            vision_client = llm_client or VisionLLMClient(completion_fn=completion)
-            tool = VisionAnalysisTool(
-                llm_client=vision_client,
-                preloaded_image_data_uris=image_data_uris or [],
-            )
-            captured_tool["tool"] = tool
-
-            class FakeCrew:
-                def kickoff(self, inputs):
-                    self.inputs = inputs
-                    return tool._run(["input_file_0.png"])
-
-            return FakeCrew()
-
+    def test_s3_prefix_images_are_sent_directly_to_vision_completion(self):
         fake_s3_client = Mock()
         fake_s3_client.get_paginator.return_value.paginate.return_value = [
             {"Contents": [{"Key": "maths/page-1.png"}]}
@@ -422,7 +402,6 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 "jee_tutor.artifacts.writer.PandocPdfRenderer",
                 return_value=Mock(render=Mock(return_value=b"%PDF fake report")),
             ),
-            patch("jee_tutor.agent.workflow.build_tutor_crew", side_effect=fake_build_tutor_crew),
             patch("jee_tutor.agent.llm_client.completion") as completion,
         ):
             completion.return_value = {"choices": [{"message": {"content": "s3 analysis"}}]}

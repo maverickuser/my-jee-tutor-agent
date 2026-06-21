@@ -61,13 +61,13 @@ class VisionLLMClient:
         observability: LangfuseObservability | None = None,
         prompt_provider: PromptProvider | None = None,
         message_factory: VisionMessageFactory | None = None,
-        completion_fn: CompletionFunction = completion,
+        completion_fn: CompletionFunction | None = None,
     ):
         self.model_config = model_config or VisionModelConfig()
         self.observability = observability or LangfuseObservability()
         self.prompt_provider = prompt_provider or PromptProvider(observability=self.observability)
         self.message_factory = message_factory or VisionMessageFactory()
-        self.completion_fn = completion_fn
+        self.completion_fn = completion_fn or completion
 
     def analyze_vision(
         self,

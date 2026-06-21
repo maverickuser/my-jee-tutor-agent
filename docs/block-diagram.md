@@ -17,11 +17,7 @@ flowchart TD
     inputGuardrail -->|blocked| errorResponse[Error JSON response]
     inputGuardrail -->|allowed| workflow[run_tutor_workflow]
 
-    workflow --> crew[build_tutor_crew]
-    crew --> tutorAgent[CrewAI tutor agent]
-    tutorAgent --> task[Diagnosis task]
-    task --> visionTool[VisionAnalysisTool]
-    visionTool --> llmClient[VisionLLMClient]
+    workflow --> llmClient[VisionLLMClient]
     llmClient --> prompts[PromptProvider<br/>Langfuse or local prompts]
     llmClient --> modelConfig[VisionModelConfig<br/>model, keys, region, options]
     llmClient --> liteLLM[liteLLM completion]
@@ -54,6 +50,6 @@ flowchart TD
 
 - Runtime edge: `agentcore_app.py` and `agentcore_handler.py` keep the Bedrock AgentCore contract thin.
 - Invocation service: `TutorInvocationService` validates input, resolves images, applies guardrails, runs the workflow, writes optional artifacts, and finalizes observability.
-- Tutor workflow: CrewAI builds the tutor agent, diagnosis task, vision tool, and LiteLLM-backed vision model call.
+- Tutor workflow: resolved image data URIs are sent directly to the LiteLLM-backed vision model call; missing images fail the invocation instead of falling back to text-only analysis.
 - Safety: Bedrock runtime guardrails wrap both input and output.
 - Evaluation: CD evals read `evals/jee_tutor_eval_cases.json`, invoke the same handler, and score the returned structure or guardrail behavior.

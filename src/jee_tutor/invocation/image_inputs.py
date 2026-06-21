@@ -1,4 +1,5 @@
 import base64
+import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -11,6 +12,7 @@ SUPPORTED_IMAGE_FORMATS = {
     ".png": "png",
     ".webp": "webp",
 }
+logger = logging.getLogger(__name__)
 
 
 class ImageInputResolver:
@@ -43,7 +45,15 @@ class ImageInputResolver:
                 f"S3 prefix contains no supported images ({supported}): {image_s3_prefix}"
             )
 
-        return [self._s3_object_data_uri(f"s3://{bucket}/{key}") for key in sorted(keys)]
+        sorted_keys = sorted(keys)
+        logger.info(
+            "resolved_s3_image_prefix bucket=%s prefix=%s image_count=%s keys=%s",
+            bucket,
+            prefix,
+            len(sorted_keys),
+            sorted_keys,
+        )
+        return [self._s3_object_data_uri(f"s3://{bucket}/{key}") for key in sorted_keys]
 
     def _s3_object_data_uri(self, image_s3_uri: str) -> str:
         bucket, key = self._parse_s3_uri(image_s3_uri)

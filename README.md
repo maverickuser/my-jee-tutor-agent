@@ -1,13 +1,13 @@
 # My JEE Tutor Agent
 
-AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with CrewAI and liteLLM.
+AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with liteLLM.
 
 ## What It Does
 
 1. A client invokes the Bedrock AgentCore runtime with an S3 image prefix or image data URI.
 2. `src/agentcore_app.py` receives the invocation on AgentCore's `/invocations` contract.
 3. `src/agentcore_handler.py` validates the payload and converts it into the tutor workflow input shape.
-4. CrewAI runs the IIT JEE tutor agent.
+4. `run_tutor_workflow` sends the resolved image data URIs directly to `VisionLLMClient`.
 5. `VisionLLMClient` calls the configured vision-capable model through liteLLM.
 6. Optional Bedrock runtime guardrails check the request and final response.
 7. The AgentCore invocation returns coaching-style feedback as JSON.
@@ -221,7 +221,7 @@ Eval reports, plus garak reports when enabled, are uploaded as the
 
 The AgentCore handler applies Bedrock Guardrails at the runtime boundary:
 
-- Input guardrail: checks optional text context and png/jpeg image payloads before CrewAI runs.
+- Input guardrail: checks optional text context and png/jpeg image payloads before vision analysis runs.
 - Output guardrail: checks the final tutor analysis before returning it.
 - PII guardrail: uses the configured Bedrock sensitive information policy to block or mask personal data such as email, phone, names, addresses, and custom regex matches.
 - If an input check intervenes, the invocation returns an error response.
