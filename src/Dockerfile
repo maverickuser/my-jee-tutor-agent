@@ -1,6 +1,8 @@
 FROM python:3.11-slim
 
+ARG APP_GIT_SHA=unknown
 ENV PYTHONUNBUFFERED=1
+ENV JEE_TUTOR_GIT_SHA=$APP_GIT_SHA
 WORKDIR /app
 
 RUN apt-get update && \
