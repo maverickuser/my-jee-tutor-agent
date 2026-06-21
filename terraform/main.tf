@@ -1,7 +1,7 @@
 locals {
   ecr_repo_name           = "${var.project_name}-repo"
   agentcore_runtime_name  = substr("JeeTutorAgent_${replace(var.project_name, "/[^a-zA-Z0-9_]/", "_")}", 0, 48)
-  agentcore_endpoint_name = "DefaultEndpoint"
+  agentcore_endpoint_name = "DEFAULT"
   newrelic_log_tags = join(";", concat([
     "service:${var.project_name}",
     "source:bedrock-agentcore",
@@ -203,7 +203,7 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
 
 resource "awscc_bedrockagentcore_runtime" "tutor" {
   agent_runtime_name     = local.agentcore_runtime_name
-  description            = "CrewAI IIT JEE tutor agent runtime"
+  description            = "IIT JEE tutor agent runtime"
   role_arn               = aws_iam_role.agentcore_runtime.arn
   protocol_configuration = "HTTP"
 
@@ -245,7 +245,7 @@ resource "awscc_bedrockagentcore_runtime_endpoint" "tutor_default" {
   agent_runtime_id      = awscc_bedrockagentcore_runtime.tutor.agent_runtime_id
   agent_runtime_version = awscc_bedrockagentcore_runtime.tutor.agent_runtime_version
   name                  = local.agentcore_endpoint_name
-  description           = "Default endpoint for the CrewAI IIT JEE tutor agent"
+  description           = "Default endpoint for the IIT JEE tutor agent"
 }
 
 output "ecr_repository_url" {
