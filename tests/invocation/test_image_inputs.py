@@ -49,15 +49,15 @@ class ImageInputResolverTest(unittest.TestCase):
     def test_s3_prefix_loads_supported_images_in_key_order(self):
         client = FakeS3Client(
             {
-                ("attempt-bucket", "attempts/01.png"): b"first",
-                ("attempt-bucket", "attempts/02.jpg"): b"second",
+                ("attempt-bucket", "attempts/Question_6.png"): b"first",
+                ("attempt-bucket", "attempts/Question_19.jpg"): b"second",
             },
             pages=[
                 {
                     "Contents": [
-                        {"Key": "attempts/02.jpg"},
+                        {"Key": "attempts/Question_19.jpg"},
                         {"Key": "attempts/notes.txt"},
-                        {"Key": "attempts/01.png"},
+                        {"Key": "attempts/Question_6.png"},
                         {"Key": "attempts/subfolder/"},
                     ]
                 }
@@ -77,6 +77,36 @@ class ImageInputResolverTest(unittest.TestCase):
         self.assertEqual(
             client.paginator.calls,
             [{"Bucket": "attempt-bucket", "Prefix": "attempts/"}],
+        )
+
+    def test_s3_prefix_resolves_image_metadata(self):
+        client = FakeS3Client(
+            {
+                ("attempt-bucket", "attempts/Question_006.png"): b"first",
+                ("attempt-bucket", "attempts/Question_19.jpg"): b"second",
+            },
+            pages=[
+                {
+                    "Contents": [
+                        {"Key": "attempts/Question_19.jpg"},
+                        {"Key": "attempts/Question_006.png"},
+                    ]
+                }
+            ],
+        )
+
+        images = ImageInputResolver(s3_client=client).resolve_images(
+            image_s3_prefix="s3://attempt-bucket/attempts/"
+        )
+
+        self.assertEqual([image.file_name for image in images], ["Question_006.png", "Question_19.jpg"])
+        self.assertEqual([image.question_number for image in images], ["6", "19"])
+        self.assertEqual(
+            [image.source_uri for image in images],
+            [
+                "s3://attempt-bucket/attempts/Question_006.png",
+                "s3://attempt-bucket/attempts/Question_19.jpg",
+            ],
         )
 
     def test_invalid_s3_uri_is_rejected(self):

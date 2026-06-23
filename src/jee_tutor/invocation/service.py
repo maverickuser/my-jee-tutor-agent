@@ -8,7 +8,8 @@ from jee_tutor.artifacts.writer import AnalysisArtifactWriter
 from jee_tutor.agent import run_tutor_workflow
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
-from jee_tutor.invocation.image_inputs import ImageInputResolver
+from jee_tutor.agent.output_validation import OutputValidationError
+from jee_tutor.invocation.image_inputs import ImageInputResolver, ResolvedImage
 from jee_tutor.invocation.models import (
     ErrorResponse,
     TutorInvocationPayload,
@@ -57,7 +58,7 @@ class TutorInvocationService:
             )
 
         try:
-            image_data_uris = self.image_resolver.resolve(
+            resolved_images = self.image_resolver.resolve_images(
                 image_data_uri=invocation.image_data_uri,
                 image_s3_prefix=invocation.image_s3_prefix,
             )
@@ -75,13 +76,14 @@ class TutorInvocationService:
                 self._image_resolution_error_details(exc, invocation),
             )
 
-        return self._run_guarded_workflow(invocation, image_data_uris)
+        return self._run_guarded_workflow(invocation, resolved_images)
 
     def _run_guarded_workflow(
         self,
         invocation: TutorInvocationPayload,
-        image_data_uris: list[str],
+        resolved_images: list[ResolvedImage],
     ) -> dict[str, Any]:
+        image_data_uris = [image.data_uri for image in resolved_images]
         with self.observability.invocation_span(
             input_payload=invocation.safe_trace_input(),
             metadata={"subject": invocation.subject} if invocation.subject else None,
@@ -103,16 +105,16 @@ class TutorInvocationService:
                 return response
 
             try:
-                analysis = str(self._run_workflow(invocation, image_data_uris))
+                analysis = str(self._run_workflow(invocation, resolved_images))
             except Exception as exc:
                 response = self._error_response(
                     "Tutor workflow failed while analyzing images.",
-                    self._workflow_error_details(exc, image_data_uris, invocation),
+                    self._workflow_error_details(exc, resolved_images, invocation),
                 )
                 logger.exception(
                     "tutor_workflow_error "
                     "image_count=%s error_type=%s error=%s",
-                    len(image_data_uris),
+                    len(resolved_images),
                     exc.__class__.__name__,
                     exc or "[no message]",
                 )
@@ -137,11 +139,12 @@ class TutorInvocationService:
     def _run_workflow(
         self,
         invocation: TutorInvocationPayload,
-        image_data_uris: list[str],
+        resolved_images: list[ResolvedImage],
     ) -> str:
         return self.workflow(
-            image_data_uris=image_data_uris,
+            image_data_uris=[image.data_uri for image in resolved_images],
             question_context=invocation.resolved_question_context,
+            expected_question_numbers=[image.question_number for image in resolved_images],
         )
 
     def _finish_invocation(
@@ -210,15 +213,30 @@ class TutorInvocationService:
     @staticmethod
     def _workflow_error_details(
         exc: Exception,
-        image_data_uris: list[str],
+        resolved_images: list[ResolvedImage],
         invocation: TutorInvocationPayload,
     ) -> list[str]:
-        return [
-            f"Resolved image count: {len(image_data_uris)}.",
+        details = [
+            f"Resolved image count: {len(resolved_images)}.",
             f"Question context provided: {bool(invocation.resolved_question_context)}.",
+            f"Expected question numbers: {TutorInvocationService._format_expected_questions(resolved_images)}.",
             f"Exception type: {exc.__class__.__name__}.",
             f"Exception message: {exc or '[no message]'}",
         ]
+        if isinstance(exc, OutputValidationError):
+            details.extend(exc.details)
+        return details
+
+    @staticmethod
+    def _format_expected_questions(resolved_images: list[ResolvedImage]) -> str:
+        if not resolved_images:
+            return "[none]."
+        return ", ".join(
+            image.question_number
+            if image.question_number is not None
+            else f"[missing:{image.file_name or 'inline'}]"
+            for image in resolved_images
+        ) + "."
 
     @staticmethod
     def _image_resolution_error_details(

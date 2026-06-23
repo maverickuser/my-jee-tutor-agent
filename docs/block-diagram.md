@@ -1,55 +1,61 @@
 # JEE Tutor Agent Block Diagram
 
 ```mermaid
-flowchart TD
-    client[Client or GitHub Actions] --> agentcore[Amazon Bedrock AgentCore Runtime]
-    agentcore --> app[agentcore_app.py]
-    app --> handler[agentcore_handler.py]
-    handler --> service[TutorInvocationService]
+flowchart LR
+    user[Client / Web App] --> agentcore
 
-    service --> validate[Validate TutorInvocationPayload]
-    validate --> resolver[ImageInputResolver]
-    resolver --> inputSources[Image input<br/>S3 prefix or data URI]
-    resolver --> normalizedImages[Normalized image data URIs]
-
-    validate --> trace[Langfuse invocation span<br/>image payloads redacted]
-    normalizedImages --> inputGuardrail[Input RuntimeGuardrail<br/>Bedrock ApplyGuardrail]
-    inputGuardrail -->|blocked| errorResponse[Error JSON response]
-    inputGuardrail -->|allowed| workflow[run_tutor_workflow]
-
-    workflow --> llmClient[VisionLLMClient]
-    llmClient --> prompts[PromptProvider<br/>Langfuse or local prompts]
-    llmClient --> modelConfig[VisionModelConfig<br/>model, keys, region, options]
-    llmClient --> liteLLM[liteLLM completion]
-    liteLLM --> visionModel[Vision-capable model]
-
-    visionModel --> analysis[Coaching analysis markdown]
-    analysis --> outputGuardrail[Output RuntimeGuardrail<br/>Bedrock ApplyGuardrail]
-    outputGuardrail --> successResponse[Success JSON response]
-    successResponse --> artifacts{save_analysis_pdf?}
-    artifacts -->|yes| artifactWriter[AnalysisArtifactWriter]
-    artifactWriter --> artifactStorage[S3 markdown and PDF artifacts]
-    artifacts -->|no| finish[Finish invocation]
-    artifactStorage --> finish
-    errorResponse --> finish
-    finish --> score[Record eval scores when supplied]
-    score --> flush[Flush Langfuse]
-    flush --> response[Return response]
-
-    subgraph CD eval and security path
-        cases[evals/jee_tutor_eval_cases.json] --> evalRunner[scripts/run_agent_evals.py]
-        evalImages[CD eval images<br/>local fixtures or S3 prefix] --> evalRunner
-        evalRunner --> handler
-        evalRunner --> evalReport[eval_runs/agent-evals.json]
-        garak[scripts/garak_agent_adapter.py] --> handler
-        garak --> securityReport[garak security reports]
+    subgraph github[GitHub]
+        code[Source Code] --> actions[GitHub Actions CI/CD]
     end
+
+    subgraph aws[AWS ap-south-1 Region]
+        ecr[Amazon ECR<br/>Agent container image]
+        tfstate[S3<br/>Terraform state]
+
+        subgraph runtime[Amazon Bedrock AgentCore]
+            endpoint[DEFAULT Endpoint]
+            agentcore[JEE Tutor Runtime<br/>Python container]
+        end
+
+        s3input[S3<br/>Question screenshots]
+        s3report[S3<br/>Analysis PDF / Markdown]
+        guardrails[Amazon Bedrock Guardrails]
+        crew[CrewAI Agent<br/>must call vision tool]
+        validator[Validation Gate<br/>tool call + markdown rows]
+        llm[Vision LLM<br/>Gemini / OpenAI / Bedrock]
+        logs[CloudWatch Logs]
+        newrelic[New Relic<br/>Logs and metrics]
+        langfuse[Langfuse<br/>Prompts and traces]
+
+        endpoint --> agentcore
+        agentcore --> s3input
+        agentcore --> guardrails
+        agentcore --> crew
+        crew --> llm
+        crew --> validator
+        validator --> guardrails
+        agentcore --> s3report
+        agentcore --> logs
+        agentcore --> langfuse
+        logs --> newrelic
+    end
+
+    actions -->|Run tests| code
+    actions -->|Build and push image| ecr
+    actions -->|Terraform apply| tfstate
+    actions -->|Deploy runtime| agentcore
+    ecr -->|Container image| agentcore
 ```
 
-## Main Blocks
+## Flow
 
-- Runtime edge: `agentcore_app.py` and `agentcore_handler.py` keep the Bedrock AgentCore contract thin.
-- Invocation service: `TutorInvocationService` validates input, resolves images, applies guardrails, runs the workflow, writes optional artifacts, and finalizes observability.
-- Tutor workflow: resolved image data URIs are sent directly to the LiteLLM-backed vision model call; missing images fail the invocation instead of falling back to text-only analysis.
-- Safety: Bedrock runtime guardrails wrap both input and output.
-- Evaluation: CD evals read `evals/jee_tutor_eval_cases.json`, invoke the same handler, and score the returned structure or guardrail behavior.
+1. GitHub Actions runs tests, builds the container image, pushes it to ECR, and applies Terraform.
+2. Terraform creates the AgentCore runtime, IAM role, Bedrock Guardrail, CloudWatch logging, and related AWS resources.
+3. The client invokes the AgentCore `DEFAULT` endpoint.
+4. The runtime reads question screenshots from S3 or accepts a direct image data URI.
+5. Bedrock Guardrails check input before the agent runs.
+6. CrewAI must call the vision tool, which calls the configured vision LLM through LiteLLM.
+7. The validation gate checks that the tool ran, row count matches image count, and markdown question numbers match S3 filenames.
+8. Bedrock Guardrails check the validated output.
+9. The runtime returns JSON analysis and optionally writes PDF/Markdown reports to S3.
+10. Logs go to CloudWatch and optionally New Relic; prompts/traces go to Langfuse.

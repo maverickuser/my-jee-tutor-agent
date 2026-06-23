@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,6 +9,15 @@ from jee_tutor.agent.prompts import VISION_TOOL_DESCRIPTION
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class VisionToolCallState:
+    called: bool = False
+    success: bool = False
+    image_count: int = 0
+    image_source: str = ""
+    error: str | None = None
 
 
 class VisionInput(BaseModel):
@@ -31,6 +41,10 @@ class VisionAnalysisTool(BaseTool):
     args_schema: type[BaseModel] = VisionInput
     llm_client: VisionLLMClient = Field(default_factory=VisionLLMClient, exclude=True)
     preloaded_image_data_uris: list[str] = Field(default_factory=list, exclude=True)
+    call_state: VisionToolCallState = Field(
+        default_factory=VisionToolCallState,
+        exclude=True,
+    )
 
     def _run(
         self,
@@ -41,14 +55,22 @@ class VisionAnalysisTool(BaseTool):
             image_source=image_source,
             image_count=len(resolved_images),
         )
+        self.call_state.called = True
+        self.call_state.image_count = len(resolved_images)
+        self.call_state.image_source = image_source
         if not resolved_images:
+            self.call_state.error = "Vision analyzer received no images."
             raise ValueError(
                 "Vision analyzer received no images. Provide image_data_uri or image_s3_prefix "
                 "in the invocation payload."
             )
         try:
-            return self.llm_client.analyze_vision(resolved_images)
+            analysis = self.llm_client.analyze_vision(resolved_images)
+            self.call_state.success = True
+            self.call_state.error = None
+            return analysis
         except Exception as exc:
+            self.call_state.error = f"{exc.__class__.__name__}: {exc or '[no message]'}"
             logger.exception(
                 "vision_analyzer_failed image_source=%s image_count=%s error_type=%s error=%s",
                 image_source,
@@ -96,8 +118,10 @@ class VisionAnalysisTool(BaseTool):
 def build_vision_tool(
     llm_client: VisionLLMClient | None = None,
     image_data_uris: list[str] | None = None,
+    call_state: VisionToolCallState | None = None,
 ) -> VisionAnalysisTool:
     return VisionAnalysisTool(
         llm_client=llm_client or VisionLLMClient(),
         preloaded_image_data_uris=image_data_uris or [],
+        call_state=call_state or VisionToolCallState(),
     )

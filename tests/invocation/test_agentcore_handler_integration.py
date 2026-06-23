@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 from jee_tutor.agent.guardrails import GuardrailCheck
 from jee_tutor.handler import handle_tutor_invocation
+from jee_tutor.invocation.image_inputs import ResolvedImage
 from jee_tutor.invocation.service import TutorInvocationService
 
 
@@ -39,6 +40,14 @@ class FakeArtifactWriter:
         return self.result
 
 
+def resolved_image(data_uri="data:image/png;base64,ZmFrZQ==", question_number=None):
+    return ResolvedImage(
+        data_uri=data_uri,
+        file_name=f"Question_{question_number}.png" if question_number else None,
+        question_number=question_number,
+    )
+
+
 class AgentCoreHandlerIntegrationTest(unittest.TestCase):
     def test_successful_invocation_checks_guardrails_around_workflow(self):
         guardrail_calls = []
@@ -64,6 +73,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         run_tutor_workflow.assert_called_once_with(
             image_data_uris=["data:image/png;base64,ZmFrZQ=="],
             question_context="student context",
+            expected_question_numbers=[None],
         )
         self.assertEqual(
             guardrail_calls,
@@ -81,7 +91,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
     def test_agentcore_json_contract_uses_task_and_s3_fields(self):
         image_resolver = Mock()
-        image_resolver.resolve.return_value = ["data:image/png;base64,ZmFrZQ=="]
+        image_resolver.resolve_images.return_value = [resolved_image()]
         service = TutorInvocationService(
             image_resolver=image_resolver,
             guardrail=FakeRuntimeGuardrail(),
@@ -99,7 +109,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         )
 
         self.assertEqual(response, {"analysis": "diagnose maths attempt"})
-        image_resolver.resolve.assert_called_once_with(
+        image_resolver.resolve_images.assert_called_once_with(
             image_data_uri=None,
             image_s3_prefix="s3://attempt-bucket/maths/attempt-123/",
         )
@@ -357,7 +367,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
     def test_image_resolution_failure_returns_json_error(self):
         image_resolver = Mock()
-        image_resolver.resolve.side_effect = RuntimeError("s3 access denied")
+        image_resolver.resolve_images.side_effect = RuntimeError("s3 access denied")
         workflow = Mock()
         service = TutorInvocationService(
             image_resolver=image_resolver,
@@ -381,10 +391,10 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertTrue(any("tutor_image_resolution_error" in line for line in logs.output))
         workflow.assert_not_called()
 
-    def test_s3_prefix_images_are_sent_directly_to_vision_completion(self):
+    def test_s3_prefix_images_are_sent_to_workflow_with_question_metadata(self):
         fake_s3_client = Mock()
         fake_s3_client.get_paginator.return_value.paginate.return_value = [
-            {"Contents": [{"Key": "maths/page-1.png"}]}
+            {"Contents": [{"Key": "maths/Question_19.png"}]}
         ]
         fake_s3_client.get_object.return_value = {
             "Body": Mock(read=Mock(return_value=b"s3-image-bytes"))
@@ -402,9 +412,14 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 "jee_tutor.artifacts.writer.PandocPdfRenderer",
                 return_value=Mock(render=Mock(return_value=b"%PDF fake report")),
             ),
-            patch("jee_tutor.agent.llm_client.completion") as completion,
+            patch(
+                "jee_tutor.invocation.service.run_tutor_workflow",
+                return_value="| Question Number | Chapter | Topic | What You Thought | "
+                "Why That Thought Is Wrong | Exact Concept Gap | What You Must Deep-Dive |\n"
+                "| --- | --- | --- | --- | --- | --- | --- |\n"
+                "| 19 | Current Electricity | Resistance | Thought | Wrong | Gap | Study |",
+            ) as run_tutor_workflow,
         ):
-            completion.return_value = {"choices": [{"message": {"content": "s3 analysis"}}]}
             response = handle_tutor_invocation(
                 {
                     "image_s3_prefix": "s3://attempt-bucket/maths/",
@@ -415,7 +430,12 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertEqual(
             response,
             {
-                "analysis": "s3 analysis",
+                "analysis": (
+                    "| Question Number | Chapter | Topic | What You Thought | "
+                    "Why That Thought Is Wrong | Exact Concept Gap | What You Must Deep-Dive |\n"
+                    "| --- | --- | --- | --- | --- | --- | --- |\n"
+                    "| 19 | Current Electricity | Resistance | Thought | Wrong | Gap | Study |"
+                ),
                 "message": (
                     "Your analysis PDF will be available at "
                     "s3://attempt-bucket/maths/analysis.pdf. "
@@ -425,10 +445,10 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
             },
         )
-        messages = completion.call_args.kwargs["messages"]
-        image_url = messages[1]["content"][1]["image_url"]["url"]
+        run_tutor_workflow.assert_called_once()
+        self.assertEqual(run_tutor_workflow.call_args.kwargs["expected_question_numbers"], ["19"])
+        image_url = run_tutor_workflow.call_args.kwargs["image_data_uris"][0]
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
-        self.assertNotEqual(image_url, "input_file_0.png")
         _, put_kwargs = fake_s3_client.put_object.call_args
         self.assertEqual(put_kwargs["Bucket"], "attempt-bucket")
         self.assertEqual(put_kwargs["Key"], "maths/analysis.pdf")
