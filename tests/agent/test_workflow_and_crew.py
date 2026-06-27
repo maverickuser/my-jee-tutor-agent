@@ -24,6 +24,8 @@ class FakeCrew:
             state = self.tool_call_state
             state.called = True
             state.success = True
+            state.call_count = 1
+            state.successful_call_count = 1
             state.image_count = 1
             state.image_source = "preloaded_invocation_images"
         return self.output

@@ -75,8 +75,7 @@ def main() -> None:
         f"({passed}/{len(scored_results)} scored cases passed, {skipped} skipped)"
     )
     _print_failed_case_summary(results)
-    if score < args.min_score:
-        raise SystemExit(f"Agent eval score {score:.2f} is below required {args.min_score:.2f}")
+    _enforce_eval_gate(score=score, min_score=args.min_score, skipped=skipped)
 
 
 def _load_json(path: Path) -> list[dict[str, Any]]:
@@ -314,17 +313,26 @@ def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
 
     details = response.get("details", [])
     text = " ".join([str(response.get("error", "")), *(str(detail) for detail in details)])
-    if response.get("error") == TUTOR_WORKFLOW_FAILURE_ERROR:
-        return f"Tutor invocation workflow failed before producing analysis: {_truncate(text, 500)}"
-
     try:
         from jee_tutor.agent.rate_limit import is_retryable_gemini_error
 
         if is_retryable_gemini_error(RuntimeError(text)):
+            if response.get("error") == TUTOR_WORKFLOW_FAILURE_ERROR:
+                return (
+                    "Tutor invocation workflow failed before producing analysis: "
+                    f"{_truncate(text, 500)}"
+                )
             return f"Tutor invocation returned retryable error response: {_truncate(text, 500)}"
     except Exception:
         return None
     return None
+
+
+def _enforce_eval_gate(*, score: float, min_score: float, skipped: int) -> None:
+    if skipped:
+        raise SystemExit(f"Agent eval run skipped {skipped} case(s); all cases must be scored.")
+    if score < min_score:
+        raise SystemExit(f"Agent eval score {score:.2f} is below required {min_score:.2f}")
 
 
 def _redacted_response(response: dict[str, Any]) -> dict[str, Any]:

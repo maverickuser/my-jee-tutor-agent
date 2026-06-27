@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts.run_agent_evals import (
-    RetryableEvalError,
+    _enforce_eval_gate,
     _image_input_payload,
     _retryable_response_error_reason,
     _run_case,
@@ -119,7 +119,7 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertIsNotNone(reason)
         self.assertIn("workflow failed before producing analysis", reason)
 
-    def test_workflow_failure_response_without_provider_details_is_detected(self):
+    def test_workflow_failure_without_transient_provider_details_is_not_retryable(self):
         response = {
             "error": "Tutor workflow failed while analyzing images.",
             "details": [
@@ -132,10 +132,9 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         reason = _retryable_response_error_reason(response)
 
-        self.assertIsNotNone(reason)
-        self.assertIn("workflow failed before producing analysis", reason)
+        self.assertIsNone(reason)
 
-    def test_run_case_retries_workflow_failure_error_response_before_scoring(self):
+    def test_run_case_scores_deterministic_workflow_failure_as_failed(self):
         case = {
             "id": "coaching_structure",
             "type": "markdown_table",
@@ -147,8 +146,21 @@ class RunAgentEvalsTest(unittest.TestCase):
         }
 
         with patch("jee_tutor.handler.handle_tutor_invocation", return_value=response):
-            with self.assertRaises(RetryableEvalError):
-                _run_case(case, "images")
+            result = _run_case(case, "images")
+
+        self.assertFalse(result["passed"])
+        self.assertNotIn("skipped", result)
+
+    def test_eval_gate_fails_when_any_case_is_skipped(self):
+        with self.assertRaisesRegex(SystemExit, "skipped 1 case"):
+            _enforce_eval_gate(score=1.0, min_score=0.75, skipped=1)
+
+    def test_eval_gate_accepts_complete_run_above_threshold(self):
+        _enforce_eval_gate(score=1.0, min_score=0.75, skipped=0)
+
+    def test_eval_gate_fails_complete_run_below_threshold(self):
+        with self.assertRaisesRegex(SystemExit, "below required"):
+            _enforce_eval_gate(score=0.5, min_score=0.75, skipped=0)
 
     def test_non_retryable_handler_error_response_is_not_transient(self):
         response = {

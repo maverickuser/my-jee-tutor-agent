@@ -1,7 +1,7 @@
 import unittest
 
 from jee_tutor.agent.llm_client import VisionLLMClient
-from jee_tutor.agent.tools import VisionAnalysisTool, VisionInput
+from jee_tutor.agent.tools import VisionAnalysisTool, VisionInput, build_vision_tool
 
 
 class FakeVisionLLMClient(VisionLLMClient):
@@ -17,6 +17,11 @@ class FakeVisionLLMClient(VisionLLMClient):
 
 
 class VisionToolTest(unittest.TestCase):
+    def test_built_tool_returns_vision_output_as_final_agent_answer(self):
+        tool = build_vision_tool(llm_client=FakeVisionLLMClient())
+
+        self.assertTrue(tool.result_as_answer)
+
     def test_tool_description_instructs_empty_json_input_for_preloaded_images(self):
         tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
 
@@ -44,6 +49,20 @@ class VisionToolTest(unittest.TestCase):
             llm_client.calls,
             [(["data:image/png;base64,ZmFrZQ=="], None)],
         )
+
+    def test_tool_rejects_a_second_call_without_invoking_vision_again(self):
+        llm_client = FakeVisionLLMClient()
+        tool = VisionAnalysisTool(llm_client=llm_client)
+        image = "data:image/png;base64,ZmFrZQ=="
+
+        tool._run([image])
+
+        with self.assertRaisesRegex(RuntimeError, "exactly once"):
+            tool._run([image])
+
+        self.assertEqual(tool.call_state.call_count, 2)
+        self.assertEqual(tool.call_state.successful_call_count, 1)
+        self.assertEqual(llm_client.calls, [([image], None)])
 
     def test_tool_uses_preloaded_images_when_crewai_sends_placeholder_filename(self):
         llm_client = FakeVisionLLMClient()

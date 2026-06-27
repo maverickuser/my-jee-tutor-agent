@@ -55,12 +55,25 @@ def _validate_vision_tool_call(
             "CrewAI did not call the vision analysis tool.",
             ["Vision tool called: False."],
         )
+    if tool_call_state.call_count != 1:
+        raise OutputValidationError(
+            "CrewAI did not call the vision analysis tool exactly once.",
+            [f"Vision tool call count: {tool_call_state.call_count}."],
+        )
     if not tool_call_state.success:
         raise OutputValidationError(
             "Vision analysis tool did not complete successfully.",
             [
                 "Vision tool called: True.",
                 f"Vision tool error: {tool_call_state.error or '[unknown]'}",
+            ],
+        )
+    if tool_call_state.successful_call_count != 1:
+        raise OutputValidationError(
+            "Vision analysis tool did not complete successfully exactly once.",
+            [
+                "Vision tool successful call count: "
+                f"{tool_call_state.successful_call_count}."
             ],
         )
     if tool_call_state.image_source != "preloaded_invocation_images":

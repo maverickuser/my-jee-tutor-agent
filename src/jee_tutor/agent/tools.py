@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 class VisionToolCallState:
     called: bool = False
     success: bool = False
+    call_count: int = 0
+    successful_call_count: int = 0
     image_count: int = 0
     image_source: str = ""
     error: str | None = None
@@ -50,12 +52,17 @@ class VisionAnalysisTool(BaseTool):
         self,
         image_data_uris: list[str] | None = None,
     ) -> str:
+        self.call_state.called = True
+        self.call_state.call_count += 1
+        if self.call_state.call_count > 1:
+            self.call_state.error = "Vision analyzer must be called exactly once per workflow."
+            raise RuntimeError(self.call_state.error)
+
         resolved_images, image_source = self._resolve_tool_images(image_data_uris or [])
         self._log_tool_context(
             image_source=image_source,
             image_count=len(resolved_images),
         )
-        self.call_state.called = True
         self.call_state.image_count = len(resolved_images)
         self.call_state.image_source = image_source
         if not resolved_images:
@@ -67,6 +74,7 @@ class VisionAnalysisTool(BaseTool):
         try:
             analysis = self.llm_client.analyze_vision(resolved_images)
             self.call_state.success = True
+            self.call_state.successful_call_count += 1
             self.call_state.error = None
             return analysis
         except Exception as exc:
@@ -121,6 +129,7 @@ def build_vision_tool(
     call_state: VisionToolCallState | None = None,
 ) -> VisionAnalysisTool:
     return VisionAnalysisTool(
+        result_as_answer=True,
         llm_client=llm_client or VisionLLMClient(),
         preloaded_image_data_uris=image_data_uris or [],
         call_state=call_state or VisionToolCallState(),
