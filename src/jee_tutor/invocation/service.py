@@ -230,13 +230,13 @@ class TutorInvocationService:
     @staticmethod
     def _format_expected_questions(resolved_images: list[ResolvedImage]) -> str:
         if not resolved_images:
-            return "[none]."
+            return "[none]"
         return ", ".join(
             image.question_number
             if image.question_number is not None
             else f"[missing:{image.file_name or 'inline'}]"
             for image in resolved_images
-        ) + "."
+        )
 
     @staticmethod
     def _image_resolution_error_details(

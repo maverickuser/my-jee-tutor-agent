@@ -99,7 +99,10 @@ class WorkflowAndCrewTest(unittest.TestCase):
             patch("jee_tutor.agent.crew.VisionLLMClient") as llm_client_class,
             patch("jee_tutor.agent.crew.build_vision_tool", return_value=fake_tool) as build_tool,
             patch("jee_tutor.agent.crew.build_tutor_agent", return_value=fake_agent) as build_agent,
-            patch("jee_tutor.agent.crew.build_diagnosis_task", return_value=fake_task),
+            patch(
+                "jee_tutor.agent.crew.build_diagnosis_task",
+                return_value=fake_task,
+            ) as build_task,
             patch("jee_tutor.agent.crew.Crew") as crew_class,
         ):
             prompts = prompt_provider_class.return_value
@@ -109,6 +112,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
         llm_client_class.assert_called_once_with(prompt_provider=prompts)
         build_tool.assert_called_once_with(llm_client, ["data:image/png;base64,ZmFrZQ=="], None)
         build_agent.assert_called_once_with(fake_tool, prompts)
+        build_task.assert_called_once_with(fake_agent, fake_tool, prompts)
         crew_class.assert_called_once()
         _, kwargs = crew_class.call_args
         self.assertEqual(kwargs["agents"], [fake_agent])

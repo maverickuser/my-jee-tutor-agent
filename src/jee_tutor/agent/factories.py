@@ -17,6 +17,22 @@ from jee_tutor.agent.rate_limit import gemini_rate_limiter, is_gemini_model
 from jee_tutor.agent.tools import VisionAnalysisTool
 
 
+MANDATORY_VISION_TOOL_INSTRUCTION = """
+
+MANDATORY RUNTIME STEP:
+- Before producing any final answer, call `jee_question_vision_analyzer` exactly once.
+- Call it with an empty JSON object. The current invocation images are preloaded.
+- Do not infer, reconstruct, or answer any question before the tool observation is returned.
+- Treat the tool observation as the only source of question content.
+- Return the diagnosis from that observation as the required markdown table.
+- If the tool fails, do not produce a generic or guessed answer.
+"""
+
+MANDATORY_VISION_TOOL_ACTION = """Thought: I must analyze the preloaded invocation images.
+Action: jee_question_vision_analyzer
+Action Input: {}"""
+
+
 def _first_string_attribute(obj: Any, *names: str) -> str | None:
     for name in names:
         value = getattr(obj, name, None)
@@ -92,26 +108,34 @@ def build_tutor_agent(
 ) -> Agent:
     prompts = prompt_provider or PromptProvider()
     tools = [vision_tool]
+    agent_llm = MandatoryVisionToolLLM(llm or build_crewai_llm())
     return Agent(
         role=TUTOR_AGENT_ROLE,
         goal=prompts.get(TUTOR_AGENT_GOAL).text,
         backstory=prompts.get(TUTOR_AGENT_BACKSTORY).text,
         tools=tools,
-        llm=llm or build_crewai_llm(),
+        llm=agent_llm,
         verbose=True,
         allow_delegation=False,
+        max_retry_limit=2,
     )
 
 
 def build_diagnosis_task(
     tutor_agent: Agent,
+    vision_tool: VisionAnalysisTool,
     prompt_provider: PromptProvider | None = None,
 ) -> Task:
     prompts = prompt_provider or PromptProvider()
+    description = (
+        prompts.get(DIAGNOSIS_TASK_DESCRIPTION).text.rstrip()
+        + MANDATORY_VISION_TOOL_INSTRUCTION
+    )
     return Task(
-        description=prompts.get(DIAGNOSIS_TASK_DESCRIPTION).text,
+        description=description,
         expected_output=prompts.get(DIAGNOSIS_TASK_EXPECTED_OUTPUT).text,
         agent=tutor_agent,
+        tools=[vision_tool],
     )
 
 
@@ -123,6 +147,52 @@ def build_crewai_llm(model_config: VisionModelConfig | None = None) -> LLM | Bas
     if is_gemini_model(model):
         return RateLimitedLLM(llm)
     return llm
+
+
+class MandatoryVisionToolLLM(BaseLLM):
+    """Force CrewAI's first ReAct step to execute the preloaded vision tool."""
+
+    def __init__(self, llm: LLM | BaseLLM):
+        model = _first_string_attribute(llm, "model", "model_name", "deployment_name", "name")
+        temperature = _first_numeric_attribute(llm, "temperature")
+        super().__init__(model=model or str(llm), temperature=temperature)
+        self.llm = llm
+        self.stop = _normalize_stop_sequences(getattr(llm, "stop", []))
+        self._vision_tool_requested = False
+
+    def call(
+        self,
+        messages: Any,
+        tools: list[dict] | None = None,
+        callbacks: list[Any] | None = None,
+        available_functions: dict[str, Any] | None = None,
+    ) -> Any:
+        if not self._vision_tool_requested:
+            self._vision_tool_requested = True
+            return MANDATORY_VISION_TOOL_ACTION
+        return self.llm.call(
+            messages,
+            tools=tools,
+            callbacks=callbacks,
+            available_functions=available_functions,
+        )
+
+    def supports_stop_words(self) -> bool:
+        supports_stop_words = getattr(self.llm, "supports_stop_words", None)
+        return bool(supports_stop_words()) if callable(supports_stop_words) else False
+
+    def supports_function_calling(self) -> bool:
+        supports_function_calling = getattr(self.llm, "supports_function_calling", None)
+        return bool(supports_function_calling()) if callable(supports_function_calling) else False
+
+    def get_context_window_size(self) -> int:
+        get_context_window_size = getattr(self.llm, "get_context_window_size", None)
+        if callable(get_context_window_size):
+            return int(get_context_window_size())
+        return super().get_context_window_size()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.llm, name)
 
 
 class RateLimitedLLM(BaseLLM):

@@ -5,6 +5,8 @@ from crewai.utilities.llm_utils import create_llm
 
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.factories import (
+    MANDATORY_VISION_TOOL_ACTION,
+    MandatoryVisionToolLLM,
     RateLimitedLLM,
     _format_llm_failure,
     build_crewai_llm,
@@ -47,7 +49,48 @@ class NoProviderError(Exception):
     pass
 
 
+class BareLLM:
+    model = "local/bare"
+    temperature = None
+    stop = []
+
+    def call(self, *args, **kwargs):
+        return "analysis"
+
+
 class CrewAIModelConfigTest(unittest.TestCase):
+    def test_mandatory_vision_tool_llm_forces_first_crewai_action(self):
+        delegate = DummyGeminiLLM()
+        wrapped = MandatoryVisionToolLLM(delegate)
+        messages = [{"role": "user", "content": "analyze"}]
+
+        first_result = wrapped.call(messages)
+        second_result = wrapped.call(messages, callbacks=["callback"])
+
+        self.assertEqual(first_result, MANDATORY_VISION_TOOL_ACTION)
+        self.assertEqual(second_result, "analysis")
+        self.assertEqual(len(delegate.calls), 1)
+        self.assertEqual(delegate.calls[0][1]["callbacks"], ["callback"])
+
+    def test_mandatory_vision_tool_llm_delegates_capabilities_and_attributes(self):
+        delegate = DummyGeminiLLM()
+        wrapped = MandatoryVisionToolLLM(delegate)
+
+        self.assertTrue(wrapped.supports_stop_words())
+        self.assertFalse(wrapped.supports_function_calling())
+        self.assertEqual(wrapped.get_context_window_size(), 4096)
+        self.assertIs(wrapped.error, delegate.error)
+
+    def test_mandatory_vision_tool_llm_uses_capability_fallbacks(self):
+        wrapped = MandatoryVisionToolLLM(BareLLM())
+
+        self.assertFalse(wrapped.supports_stop_words())
+        self.assertFalse(wrapped.supports_function_calling())
+        self.assertEqual(
+            wrapped.get_context_window_size(),
+            super(MandatoryVisionToolLLM, wrapped).get_context_window_size(),
+        )
+
     def test_crewai_llm_uses_gemini_google_api_key(self):
         config = LLMConfig(
             {
@@ -237,14 +280,20 @@ class CrewAIModelConfigTest(unittest.TestCase):
             patch("jee_tutor.agent.factories.Task") as task_class,
         ):
             agent = build_tutor_agent(vision_tool, prompt_provider, llm)
-            build_diagnosis_task(agent, prompt_provider)
+            build_diagnosis_task(agent, vision_tool, prompt_provider)
 
         agent_class.assert_called_once()
         _, agent_kwargs = agent_class.call_args
         self.assertEqual(agent_kwargs["tools"], [vision_tool])
-        self.assertIs(agent_kwargs["llm"], llm)
+        self.assertIsInstance(agent_kwargs["llm"], MandatoryVisionToolLLM)
+        self.assertIs(agent_kwargs["llm"].llm, llm)
         self.assertFalse(agent_kwargs["allow_delegation"])
+        self.assertEqual(agent_kwargs["max_retry_limit"], 2)
         task_class.assert_called_once()
+        _, task_kwargs = task_class.call_args
+        self.assertEqual(task_kwargs["tools"], [vision_tool])
+        self.assertIn("MANDATORY RUNTIME STEP", task_kwargs["description"])
+        self.assertIn("call `jee_question_vision_analyzer` exactly once", task_kwargs["description"])
 
 
 if __name__ == "__main__":
