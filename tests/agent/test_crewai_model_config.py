@@ -110,6 +110,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             model="gemini/gemini-3-flash-preview",
             api_key="google-key",
             temperature=0.2,
+            timeout=60,
         )
 
     def test_crewai_llm_uses_aws_region_for_bedrock_model(self):
@@ -131,6 +132,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             model="bedrock/anthropic.claude-3-5-sonnet",
             aws_region_name="ap-south-1",
             temperature=0.2,
+            timeout=60,
         )
 
     def test_rate_limited_llm_delegates_attributes(self):
@@ -288,7 +290,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
         self.assertIsInstance(agent_kwargs["llm"], MandatoryVisionToolLLM)
         self.assertIs(agent_kwargs["llm"].llm, llm)
         self.assertFalse(agent_kwargs["allow_delegation"])
-        self.assertEqual(agent_kwargs["max_retry_limit"], 2)
+        self.assertEqual(agent_kwargs["max_retry_limit"], 0)
         task_class.assert_called_once()
         _, task_kwargs = task_class.call_args
         self.assertEqual(task_kwargs["tools"], [vision_tool])

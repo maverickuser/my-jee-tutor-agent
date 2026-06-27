@@ -117,7 +117,7 @@ def build_tutor_agent(
         llm=agent_llm,
         verbose=True,
         allow_delegation=False,
-        max_retry_limit=2,
+        max_retry_limit=0,
     )
 
 

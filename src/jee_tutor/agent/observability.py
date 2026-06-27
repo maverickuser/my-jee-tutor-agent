@@ -93,6 +93,7 @@ class LangfuseObservability:
         model: str,
         input_payload: dict[str, Any],
         prompt: Any = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Iterator[Any]:
         if not self.enabled:
             yield None
@@ -105,6 +106,7 @@ class LangfuseObservability:
             model=model,
             input=input_payload,
             prompt=prompt,
+            metadata=metadata,
         ) as generation:
             yield generation
 

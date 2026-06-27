@@ -7,6 +7,9 @@ from typing import Any
 from jee_tutor.agent.config_loader import LLMConfig
 
 
+DEFAULT_LLM_TIMEOUT_SECONDS = 60
+
+
 @dataclass(frozen=True)
 class ModelSettings:
     model: str
@@ -40,6 +43,7 @@ class VisionModelConfig:
         model = self._setting("VISION_MODEL", "vision", "model", "openai/gpt-4o")
         api_base = self._setting("LITELLM_BASE_URL", "litellm", "api_base")
         completion_options = self.config.section("completion")
+        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
 
         if self._uses_aws_credentials(model):
             return ModelSettings(

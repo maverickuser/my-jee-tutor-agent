@@ -59,7 +59,7 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["matched_columns"], ["Question Number", "Chapter"])
 
-    def test_run_case_retries_retryable_errors(self):
+    def test_run_case_does_not_stack_retries_above_vision_client(self):
         case = {"id": "case-1", "type": "analysis"}
         sleep = Mock()
 
@@ -78,11 +78,11 @@ class RunAgentEvalsTest(unittest.TestCase):
                 sleep=sleep,
             )
 
-        self.assertTrue(result["passed"])
-        self.assertEqual(run_case.call_count, 2)
-        sleep.assert_called_once_with(10.0)
+        self.assertFalse(result["passed"])
+        self.assertEqual(run_case.call_count, 1)
+        sleep.assert_not_called()
 
-    def test_run_case_returns_failed_result_after_retry_exhaustion(self):
+    def test_run_case_returns_failed_result_without_retry(self):
         case = {"id": "case-1", "type": "analysis"}
 
         with patch(
@@ -98,13 +98,13 @@ class RunAgentEvalsTest(unittest.TestCase):
             )
 
         self.assertFalse(result["passed"])
-        self.assertTrue(result["skipped"])
-        self.assertTrue(result["transient_error"])
+        self.assertFalse(result["skipped"])
+        self.assertFalse(result["transient_error"])
         self.assertEqual(result["id"], "case-1")
         self.assertEqual(result["exception_type"], "Exception")
-        self.assertIn("2 attempt", result["reason"])
+        self.assertIn("1 attempt", result["reason"])
 
-    def test_retryable_handler_error_response_is_detected(self):
+    def test_handler_error_response_is_not_retried_by_eval_runner(self):
         response = {
             "error": "Tutor workflow failed while analyzing images.",
             "details": [
@@ -116,8 +116,7 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         reason = _retryable_response_error_reason(response)
 
-        self.assertIsNotNone(reason)
-        self.assertIn("workflow failed before producing analysis", reason)
+        self.assertIsNone(reason)
 
     def test_workflow_failure_without_transient_provider_details_is_not_retryable(self):
         response = {

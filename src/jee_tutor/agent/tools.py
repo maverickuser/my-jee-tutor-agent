@@ -20,6 +20,7 @@ class VisionToolCallState:
     image_count: int = 0
     image_source: str = ""
     error: str | None = None
+    first_error: str | None = None
 
 
 class VisionInput(BaseModel):
@@ -55,8 +56,11 @@ class VisionAnalysisTool(BaseTool):
         self.call_state.called = True
         self.call_state.call_count += 1
         if self.call_state.call_count > 1:
-            self.call_state.error = "Vision analyzer must be called exactly once per workflow."
-            raise RuntimeError(self.call_state.error)
+            duplicate_error = "Vision analyzer must be called exactly once per workflow."
+            self.call_state.error = duplicate_error
+            if self.call_state.first_error is None:
+                self.call_state.first_error = duplicate_error
+            raise RuntimeError(duplicate_error)
 
         resolved_images, image_source = self._resolve_tool_images(image_data_uris or [])
         self._log_tool_context(
@@ -67,6 +71,7 @@ class VisionAnalysisTool(BaseTool):
         self.call_state.image_source = image_source
         if not resolved_images:
             self.call_state.error = "Vision analyzer received no images."
+            self.call_state.first_error = self.call_state.error
             raise ValueError(
                 "Vision analyzer received no images. Provide image_data_uri or image_s3_prefix "
                 "in the invocation payload."
@@ -79,6 +84,8 @@ class VisionAnalysisTool(BaseTool):
             return analysis
         except Exception as exc:
             self.call_state.error = f"{exc.__class__.__name__}: {exc or '[no message]'}"
+            if self.call_state.first_error is None:
+                self.call_state.first_error = self.call_state.error
             logger.exception(
                 "vision_analyzer_failed image_source=%s image_count=%s error_type=%s error=%s",
                 image_source,
@@ -91,6 +98,9 @@ class VisionAnalysisTool(BaseTool):
                 f"{len(resolved_images)} image(s) from {image_source}. "
                 f"Upstream error: {exc.__class__.__name__}: {exc or '[no message]'}"
             ) from exc
+
+    def run_preloaded(self) -> str:
+        return self._run()
 
     def _resolve_tool_images(self, image_data_uris: list[str]) -> tuple[list[str], str]:
         if self.preloaded_image_data_uris:

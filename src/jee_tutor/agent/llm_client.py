@@ -8,7 +8,11 @@ from jee_tutor.agent.model_config import VisionModelConfig
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import VISION_SYSTEM, VISION_USER
-from jee_tutor.agent.rate_limit import gemini_rate_limiter, is_gemini_model
+from jee_tutor.agent.rate_limit import (
+    exception_status_code,
+    gemini_rate_limiter,
+    is_gemini_model,
+)
 
 
 CompletionFunction = Callable[..., dict]
@@ -91,30 +95,92 @@ class VisionLLMClient:
         }
         request_kwargs = self._stateless_completion_kwargs(request_kwargs)
 
-        with self.observability.generation_span(
-            model=model_settings.model,
-            input_payload=self._redacted_generation_input(request_kwargs),
+        response = self._complete_with_rate_limit(
+            model_settings.model,
+            request_kwargs,
             prompt=system_prompt.langfuse_prompt,
+        )
+        return response["choices"][0]["message"]["content"].strip()
+
+    def _complete_with_rate_limit(
+        self,
+        model: str,
+        request_kwargs: dict,
+        *,
+        prompt: Any = None,
+    ) -> dict:
+        if is_gemini_model(model):
+            return gemini_rate_limiter.call_attempts(
+                lambda attempt: self._complete_attempt(
+                    model,
+                    request_kwargs,
+                    prompt=prompt,
+                    attempt=attempt,
+                    max_attempts=gemini_rate_limiter.max_attempts,
+                )
+            )
+        return self._complete_attempt(
+            model,
+            request_kwargs,
+            prompt=prompt,
+            attempt=1,
+            max_attempts=1,
+        )
+
+    def _complete_attempt(
+        self,
+        model: str,
+        request_kwargs: dict,
+        *,
+        prompt: Any,
+        attempt: int,
+        max_attempts: int,
+    ) -> dict:
+        timeout_seconds = request_kwargs.get("timeout")
+        logger.info(
+            "llm_attempt=%s max_attempts=%s timeout_seconds=%s model=%s",
+            attempt,
+            max_attempts,
+            timeout_seconds,
+            model,
+        )
+        metadata = {
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "timeout_seconds": timeout_seconds,
+        }
+        with self.observability.generation_span(
+            model=model,
+            input_payload=self._redacted_generation_input(request_kwargs),
+            prompt=prompt,
+            metadata=metadata,
         ) as generation:
-            response = self._complete_with_rate_limit(model_settings.model, request_kwargs)
+            try:
+                response = self.completion_fn(**request_kwargs)
+            except Exception as exc:
+                if generation:
+                    generation.update(
+                        output={
+                            "error_type": exc.__class__.__name__,
+                            "status_code": exception_status_code(exc),
+                        }
+                    )
+                raise
+
             analysis = response["choices"][0]["message"]["content"].strip()
             if generation:
                 generation.update(
                     output=analysis,
-                    **self._generation_accounting(response, model_settings.model),
+                    **self._generation_accounting(response, model),
                 )
-            return analysis
-
-    def _complete_with_rate_limit(self, model: str, request_kwargs: dict) -> dict:
-        if is_gemini_model(model):
-            return gemini_rate_limiter.call(self.completion_fn, **request_kwargs)
-        return self.completion_fn(**request_kwargs)
+            return response
 
     @staticmethod
     def _stateless_completion_kwargs(request_kwargs: dict) -> dict:
         stateless_kwargs = dict(request_kwargs)
         stateless_kwargs["caching"] = False
         stateless_kwargs["cache"] = {"no-cache": True}
+        stateless_kwargs["num_retries"] = 0
 
         for key in ["cached_content", "cachedContent", "preset_cache_key"]:
             stateless_kwargs.pop(key, None)

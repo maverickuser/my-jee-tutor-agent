@@ -2,15 +2,16 @@
 # Environment variables can override deployment-specific values.
 
 [vision]
-model = "gemini/gemini-3-flash-preview"
+model = "gemini/gemini-2.5-pro"
 
 [completion]
 temperature = 0.2
+timeout = 60
+num_retries = 0
 
 # Add any LiteLLM completion kwarg here, for example:
 # top_p = 0.9
 # max_tokens = 1200
-# timeout = 60
 
 [guardrails]
 enabled = false

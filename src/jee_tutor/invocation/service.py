@@ -9,6 +9,10 @@ from jee_tutor.agent import run_tutor_workflow
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.output_validation import OutputValidationError
+from jee_tutor.invocation.idempotency import (
+    InvocationIdempotencyStore,
+    invocation_idempotency_store,
+)
 from jee_tutor.invocation.image_inputs import ImageInputResolver, ResolvedImage
 from jee_tutor.invocation.models import (
     ErrorResponse,
@@ -34,12 +38,14 @@ class TutorInvocationService:
         observability: LangfuseObservability | None = None,
         workflow: TutorWorkflow | None = None,
         artifact_writer: AnalysisArtifactWriter | None = None,
+        idempotency_store: InvocationIdempotencyStore | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
         self.observability = observability or LangfuseObservability()
         self.workflow = workflow or run_tutor_workflow
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
+        self.idempotency_store = idempotency_store or invocation_idempotency_store
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -57,6 +63,39 @@ class TutorInvocationService:
                 [error["msg"] for error in exc.errors()],
             )
 
+        if invocation.idempotency_key:
+            claim = self.idempotency_store.claim(
+                invocation.idempotency_key,
+                invocation.model_dump(),
+            )
+            if claim.status == "completed":
+                return claim.response or {}
+            if claim.status == "in_progress":
+                return self._error_response(
+                    "Tutor invocation is already in progress.",
+                    ["Retry later using the same idempotency_key."],
+                )
+            if claim.status == "conflict":
+                return self._error_response(
+                    "Idempotency key was already used with a different payload.",
+                    ["Use a new idempotency_key for a different request."],
+                )
+
+        try:
+            response = self._handle_validated_invocation(invocation)
+        except Exception:
+            if invocation.idempotency_key:
+                self.idempotency_store.abandon(invocation.idempotency_key)
+            raise
+
+        if invocation.idempotency_key:
+            self.idempotency_store.complete(invocation.idempotency_key, response)
+        return response
+
+    def _handle_validated_invocation(
+        self,
+        invocation: TutorInvocationPayload,
+    ) -> dict[str, Any]:
         try:
             resolved_images = self.image_resolver.resolve_images(
                 image_data_uri=invocation.image_data_uri,

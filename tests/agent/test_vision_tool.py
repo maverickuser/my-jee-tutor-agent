@@ -50,6 +50,16 @@ class VisionToolTest(unittest.TestCase):
             [(["data:image/png;base64,ZmFrZQ=="], None)],
         )
 
+    def test_run_preloaded_uses_preloaded_images(self):
+        llm_client = FakeVisionLLMClient()
+        tool = VisionAnalysisTool(
+            llm_client=llm_client,
+            preloaded_image_data_uris=["data:image/png;base64,cHJlbG9hZGVk"],
+        )
+
+        self.assertEqual(tool.run_preloaded(), "analysis")
+        self.assertEqual(len(llm_client.calls), 1)
+
     def test_tool_rejects_a_second_call_without_invoking_vision_again(self):
         llm_client = FakeVisionLLMClient()
         tool = VisionAnalysisTool(llm_client=llm_client)
@@ -105,6 +115,22 @@ class VisionToolTest(unittest.TestCase):
             "from preloaded_invocation_images",
         ):
             tool._run(["input_file_0.png"])
+
+    def test_duplicate_attempt_does_not_overwrite_original_provider_error(self):
+        tool = VisionAnalysisTool(
+            llm_client=FakeVisionLLMClient(error=TimeoutError("provider timed out")),
+            preloaded_image_data_uris=["data:image/png;base64,cHJlbG9hZGVk"],
+        )
+
+        with self.assertRaises(RuntimeError):
+            tool.run_preloaded()
+        with self.assertRaisesRegex(RuntimeError, "exactly once"):
+            tool.run_preloaded()
+
+        self.assertEqual(
+            tool.call_state.first_error,
+            "TimeoutError: provider timed out",
+        )
 
     def test_tool_rejects_empty_image_input_with_clear_error(self):
         tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())

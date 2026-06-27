@@ -11,6 +11,7 @@ class TutorInvocationPayload(BaseModel):
     image_s3_prefix: str | None = None
     image_data_uri: str | None = None
     save_analysis_pdf: bool = True
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def require_exactly_one_image_payload(self) -> "TutorInvocationPayload":

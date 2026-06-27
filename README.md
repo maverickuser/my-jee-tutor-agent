@@ -27,6 +27,7 @@ The runtime accepts a deliberately small payload. Send exactly one of
 
 ```json
 {
+  "idempotency_key": "student-1-minor-test-1-maths",
   "task": "Diagnose this JEE attempt.",
   "subject": "maths",
   "image_s3_prefix": "s3://attempt-bucket/maths/student-1/",
@@ -49,6 +50,7 @@ Single-image payload:
 
 ```json
 {
+  "idempotency_key": "student-1-question-59",
   "task": "Diagnose this JEE attempt.",
   "subject": "maths",
   "image_data_uri": "data:image/png;base64,...",
@@ -56,13 +58,25 @@ Single-image payload:
 }
 ```
 
+`idempotency_key` is optional but recommended. Repeating the same key and payload
+within ten minutes returns the completed response without running image analysis
+again. A concurrent request with the same key is reported as already in progress,
+and reusing a key with a different payload is rejected. The cache is local to one
+runtime process; use a shared persistence layer if deduplication across multiple
+runtime instances is required.
+
+Vision-model requests use a 60-second timeout and up to three total attempts.
+Only timeouts and HTTP 429, 500, or 503 responses are retried, with exponential
+backoff. Provider-level automatic retries are disabled so this remains the only
+transport retry layer.
+
 ## LLM Config
 
 Default model settings live in [src/config/llm.toml](src/config/llm.toml):
 
 ```toml
 [vision]
-model = "gemini/gemini-3-flash-preview"
+model = "gemini/gemini-2.5-pro"
 
 [completion]
 temperature = 0.2

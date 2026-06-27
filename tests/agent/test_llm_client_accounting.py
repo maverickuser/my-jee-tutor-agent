@@ -21,9 +21,11 @@ class RecordingObservability:
     def __init__(self):
         self.generation = RecordingGeneration()
         self.prompt_names = []
+        self.generation_spans = []
 
     @contextmanager
     def generation_span(self, **kwargs):
+        self.generation_spans.append(kwargs)
         yield self.generation
 
     def get_text_prompt(self, name, fallback):
@@ -93,7 +95,8 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
+            limiter.max_attempts = 3
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
 
@@ -136,13 +139,15 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
+            limiter.max_attempts = 3
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
 
         kwargs = completion.call_args.kwargs
         self.assertFalse(kwargs["caching"])
         self.assertEqual(kwargs["cache"], {"no-cache": True})
+        self.assertEqual(kwargs["num_retries"], 0)
         self.assertNotIn("cached_content", kwargs)
         self.assertNotIn("cachedContent", kwargs)
         self.assertNotIn("preset_cache_key", kwargs)
@@ -180,7 +185,8 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, **kwargs: func(**kwargs)
+            limiter.max_attempts = 3
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(
                 client.analyze_vision("data:image/png;base64,AA==", "prompt"),
@@ -200,6 +206,53 @@ class LLMClientAccountingTest(unittest.TestCase):
                     "cost_details": {"total": 0.00042},
                 }
             ],
+        )
+        self.assertEqual(
+            observability.generation_spans[0]["metadata"],
+            {"attempt": 1, "max_attempts": 3, "timeout_seconds": 60},
+        )
+
+    def test_each_retry_gets_a_separate_generation_span(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "gemini/gemini-3-flash-preview"},
+                "completion": {"timeout": 60},
+            }
+        )
+        observability = RecordingObservability()
+        client = VisionLLMClient(
+            model_config=VisionModelConfig(
+                environ={"GOOGLE_API_KEY": "google-key"},
+                config=config,
+            ),
+            observability=observability,
+            prompt_provider=PromptProvider(config=config, observability=observability),
+            completion_fn=Mock(
+                side_effect=[
+                    TimeoutError("timed out"),
+                    {"choices": [{"message": {"content": "analysis"}}]},
+                ]
+            ),
+        )
+
+        with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
+            limiter.max_attempts = 3
+
+            def run_attempts(func):
+                with self.assertRaises(TimeoutError):
+                    func(1)
+                return func(2)
+
+            limiter.call_attempts.side_effect = run_attempts
+            self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
+
+        self.assertEqual(
+            [span["metadata"]["attempt"] for span in observability.generation_spans],
+            [1, 2],
+        )
+        self.assertEqual(
+            observability.generation.updates[0]["output"]["error_type"],
+            "TimeoutError",
         )
 
     def test_accounting_omits_cost_when_litellm_cannot_infer_it(self):
@@ -259,7 +312,7 @@ class LLMClientAccountingTest(unittest.TestCase):
             )
 
         completion.assert_called_once()
-        limiter.call.assert_not_called()
+        limiter.call_attempts.assert_not_called()
 
     def test_accounting_is_empty_without_usage_or_cost(self):
         with patch("jee_tutor.agent.llm_client.completion_cost", return_value=None):
