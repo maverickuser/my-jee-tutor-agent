@@ -65,7 +65,11 @@ and reusing a key with a different payload is rejected. The cache is local to on
 runtime process; use a shared persistence layer if deduplication across multiple
 runtime instances is required.
 
-Vision-model requests use a 60-second timeout and up to three total attempts.
+For S3-prefix invocations with PDF output enabled, the artifact is written as
+`<subject>_analysis.pdf` under the supplied prefix. The subject is sanitized
+before it is used in the filename.
+
+Vision-model requests use a 150-second timeout and up to two total attempts.
 Only timeouts and HTTP 429, 500, or 503 responses are retried, with exponential
 backoff. Provider-level automatic retries are disabled so this remains the only
 transport retry layer.
@@ -80,6 +84,8 @@ model = "gemini/gemini-2.5-pro"
 
 [completion]
 temperature = 0.2
+timeout = 150
+num_retries = 0
 ```
 
 Optional Bedrock runtime guardrails live in the same file:
@@ -101,7 +107,7 @@ Add any extra LiteLLM completion option under `[completion]`:
 temperature = 0.2
 top_p = 0.9
 max_tokens = 1200
-timeout = 60
+timeout = 150
 ```
 
 You can point to a different config file with:

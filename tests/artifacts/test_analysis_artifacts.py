@@ -62,19 +62,25 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
             s3_client=s3_client,
             pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter()),
         )
-        invocation = TutorInvocationPayload(image_s3_prefix="s3://attempt-bucket/maths/student-1/")
+        invocation = TutorInvocationPayload(
+            image_s3_prefix="s3://attempt-bucket/maths/student-1/",
+            subject="Maths",
+        )
 
         result = writer.write_for_invocation(
             analysis_markdown="| Q | Topic |\n|---|---|\n| 1 | Limits |",
             invocation=invocation,
         )
 
-        self.assertEqual(result.pdf_uri, "s3://attempt-bucket/maths/student-1/analysis.pdf")
+        self.assertEqual(
+            result.pdf_uri,
+            "s3://attempt-bucket/maths/student-1/Maths_analysis.pdf",
+        )
         self.assertIsNone(result.markdown_uri)
         self.assertEqual(result.errors, [])
         _, kwargs = s3_client.put_object.call_args
         self.assertEqual(kwargs["Bucket"], "attempt-bucket")
-        self.assertEqual(kwargs["Key"], "maths/student-1/analysis.pdf")
+        self.assertEqual(kwargs["Key"], "maths/student-1/Maths_analysis.pdf")
         self.assertEqual(kwargs["ContentType"], "application/pdf")
         self.assertTrue(kwargs["Body"].startswith(b"%PDF"))
 
@@ -102,7 +108,10 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
             s3_client=s3_client,
             pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter(RuntimeError("no tex"))),
         )
-        invocation = TutorInvocationPayload(image_s3_prefix="s3://attempt-bucket/maths/")
+        invocation = TutorInvocationPayload(
+            image_s3_prefix="s3://attempt-bucket/maths/",
+            subject="Mathematics",
+        )
 
         with self.assertLogs("jee_tutor.artifacts.writer", level="ERROR") as logs:
             result = writer.write_for_invocation(
@@ -111,11 +120,14 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
             )
 
         self.assertIsNone(result.pdf_uri)
-        self.assertEqual(result.markdown_uri, "s3://attempt-bucket/maths/analysis.md")
+        self.assertEqual(
+            result.markdown_uri,
+            "s3://attempt-bucket/maths/Mathematics_analysis.md",
+        )
         self.assertEqual(result.errors, ["Failed to write analysis PDF: RuntimeError: no tex"])
         self.assertTrue(any("analysis_pdf_error" in line for line in logs.output))
         _, kwargs = s3_client.put_object.call_args
-        self.assertEqual(kwargs["Key"], "maths/analysis.md")
+        self.assertEqual(kwargs["Key"], "maths/Mathematics_analysis.md")
         self.assertEqual(kwargs["Body"], b"markdown analysis")
         self.assertEqual(kwargs["ContentType"], "text/markdown; charset=utf-8")
 
@@ -141,6 +153,27 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
                 "Failed to write analysis PDF: RuntimeError: no tex",
                 "Failed to write analysis markdown fallback: RuntimeError: s3 denied",
             ],
+        )
+
+    def test_subject_is_sanitized_for_pdf_filename(self):
+        invocation = TutorInvocationPayload(
+            image_s3_prefix="s3://attempt-bucket/reports/",
+            subject="Physical Chemistry / Advanced",
+        )
+
+        self.assertEqual(
+            AnalysisArtifactWriter._resolve_pdf_uri(invocation),
+            "s3://attempt-bucket/reports/Physical_Chemistry_Advanced_analysis.pdf",
+        )
+
+    def test_missing_subject_preserves_analysis_pdf_fallback(self):
+        invocation = TutorInvocationPayload(
+            image_s3_prefix="s3://attempt-bucket/reports/",
+        )
+
+        self.assertEqual(
+            AnalysisArtifactWriter._resolve_pdf_uri(invocation),
+            "s3://attempt-bucket/reports/analysis.pdf",
         )
 
 if __name__ == "__main__":

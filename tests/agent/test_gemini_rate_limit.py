@@ -54,7 +54,7 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertEqual(len(sleeps), 1)
         self.assertAlmostEqual(sleeps[0], 0.6)
 
-    def test_limiter_defaults_to_three_attempts(self):
+    def test_limiter_defaults_to_two_attempts(self):
         sleeps: list[float] = []
         limiter = GeminiRateLimiter(
             sleep=sleeps.append,
@@ -66,10 +66,9 @@ class GeminiRateLimitTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "HTTP 429"):
             limiter.call(action)
 
-        self.assertEqual(limiter.max_attempts, 3)
-        self.assertEqual(action.call_count, 3)
+        self.assertEqual(limiter.max_attempts, 2)
+        self.assertEqual(action.call_count, 2)
         self.assertEqual(sleeps[0], 2.0)
-        self.assertIn(4.0, sleeps)
 
     def test_limiter_retries_only_allowed_http_statuses(self):
         for status_code in (429, 500, 503):
@@ -173,7 +172,7 @@ class GeminiRateLimitTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.max_attempts = 3
+            limiter.max_attempts = 2
             limiter.call_attempts.side_effect = lambda func: func(1)
             self.assertEqual(
                 client.analyze_vision("data:image/png;base64,AA==", "prompt"), "analysis"
@@ -181,7 +180,7 @@ class GeminiRateLimitTest(unittest.TestCase):
 
         limiter.call_attempts.assert_called_once()
         completion.assert_called_once()
-        self.assertEqual(completion.call_args.kwargs["timeout"], 60)
+        self.assertEqual(completion.call_args.kwargs["timeout"], 150)
 
     def test_crewai_gemini_llm_is_rate_limited(self):
         config = LLMConfig({"vision": {"model": "gemini/gemini-3-flash-preview"}})
@@ -196,7 +195,7 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertIsInstance(llm, RateLimitedLLM)
         llm_class.assert_called_once_with(
             model="gemini/gemini-3-flash-preview",
-            timeout=60,
+            timeout=150,
             api_key="google-key",
         )
 

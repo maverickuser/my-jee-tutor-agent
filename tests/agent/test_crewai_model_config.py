@@ -110,7 +110,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             model="gemini/gemini-3-flash-preview",
             api_key="google-key",
             temperature=0.2,
-            timeout=60,
+            timeout=150,
         )
 
     def test_crewai_llm_uses_aws_region_for_bedrock_model(self):
@@ -132,7 +132,7 @@ class CrewAIModelConfigTest(unittest.TestCase):
             model="bedrock/anthropic.claude-3-5-sonnet",
             aws_region_name="ap-south-1",
             temperature=0.2,
-            timeout=60,
+            timeout=150,
         )
 
     def test_rate_limited_llm_delegates_attributes(self):

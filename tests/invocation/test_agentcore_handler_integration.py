@@ -424,6 +424,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 {
                     "image_s3_prefix": "s3://attempt-bucket/maths/",
                     "task": "diagnose maths attempt",
+                    "subject": "Maths",
                 }
             )
 
@@ -438,11 +439,11 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 ),
                 "message": (
                     "Your analysis PDF will be available at "
-                    "s3://attempt-bucket/maths/analysis.pdf. "
+                    "s3://attempt-bucket/maths/Maths_analysis.pdf. "
                     "Please wait 5 minutes before opening it."
                 ),
                 "pdf_wait_minutes": 5,
-                "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
+                "analysis_pdf_uri": "s3://attempt-bucket/maths/Maths_analysis.pdf",
             },
         )
         run_tutor_workflow.assert_called_once()
@@ -451,7 +452,7 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
         _, put_kwargs = fake_s3_client.put_object.call_args
         self.assertEqual(put_kwargs["Bucket"], "attempt-bucket")
-        self.assertEqual(put_kwargs["Key"], "maths/analysis.pdf")
+        self.assertEqual(put_kwargs["Key"], "maths/Maths_analysis.pdf")
         self.assertTrue(put_kwargs["Body"].startswith(b"%PDF"))
 
 

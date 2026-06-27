@@ -7,7 +7,7 @@ from typing import Any
 from jee_tutor.agent.config_loader import LLMConfig
 
 
-DEFAULT_LLM_TIMEOUT_SECONDS = 60
+DEFAULT_LLM_TIMEOUT_SECONDS = 150
 
 
 @dataclass(frozen=True)

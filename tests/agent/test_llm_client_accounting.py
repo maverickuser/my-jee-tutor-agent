@@ -95,7 +95,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.max_attempts = 3
+            limiter.max_attempts = 2
             limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
@@ -139,7 +139,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.max_attempts = 3
+            limiter.max_attempts = 2
             limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "analysis")
@@ -185,7 +185,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.max_attempts = 3
+            limiter.max_attempts = 2
             limiter.call_attempts.side_effect = lambda func: func(1)
 
             self.assertEqual(
@@ -209,7 +209,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
         self.assertEqual(
             observability.generation_spans[0]["metadata"],
-            {"attempt": 1, "max_attempts": 3, "timeout_seconds": 60},
+            {"attempt": 1, "max_attempts": 2, "timeout_seconds": 150},
         )
 
     def test_each_retry_gets_a_separate_generation_span(self):
@@ -236,7 +236,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
 
         with patch("jee_tutor.agent.llm_client.gemini_rate_limiter") as limiter:
-            limiter.max_attempts = 3
+            limiter.max_attempts = 2
 
             def run_attempts(func):
                 with self.assertRaises(TimeoutError):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import PurePosixPath
+import re
 from urllib.parse import urlparse
 
 import boto3
@@ -86,9 +87,19 @@ class AnalysisArtifactWriter:
         if invocation.image_s3_prefix:
             bucket, prefix = cls._parse_s3_uri(invocation.image_s3_prefix)
             normalized_prefix = prefix.rstrip("/")
-            key = f"{normalized_prefix}/analysis.pdf" if normalized_prefix else "analysis.pdf"
+            filename = cls._analysis_pdf_filename(invocation.subject)
+            key = f"{normalized_prefix}/{filename}" if normalized_prefix else filename
             return f"s3://{bucket}/{key}"
         return None
+
+    @staticmethod
+    def _analysis_pdf_filename(subject: str | None) -> str:
+        if not subject:
+            return "analysis.pdf"
+        normalized_subject = re.sub(r"[^A-Za-z0-9._-]+", "_", subject.strip()).strip("._-")
+        if not normalized_subject:
+            return "analysis.pdf"
+        return f"{normalized_subject}_analysis.pdf"
 
     @classmethod
     def _markdown_uri_for_pdf_uri(cls, pdf_uri: str) -> str:
