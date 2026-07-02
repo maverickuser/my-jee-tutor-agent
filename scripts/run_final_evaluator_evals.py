@@ -64,7 +64,9 @@ def _assessment(
                     "satisfied_completeness_items": [
                         DIAGNOSIS_FIELD_NAMES[i] for i in range(satisfied)
                     ],
-                    "inference_criteria_scores": {"evidence_alignment": inference},
+                    "inference_criteria_scores": [
+                        {"name": "evidence_alignment", "score": inference}
+                    ],
                     "issues": [],
                 }
             ],
