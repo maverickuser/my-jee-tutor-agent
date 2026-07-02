@@ -58,7 +58,9 @@ def assessment(statuses=("supported",), inference=1.0, satisfied=7, critical=Fal
                     "satisfied_completeness_items": [
                         DIAGNOSIS_FIELD_NAMES[i] for i in range(satisfied)
                     ],
-                    "inference_criteria_scores": {"evidence_alignment": inference},
+                    "inference_criteria_scores": [
+                        {"name": "evidence_alignment", "score": inference}
+                    ],
                     "issues": [],
                 }
             ],
@@ -113,7 +115,7 @@ class FinalEvaluationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             EvaluationThresholds(pass_groundedness_score=float("nan"))
         finding = assessment()
-        finding.questions[0].inference_criteria_scores = {}
+        finding.questions[0].inference_criteria_scores = []
         with self.assertRaises(EvaluationCalculationError):
             calculate_metrics(finding, diagnosis())
 
@@ -153,7 +155,13 @@ class FinalEvaluationTest(unittest.TestCase):
                 satisfied_completeness_items=["b"],
             ),
             lambda value: value["questions"][0].update(
-                inference_criteria_scores={"": 1.0}
+                inference_criteria_scores=[{"name": "", "score": 1.0}]
+            ),
+            lambda value: value["questions"][0].update(
+                inference_criteria_scores=[
+                    {"name": "evidence_alignment", "score": 1.0},
+                    {"name": "evidence_alignment", "score": 0.5},
+                ]
             ),
         ]
         for mutate in invalid_mutations:
@@ -162,6 +170,14 @@ class FinalEvaluationTest(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(ValidationError):
                 EvaluatorAssessment.model_validate(payload)
         self.assertTrue(base)
+
+    def test_evaluator_schema_uses_array_scores_not_free_form_map(self):
+        schema = EvaluatorAssessment.model_json_schema()
+        scores_schema = schema["$defs"]["QuestionEvaluation"]["properties"][
+            "inference_criteria_scores"
+        ]
+        self.assertEqual(scores_schema["type"], "array")
+        self.assertIn("items", scores_schema)
 
     def test_zero_denominators_unreadable_and_consistency_fail_closed(self):
         no_claims = assessment()
@@ -179,7 +195,7 @@ class FinalEvaluationTest(unittest.TestCase):
         unreadable_diagnosis.questions[0].question_number = "Unreadable from image"
         no_inference = assessment()
         no_inference.questions[0].question_number = "Unreadable from image"
-        no_inference.questions[0].inference_criteria_scores = {}
+        no_inference.questions[0].inference_criteria_scores = []
         self.assertEqual(
             calculate_metrics(no_inference, unreadable_diagnosis).inference_quality_score,
             1.0,

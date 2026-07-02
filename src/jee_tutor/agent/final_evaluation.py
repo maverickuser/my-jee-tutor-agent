@@ -68,6 +68,18 @@ class ClaimEvaluation(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class CriterionScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    score: float = Field(ge=0.0, le=1.0)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
 class QuestionEvaluation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -76,7 +88,7 @@ class QuestionEvaluation(BaseModel):
     claims: list[ClaimEvaluation] = Field(max_length=100)
     applicable_completeness_items: list[str] = Field(max_length=9)
     satisfied_completeness_items: list[str] = Field(max_length=9)
-    inference_criteria_scores: dict[str, float] = Field(max_length=5)
+    inference_criteria_scores: list[CriterionScore] = Field(max_length=5)
     issues: list[str] = Field(default_factory=list, max_length=10)
 
     @field_validator(
@@ -104,9 +116,9 @@ class QuestionEvaluation(BaseModel):
             raise ValueError("Completeness item references must be unique.")
         if not set(satisfied).issubset(applicable):
             raise ValueError("Satisfied completeness items must be applicable.")
-        for name, value in self.inference_criteria_scores.items():
-            if not name.strip() or not math.isfinite(value) or not 0.0 <= value <= 1.0:
-                raise ValueError("Inference criteria scores must be finite values from 0 to 1.")
+        names = [item.name for item in self.inference_criteria_scores]
+        if len(set(names)) != len(names):
+            raise ValueError("Inference criteria score names must be unique.")
         return self
 
 
@@ -244,9 +256,9 @@ def calculate_metrics(
         raise EvaluationCalculationError("Evaluator produced no applicable completeness items.")
 
     inference_scores = [
-        score
+        score.score
         for question in assessment.questions
-        for score in question.inference_criteria_scores.values()
+        for score in question.inference_criteria_scores
     ]
     if inference_scores:
         inference_quality = sum(inference_scores) / len(inference_scores)
