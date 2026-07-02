@@ -304,6 +304,12 @@ def _remove_provider_schema_metadata(value: object) -> None:
         for key in (
             "additionalProperties",
             "default",
+            "maxItems",
+            "maxLength",
+            "maximum",
+            "minItems",
+            "minLength",
+            "minimum",
             "title",
         ):
             value.pop(key, None)

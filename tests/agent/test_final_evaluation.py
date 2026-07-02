@@ -192,10 +192,18 @@ class FinalEvaluationTest(unittest.TestCase):
             for property_schema in definition.get("properties", {}).values():
                 self.assertNotEqual(property_schema.get("type"), "array")
         encoded = str(schema)
-        for keyword in ("additionalProperties", "default", "title"):
+        for keyword in (
+            "additionalProperties",
+            "default",
+            "maxItems",
+            "maxLength",
+            "maximum",
+            "minItems",
+            "minLength",
+            "minimum",
+            "title",
+        ):
             self.assertNotIn(keyword, encoded)
-        self.assertIn("minItems", encoded)
-        self.assertIn("maxItems", encoded)
 
     def test_flat_provider_assessment_converts_to_domain_assessment(self):
         transport = EvaluatorTransportAssessment.model_validate(
