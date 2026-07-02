@@ -41,6 +41,7 @@ class TutorInvocationResponse(BaseModel):
     analysis_pdf_uri: str | None = None
     analysis_markdown_uri: str | None = None
     artifact_errors: list[str] = Field(default_factory=list)
+    runtime_commit_sha: str | None = None
 
 
 class ErrorResponse(BaseModel):

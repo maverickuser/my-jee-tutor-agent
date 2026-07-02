@@ -94,6 +94,7 @@ class LangfuseObservability:
         input_payload: dict[str, Any],
         prompt: Any = None,
         metadata: dict[str, Any] | None = None,
+        name: str | None = None,
     ) -> Iterator[Any]:
         if not self.enabled:
             yield None
@@ -102,7 +103,7 @@ class LangfuseObservability:
         langfuse = get_client()
         with langfuse.start_as_current_observation(
             as_type="generation",
-            name=self.generation_name,
+            name=name or self.generation_name,
             model=model,
             input=input_payload,
             prompt=prompt,

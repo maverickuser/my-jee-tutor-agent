@@ -102,7 +102,23 @@ def _parse_markdown_table(analysis: str) -> _MarkdownTable:
 
 
 def _split_markdown_row(line: str) -> list[str]:
-    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in line.strip().strip("|"):
+        if escaped:
+            current.append(character)
+            escaped = False
+        elif character == "\\":
+            current.append(character)
+            escaped = True
+        elif character == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(character)
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _is_separator_row(line: str) -> bool:

@@ -11,10 +11,19 @@ def build_tutor_crew(
     prompt_provider: PromptProvider | None = None,
     image_data_uris: list[str] | None = None,
     tool_call_state: VisionToolCallState | None = None,
+    expected_question_numbers: list[str | None] | None = None,
 ) -> Crew:
     prompts = prompt_provider or PromptProvider()
     vision_llm_client = llm_client or VisionLLMClient(prompt_provider=prompts)
-    vision_tool = build_vision_tool(vision_llm_client, image_data_uris, tool_call_state)
+    if expected_question_numbers is None:
+        vision_tool = build_vision_tool(vision_llm_client, image_data_uris, tool_call_state)
+    else:
+        vision_tool = build_vision_tool(
+            vision_llm_client,
+            image_data_uris,
+            tool_call_state,
+            expected_question_numbers,
+        )
     tutor_agent = build_tutor_agent(vision_tool, prompts)
     diagnosis_task = build_diagnosis_task(tutor_agent, vision_tool, prompts)
 
@@ -22,5 +31,5 @@ def build_tutor_crew(
         agents=[tutor_agent],
         tasks=[diagnosis_task],
         process=Process.sequential,
-        verbose=True,
+        verbose=False,
     )

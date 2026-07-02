@@ -180,7 +180,7 @@ class GeminiRateLimitTest(unittest.TestCase):
 
         limiter.call_attempts.assert_called_once()
         completion.assert_called_once()
-        self.assertEqual(completion.call_args.kwargs["timeout"], 150)
+        self.assertEqual(completion.call_args.kwargs["timeout"], 180)
 
     def test_crewai_gemini_llm_is_rate_limited(self):
         config = LLMConfig({"vision": {"model": "gemini/gemini-3-flash-preview"}})
@@ -195,7 +195,7 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertIsInstance(llm, RateLimitedLLM)
         llm_class.assert_called_once_with(
             model="gemini/gemini-3-flash-preview",
-            timeout=150,
+            timeout=180,
             api_key="google-key",
         )
 

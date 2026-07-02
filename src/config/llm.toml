@@ -4,9 +4,37 @@
 [vision]
 model = "gemini/gemini-2.5-pro"
 
+[structured_diagnosis]
+enabled = true
+allow_legacy_markdown = false
+
+[react_diagnosis]
+enabled = true
+max_iterations = 3
+max_orchestration_calls = 2
+
+[final_evaluator]
+enabled = true
+fail_closed = true
+mode = "gated"
+sample_rate = 1.0
+model = "gemini/gemini-2.5-flash"
+temperature = 0
+timeout = 90
+pass_groundedness_score = 0.90
+pass_unsupported_claim_rate = 0.05
+pass_contradiction_rate = 0.00
+pass_completeness_score = 0.90
+pass_inference_quality_score = 0.80
+review_groundedness_score = 0.75
+review_unsupported_claim_rate = 0.20
+review_contradiction_rate = 0.05
+review_completeness_score = 0.75
+review_inference_quality_score = 0.65
+
 [completion]
 temperature = 0.2
-timeout = 150
+timeout = 180
 num_retries = 0
 
 # Add any LiteLLM completion kwarg here, for example:

@@ -9,7 +9,6 @@ from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import (
     TUTOR_AGENT_ROLE,
     DIAGNOSIS_TASK_DESCRIPTION,
-    DIAGNOSIS_TASK_EXPECTED_OUTPUT,
     TUTOR_AGENT_BACKSTORY,
     TUTOR_AGENT_GOAL,
 )
@@ -20,17 +19,24 @@ from jee_tutor.agent.tools import VisionAnalysisTool
 MANDATORY_VISION_TOOL_INSTRUCTION = """
 
 MANDATORY RUNTIME STEP:
-- Before producing any final answer, call `jee_question_vision_analyzer` exactly once.
+- Before producing any final answer, call `jee_question_vision_analyzer` exactly once as the
+  first action.
 - Call it with an empty JSON object. The current invocation images are preloaded.
 - Do not infer, reconstruct, or answer any question before the tool observation is returned.
 - Treat the tool observation as the only source of question content.
-- Return the diagnosis from that observation as the required markdown table.
+- Return the tool observation byte-for-byte without rewriting, reordering, or adding content.
+- A duplicate request only replays the same observation and cannot produce a different answer.
 - If the tool fails, do not produce a generic or guessed answer.
 """
 
 MANDATORY_VISION_TOOL_ACTION = """Thought: I must analyze the preloaded invocation images.
 Action: jee_question_vision_analyzer
 Action Input: {}"""
+
+STRUCTURED_OBSERVATION_EXPECTED_OUTPUT = """The final answer must be exactly the JSON
+observation returned by `jee_question_vision_analyzer`. Return it byte-for-byte without
+rewriting, reordering, adding, removing, repairing, or converting any field. Do not return
+Markdown or commentary."""
 
 
 def _first_string_attribute(obj: Any, *names: str) -> str | None:
@@ -115,9 +121,11 @@ def build_tutor_agent(
         backstory=prompts.get(TUTOR_AGENT_BACKSTORY).text,
         tools=tools,
         llm=agent_llm,
-        verbose=True,
+        verbose=False,
         allow_delegation=False,
+        max_iter=3,
         max_retry_limit=0,
+        allow_code_execution=False,
     )
 
 
@@ -133,7 +141,7 @@ def build_diagnosis_task(
     )
     return Task(
         description=description,
-        expected_output=prompts.get(DIAGNOSIS_TASK_EXPECTED_OUTPUT).text,
+        expected_output=STRUCTURED_OBSERVATION_EXPECTED_OUTPUT,
         agent=tutor_agent,
         tools=[vision_tool],
     )
@@ -152,13 +160,15 @@ def build_crewai_llm(model_config: VisionModelConfig | None = None) -> LLM | Bas
 class MandatoryVisionToolLLM(BaseLLM):
     """Force CrewAI's first ReAct step to execute the preloaded vision tool."""
 
-    def __init__(self, llm: LLM | BaseLLM):
+    def __init__(self, llm: LLM | BaseLLM, max_calls: int = 2):
         model = _first_string_attribute(llm, "model", "model_name", "deployment_name", "name")
         temperature = _first_numeric_attribute(llm, "temperature")
         super().__init__(model=model or str(llm), temperature=temperature)
         self.llm = llm
         self.stop = _normalize_stop_sequences(getattr(llm, "stop", []))
         self._vision_tool_requested = False
+        self.max_calls = max_calls
+        self.call_count = 0
 
     def call(
         self,
@@ -166,7 +176,13 @@ class MandatoryVisionToolLLM(BaseLLM):
         tools: list[dict] | None = None,
         callbacks: list[Any] | None = None,
         available_functions: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> Any:
+        self.call_count += 1
+        if self.call_count > self.max_calls:
+            raise OrchestrationCallBudgetError(
+                f"CrewAI diagnosis exceeded its {self.max_calls}-call orchestration budget."
+            )
         if not self._vision_tool_requested:
             self._vision_tool_requested = True
             return MANDATORY_VISION_TOOL_ACTION
@@ -175,6 +191,7 @@ class MandatoryVisionToolLLM(BaseLLM):
             tools=tools,
             callbacks=callbacks,
             available_functions=available_functions,
+            **kwargs,
         )
 
     def supports_stop_words(self) -> bool:
@@ -195,6 +212,10 @@ class MandatoryVisionToolLLM(BaseLLM):
         return getattr(self.llm, name)
 
 
+class OrchestrationCallBudgetError(RuntimeError):
+    pass
+
+
 class RateLimitedLLM(BaseLLM):
     def __init__(self, llm: LLM):
         model = _first_string_attribute(llm, "model", "model_name", "deployment_name", "name")
@@ -209,6 +230,7 @@ class RateLimitedLLM(BaseLLM):
         tools: list[dict] | None = None,
         callbacks: list[Any] | None = None,
         available_functions: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> Any:
         try:
             return gemini_rate_limiter.call(
@@ -217,6 +239,7 @@ class RateLimitedLLM(BaseLLM):
                 tools=tools,
                 callbacks=callbacks,
                 available_functions=available_functions,
+                **kwargs,
             )
         except Exception as exc:
             raise RuntimeError(self._format_call_failure(exc)) from exc

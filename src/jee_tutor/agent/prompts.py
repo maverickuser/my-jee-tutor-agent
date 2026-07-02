@@ -1,7 +1,18 @@
 VISION_TOOL_DESCRIPTION = (
     "Analyzes uploaded IIT JEE question attempt images with a vision-capable LLM "
-    "and returns a mistake-diagnosis markdown table."
+    "and returns a schema-valid structured diagnosis observation."
 )
+
+STRUCTURED_DIAGNOSIS_OVERRIDE = """
+
+## Structured Output Override
+
+The JSON response schema supplied with this request is authoritative and supersedes any
+legacy Markdown formatting instruction in this prompt. Return one `questions` item per
+provided image in image order. Populate every schema field, add no commentary outside the
+schema, and do not return Markdown. Field descriptions in the supplied schema define the
+required semantics.
+"""
 
 TUTOR_AGENT_ROLE = "Expert STEM IIT JEE tutor & mentor"
 

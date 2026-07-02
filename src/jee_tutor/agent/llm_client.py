@@ -4,10 +4,16 @@ from typing import Any
 
 from litellm import completion, completion_cost
 
-from jee_tutor.agent.model_config import VisionModelConfig
+from jee_tutor.agent.diagnosis_output import (
+    DIAGNOSIS_SCHEMA_NAME,
+    DIAGNOSIS_SCHEMA_VERSION,
+    diagnosis_response_format,
+    parse_and_validate_diagnosis,
+)
+from jee_tutor.agent.model_config import DIAGNOSIS_MODEL, VisionModelConfig
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.prompt_provider import PromptProvider
-from jee_tutor.agent.prompts import VISION_SYSTEM, VISION_USER
+from jee_tutor.agent.prompts import STRUCTURED_DIAGNOSIS_OVERRIDE, VISION_SYSTEM, VISION_USER
 from jee_tutor.agent.rate_limit import (
     exception_status_code,
     gemini_rate_limiter,
@@ -72,12 +78,16 @@ class VisionLLMClient:
         self.prompt_provider = prompt_provider or PromptProvider(observability=self.observability)
         self.message_factory = message_factory or VisionMessageFactory()
         self.completion_fn = completion_fn or completion
+        self.transport_attempt_count = 0
 
     def analyze_vision(
         self,
         image_data_uris: list[str] | str,
         user_prompt: str | None = None,
+        *,
+        expected_question_numbers: list[str | None] | None = None,
     ) -> str:
+        self.transport_attempt_count = 0
         model_settings = self.model_config.resolve()
         system_prompt = self.prompt_provider.get(VISION_SYSTEM)
         if user_prompt is None:
@@ -85,6 +95,7 @@ class VisionLLMClient:
         else:
             user_prompt_text = user_prompt
 
+        normalized_images = self.message_factory._normalize_images(image_data_uris)
         request_kwargs = {
             **model_settings.to_litellm_kwargs(),
             "messages": self.message_factory.build(
@@ -93,14 +104,51 @@ class VisionLLMClient:
                 image_data_uris=image_data_uris,
             ),
         }
+        structured_output = self.model_config.structured_output_enabled
+        if structured_output:
+            if not is_gemini_model(model_settings.model):
+                if not self.model_config.legacy_markdown_enabled:
+                    raise ValueError(
+                        "Structured diagnosis output is enabled only for verified Gemini models."
+                    )
+                structured_output = False
+            elif model_settings.model != DIAGNOSIS_MODEL:
+                raise ValueError(
+                    f"Structured diagnosis model must be pinned to {DIAGNOSIS_MODEL}."
+                )
+            else:
+                request_kwargs["response_format"] = diagnosis_response_format()
+                request_kwargs["messages"][0]["content"] += STRUCTURED_DIAGNOSIS_OVERRIDE
+                request_kwargs["messages"][1]["content"][0][
+                    "text"
+                ] += STRUCTURED_DIAGNOSIS_OVERRIDE
         request_kwargs = self._stateless_completion_kwargs(request_kwargs)
 
+        structured_metadata = (
+            {
+                "output_format": "json_schema",
+                "schema_name": DIAGNOSIS_SCHEMA_NAME,
+                "schema_version": DIAGNOSIS_SCHEMA_VERSION,
+                "expected_image_count": len(normalized_images),
+            }
+            if structured_output
+            else None
+        )
         response = self._complete_with_rate_limit(
             model_settings.model,
             request_kwargs,
             prompt=system_prompt.langfuse_prompt,
+            metadata=structured_metadata,
         )
-        return response["choices"][0]["message"]["content"].strip()
+        content = response["choices"][0]["message"]["content"].strip()
+        if not structured_output:
+            return content
+        diagnosis = parse_and_validate_diagnosis(
+            content,
+            expected_image_count=len(normalized_images),
+            expected_question_numbers=expected_question_numbers,
+        )
+        return diagnosis.model_dump_json()
 
     def _complete_with_rate_limit(
         self,
@@ -108,6 +156,7 @@ class VisionLLMClient:
         request_kwargs: dict,
         *,
         prompt: Any = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict:
         if is_gemini_model(model):
             return gemini_rate_limiter.call_attempts(
@@ -117,6 +166,7 @@ class VisionLLMClient:
                     prompt=prompt,
                     attempt=attempt,
                     max_attempts=gemini_rate_limiter.max_attempts,
+                    metadata=metadata,
                 )
             )
         return self._complete_attempt(
@@ -125,6 +175,7 @@ class VisionLLMClient:
             prompt=prompt,
             attempt=1,
             max_attempts=1,
+            metadata=metadata,
         )
 
     def _complete_attempt(
@@ -135,7 +186,9 @@ class VisionLLMClient:
         prompt: Any,
         attempt: int,
         max_attempts: int,
+        metadata: dict[str, Any] | None = None,
     ) -> dict:
+        self.transport_attempt_count += 1
         timeout_seconds = request_kwargs.get("timeout")
         logger.info(
             "llm_attempt=%s max_attempts=%s timeout_seconds=%s model=%s",
@@ -144,16 +197,17 @@ class VisionLLMClient:
             timeout_seconds,
             model,
         )
-        metadata = {
+        generation_metadata = {
             "attempt": attempt,
             "max_attempts": max_attempts,
             "timeout_seconds": timeout_seconds,
+            **(metadata or {}),
         }
         with self.observability.generation_span(
             model=model,
             input_payload=self._redacted_generation_input(request_kwargs),
             prompt=prompt,
-            metadata=metadata,
+            metadata=generation_metadata,
         ) as generation:
             try:
                 response = self.completion_fn(**request_kwargs)
@@ -170,7 +224,11 @@ class VisionLLMClient:
             analysis = response["choices"][0]["message"]["content"].strip()
             if generation:
                 generation.update(
-                    output=analysis,
+                    output=(
+                        {"validation_status": "pending", "content": "[redacted structured output]"}
+                        if generation_metadata.get("output_format") == "json_schema"
+                        else analysis
+                    ),
                     **self._generation_accounting(response, model),
                 )
             return response

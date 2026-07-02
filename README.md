@@ -7,10 +7,13 @@ AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with li
 1. A client invokes the Bedrock AgentCore runtime with an S3 image prefix or image data URI.
 2. `src/agentcore_app.py` receives the invocation on AgentCore's `/invocations` contract.
 3. `src/agentcore_handler.py` validates the payload and converts it into the tutor workflow input shape.
-4. `run_tutor_workflow` sends the resolved image data URIs directly to `VisionLLMClient`.
-5. `VisionLLMClient` calls the configured vision-capable model through liteLLM.
-6. Optional Bedrock runtime guardrails check the request and final response.
-7. The AgentCore invocation returns coaching-style feedback as JSON.
+4. A constrained CrewAI ReAct agent requests the invocation-scoped vision tool.
+5. `VisionLLMClient` requests structured JSON from `gemini/gemini-2.5-pro`;
+   duplicate tool requests replay one memoized execution.
+6. A separate tool-free CrewAI stage evaluates the diagnosis with
+   `gemini/gemini-2.5-flash`; application code calculates metrics and the decision.
+7. Runtime guardrails apply, and only `PASS` results can create artifacts.
+8. The AgentCore invocation returns the deterministic Markdown analysis as JSON.
 
 ## Local Setup With Poetry
 
@@ -69,7 +72,7 @@ For S3-prefix invocations with PDF output enabled, the artifact is written as
 `<subject>_analysis.pdf` under the supplied prefix. The subject is sanitized
 before it is used in the filename.
 
-Vision-model requests use a 150-second timeout and up to two total attempts.
+Vision-model requests use a 180-second timeout and up to two total attempts.
 Only timeouts and HTTP 429, 500, or 503 responses are retried, with exponential
 backoff. Provider-level automatic retries are disabled so this remains the only
 transport retry layer.
@@ -84,7 +87,7 @@ model = "gemini/gemini-2.5-pro"
 
 [completion]
 temperature = 0.2
-timeout = 150
+timeout = 180
 num_retries = 0
 ```
 
@@ -107,7 +110,7 @@ Add any extra LiteLLM completion option under `[completion]`:
 temperature = 0.2
 top_p = 0.9
 max_tokens = 1200
-timeout = 150
+timeout = 180
 ```
 
 You can point to a different config file with:
@@ -269,7 +272,9 @@ For GitHub Actions deployments, override it with the repository variable `CLOUDW
 
 ### New Relic Log Forwarding
 
-AgentCore writes runtime logs to CloudWatch Logs. Terraform can deploy New Relic's CloudWatch log ingestion Lambda and subscribe the AgentCore runtime log group to it.
+AgentCore keeps stdout logs in CloudWatch and can also deliver bounded structured
+records directly to the regional New Relic Log API from a background worker.
+New Relic failures never alter invocation responses.
 
 For GitHub Actions deployments, add this repository secret:
 
@@ -277,20 +282,22 @@ For GitHub Actions deployments, add this repository secret:
 NEW_RELIC_LICENSE_KEY=your-new-relic-ingest-license-key
 ```
 
-When that secret is present, CD sets `newrelic_log_forwarding_enabled=true` and Terraform creates:
-
-- A New Relic log ingestion Lambda from `newrelic/aws-log-ingestion`
-- A CloudWatch Logs subscription filter from the AgentCore log group to that Lambda
+When that secret is present, CD upserts it into AWS Secrets Manager. Terraform
+receives only the secret ARN, grants the runtime role access to that one secret,
+and enables direct application delivery. The plaintext key is not placed in
+Terraform state or runtime environment variables.
 
 Optional repository variables:
 
 ```text
-NEW_RELIC_LOG_FORWARDER_NAME=jee-tutor-newrelic-log-ingestion
-NEW_RELIC_LOG_FILTER_PATTERN=
-NEW_RELIC_LOG_TAGS=["environment:prod","team:learning"]
+NEW_RELIC_LICENSE_KEY_SECRET_NAME=jee-tutor/new-relic-license-key
+NEW_RELIC_REGION=US
 ```
 
-The app log lines include `service=jee-tutor-agent` by default, and the forwarder adds New Relic tags including `service:<project_name>`, `source:bedrock-agentcore`, and the CloudWatch log group name.
+The request thread only redacts, serializes, and performs a non-blocking queue
+write. Secret retrieval happens at process startup; batching, HTTPS calls, and
+bounded retries run in a daemon worker. Queue overflow and delivery failure are
+reported to stderr/CloudWatch and dropped without blocking requests.
 
 The runtime also emits one invocation metric log per request:
 
@@ -303,7 +310,7 @@ In New Relic Logs, this can be queried directly:
 ```sql
 SELECT count(*) FROM Log
 WHERE service = 'jee-tutor-agent'
-  AND metric_name = 'agent.invocations'
+  AND message LIKE '%metric_name=agent.invocations%'
 ```
 
 Or create a New Relic log-based metric named `agent.invocations` using `metric_value` as the count value.

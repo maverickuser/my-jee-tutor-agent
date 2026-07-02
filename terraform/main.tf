@@ -2,12 +2,6 @@ locals {
   ecr_repo_name           = "${var.project_name}-repo"
   agentcore_runtime_name  = substr("JeeTutorAgent_${replace(var.project_name, "/[^a-zA-Z0-9_]/", "_")}", 0, 48)
   agentcore_endpoint_name = "DEFAULT"
-  newrelic_log_tags = join(";", concat([
-    "service:${var.project_name}",
-    "source:bedrock-agentcore",
-    "log_group:${aws_cloudwatch_log_group.agentcore_runtime.name}",
-  ], var.newrelic_log_tags))
-
   # Use created guardrail if not overridden via var.bedrock_guardrail_id
   bedrock_guardrail_id = var.bedrock_guardrail_id != "" ? var.bedrock_guardrail_id : try(awscc_bedrock_guardrail.jee_tutor[0].guardrail_id, "")
 }
@@ -27,38 +21,6 @@ resource "aws_ecr_repository" "agentcore_repo" {
 resource "aws_cloudwatch_log_group" "agentcore_runtime" {
   name              = "/aws/bedrock-agentcore/runtimes/${local.agentcore_runtime_name}"
   retention_in_days = var.cloudwatch_log_retention_days
-}
-
-module "newrelic_log_ingestion" {
-  count = var.newrelic_log_forwarding_enabled ? 1 : 0
-
-  source = "github.com/newrelic/aws-log-ingestion?ref=v2.11.1"
-
-  service_name                 = var.newrelic_log_forwarder_name
-  nr_license_key               = var.newrelic_license_key
-  nr_tags                      = local.newrelic_log_tags
-  memory_size                  = var.newrelic_log_forwarder_memory_size
-  timeout                      = var.newrelic_log_forwarder_timeout
-  lambda_log_retention_in_days = var.cloudwatch_log_retention_days
-
-  tags = {
-    Project = var.project_name
-    Service = "newrelic-log-forwarder"
-  }
-}
-
-resource "aws_cloudwatch_log_subscription_filter" "agentcore_to_newrelic" {
-  count = var.newrelic_log_forwarding_enabled ? 1 : 0
-
-  name            = "${var.project_name}-agentcore-to-newrelic"
-  log_group_name  = aws_cloudwatch_log_group.agentcore_runtime.name
-  filter_pattern  = var.newrelic_log_filter_pattern
-  destination_arn = module.newrelic_log_ingestion[0].function_arn
-
-  depends_on = [
-    aws_cloudwatch_log_group.agentcore_runtime,
-    module.newrelic_log_ingestion,
-  ]
 }
 
 resource "aws_iam_role" "agentcore_runtime" {
@@ -196,6 +158,14 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Action   = ["s3:ListBucket"]
           Resource = var.s3_image_input_bucket_arns
         }
+      ] : [],
+      var.newrelic_log_forwarding_enabled && var.newrelic_license_key_secret_arn != "" ? [
+        {
+          Sid      = "ReadNewRelicLicenseKey"
+          Effect   = "Allow"
+          Action   = ["secretsmanager:GetSecretValue"]
+          Resource = var.newrelic_license_key_secret_arn
+        }
       ] : []
     )
   })
@@ -238,6 +208,10 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     BEDROCK_GUARDRAIL_OUTPUT_SCOPE  = var.bedrock_guardrail_output_scope
     BEDROCK_GUARDRAIL_FAIL_CLOSED   = tostring(var.bedrock_guardrail_fail_closed)
     BEDROCK_GUARDRAIL_INCLUDE_IMAGE = tostring(var.bedrock_guardrail_include_image)
+
+    NEW_RELIC_LOG_ENABLED            = tostring(var.newrelic_log_forwarding_enabled)
+    NEW_RELIC_LICENSE_KEY_SECRET_ARN = var.newrelic_license_key_secret_arn
+    NEW_RELIC_REGION                 = var.newrelic_region
   }
 
   network_configuration = {
@@ -268,12 +242,4 @@ output "agentcore_runtime_id" {
 
 output "agentcore_endpoint_arn" {
   value = "${awscc_bedrockagentcore_runtime.tutor.agent_runtime_arn}/runtime-endpoint/${local.agentcore_endpoint_name}"
-}
-
-output "newrelic_log_forwarder_arn" {
-  value = var.newrelic_log_forwarding_enabled ? module.newrelic_log_ingestion[0].function_arn : ""
-}
-
-output "newrelic_log_subscription_filter_name" {
-  value = var.newrelic_log_forwarding_enabled ? aws_cloudwatch_log_subscription_filter.agentcore_to_newrelic[0].name : ""
 }

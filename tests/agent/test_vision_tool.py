@@ -1,7 +1,14 @@
 import unittest
+import threading
+import time
 
 from jee_tutor.agent.llm_client import VisionLLMClient
-from jee_tutor.agent.tools import VisionAnalysisTool, VisionInput, build_vision_tool
+from jee_tutor.agent.tools import (
+    ToolExecutionStatus,
+    VisionAnalysisTool,
+    VisionInput,
+    build_vision_tool,
+)
 
 
 class FakeVisionLLMClient(VisionLLMClient):
@@ -60,16 +67,15 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual(tool.run_preloaded(), "analysis")
         self.assertEqual(len(llm_client.calls), 1)
 
-    def test_tool_rejects_a_second_call_without_invoking_vision_again(self):
+    def test_tool_replays_a_second_call_without_invoking_vision_again(self):
         llm_client = FakeVisionLLMClient()
         tool = VisionAnalysisTool(llm_client=llm_client)
         image = "data:image/png;base64,ZmFrZQ=="
 
-        tool._run([image])
+        first = tool._run([image])
+        second = tool._run([image])
 
-        with self.assertRaisesRegex(RuntimeError, "exactly once"):
-            tool._run([image])
-
+        self.assertEqual(first, second)
         self.assertEqual(tool.call_state.call_count, 2)
         self.assertEqual(tool.call_state.successful_call_count, 1)
         self.assertEqual(llm_client.calls, [([image], None)])
@@ -124,7 +130,7 @@ class VisionToolTest(unittest.TestCase):
 
         with self.assertRaises(RuntimeError):
             tool.run_preloaded()
-        with self.assertRaisesRegex(RuntimeError, "exactly once"):
+        with self.assertRaisesRegex(RuntimeError, "Cached vision analyzer failure"):
             tool.run_preloaded()
 
         self.assertEqual(
@@ -137,6 +143,60 @@ class VisionToolTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Vision analyzer received no images"):
             tool._run([])
+
+    def test_expected_numbers_are_passed_and_non_data_input_is_supported(self):
+        client = MockVisionClient()
+        tool = VisionAnalysisTool(
+            llm_client=client,
+            expected_question_numbers=["6"],
+        )
+        tool._run(["input.png"])
+        self.assertEqual(client.expected, ["6"])
+
+    def test_waiter_timeout_and_invalid_memoization_state(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+        tool.call_state.status = ToolExecutionStatus.RUNNING
+        tool.call_state.waiter_timeout_seconds = 0
+        with self.assertRaises(TimeoutError):
+            tool.run_preloaded()
+
+        tool.call_state.status = ToolExecutionStatus.FAILED
+        with self.assertRaisesRegex(RuntimeError, "invalid memoization"):
+            tool.run_preloaded()
+
+    def test_concurrent_callers_share_one_execution(self):
+        release = threading.Event()
+
+        class BlockingClient(FakeVisionLLMClient):
+            def analyze_vision(self, image_data_uris, user_prompt=None):
+                self.calls.append((image_data_uris, user_prompt))
+                release.wait(1)
+                return "analysis"
+
+        client = BlockingClient()
+        tool = VisionAnalysisTool(
+            llm_client=client,
+            preloaded_image_data_uris=["data:image/png;base64,x"],
+        )
+        outputs = []
+        threads = [threading.Thread(target=lambda: outputs.append(tool.run_preloaded())) for _ in range(3)]
+        for thread in threads:
+            thread.start()
+        time.sleep(0.01)
+        release.set()
+        for thread in threads:
+            thread.join(1)
+        self.assertEqual(outputs, ["analysis"] * 3)
+        self.assertEqual(tool.call_state.execution_count, 1)
+
+
+class MockVisionClient(VisionLLMClient):
+    def __init__(self):
+        self.expected = None
+
+    def analyze_vision(self, images, *, expected_question_numbers=None):
+        self.expected = expected_question_numbers
+        return "analysis"
 
 
 if __name__ == "__main__":

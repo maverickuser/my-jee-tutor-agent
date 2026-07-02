@@ -20,6 +20,7 @@ env:
   BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}
   BEDROCK_GUARDRAIL_ID: ${{ vars.BEDROCK_GUARDRAIL_ID || '' }}
   BEDROCK_GUARDRAIL_VERSION: ${{ vars.BEDROCK_GUARDRAIL_VERSION || 'DRAFT' }}
+  NEW_RELIC_ENABLED: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
 
 jobs:
   prepare_infra:
@@ -77,10 +78,8 @@ jobs:
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
           TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
           TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
-          TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-          TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}
-          TF_VAR_newrelic_log_filter_pattern: ${{ vars.NEW_RELIC_LOG_FILTER_PATTERN || '' }}
-          TF_VAR_newrelic_log_tags: ${{ vars.NEW_RELIC_LOG_TAGS || '[]' }}
+          TF_VAR_newrelic_license_key_secret_arn: ""
+          TF_VAR_newrelic_region: ${{ vars.NEW_RELIC_REGION || 'US' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
         run: terraform apply -target=aws_ecr_repository.agentcore_repo -auto-approve
@@ -178,6 +177,7 @@ jobs:
     outputs:
       guardrail_id: ${{ steps.security_outputs.outputs.guardrail_id }}
       guardrail_version: ${{ steps.security_outputs.outputs.guardrail_version }}
+      runtime_arn: ${{ steps.security_outputs.outputs.runtime_arn }}
 
     steps:
       - name: Checkout repository
@@ -203,6 +203,27 @@ jobs:
             -backend-config="region=${AWS_REGION}" \
             -backend-config="dynamodb_table=${TF_STATE_DYNAMODB_TABLE}"
 
+      - name: Upsert New Relic ingest key secret
+        if: env.NEW_RELIC_ENABLED == 'true'
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          SECRET_NAME: ${{ vars.NEW_RELIC_LICENSE_KEY_SECRET_NAME || 'jee-tutor/new-relic-license-key' }}
+        run: |
+          if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value \
+              --secret-id "$SECRET_NAME" \
+              --secret-string "$NEW_RELIC_LICENSE_KEY" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name "$SECRET_NAME" \
+              --secret-string "$NEW_RELIC_LICENSE_KEY" >/dev/null
+          fi
+          secret_arn=$(aws secretsmanager describe-secret \
+            --secret-id "$SECRET_NAME" \
+            --query ARN \
+            --output text)
+          echo "TF_VAR_newrelic_license_key_secret_arn=$secret_arn" >> "$GITHUB_ENV"
+
       - name: Terraform apply AgentCore runtime
         working-directory: terraform
         env:
@@ -220,10 +241,7 @@ jobs:
           TF_VAR_bedrock_guardrail_version: ${{ env.BEDROCK_GUARDRAIL_VERSION }}
           TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
           TF_VAR_newrelic_log_forwarding_enabled: ${{ secrets.NEW_RELIC_LICENSE_KEY != '' && 'true' || 'false' }}
-          TF_VAR_newrelic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-          TF_VAR_newrelic_log_forwarder_name: ${{ vars.NEW_RELIC_LOG_FORWARDER_NAME || 'jee-tutor-newrelic-log-ingestion' }}
-          TF_VAR_newrelic_log_filter_pattern: ${{ vars.NEW_RELIC_LOG_FILTER_PATTERN || '' }}
-          TF_VAR_newrelic_log_tags: ${{ vars.NEW_RELIC_LOG_TAGS || '[]' }}
+          TF_VAR_newrelic_region: ${{ vars.NEW_RELIC_REGION || 'US' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
         run: terraform apply -auto-approve
@@ -234,6 +252,119 @@ jobs:
         run: |
           echo "guardrail_id=$(terraform output -raw bedrock_guardrail_id)" >> "$GITHUB_OUTPUT"
           echo "guardrail_version=$(terraform output -raw bedrock_guardrail_version)" >> "$GITHUB_OUTPUT"
+          echo "runtime_arn=$(terraform output -raw agentcore_runtime_arn)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify New Relic ingest accepts deployment canary
+        if: env.NEW_RELIC_ENABLED == 'true'
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          NEW_RELIC_REGION: ${{ vars.NEW_RELIC_REGION || 'US' }}
+        run: |
+          if [ "$NEW_RELIC_REGION" = "EU" ]; then
+            host="https://log-api.eu.newrelic.com"
+          else
+            host="https://log-api.newrelic.com"
+          fi
+          payload="{\"message\":\"deployment_canary\",\"service\":\"$PROJECT_NAME\",\"commit_sha\":\"${{ github.sha }}\"}"
+          curl --fail --silent --show-error \
+            --request POST "$host/log/v1" \
+            --header "Api-Key: $NEW_RELIC_LICENSE_KEY" \
+            --header "Content-Type: application/json" \
+            --data "$payload" >/dev/null
+
+  quality_pipeline_evals:
+    name: Mandatory ReAct and Final Evaluator Evals
+    runs-on: ubuntu-latest
+    needs: deploy_runtime
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          virtualenvs-create: false
+
+      - name: Install dependencies
+        run: poetry install --with dev --no-interaction --no-ansi
+
+      - name: Run all mandatory ReAct cases
+        env:
+          PYTHONPATH: src
+        run: poetry run python scripts/run_crewai_react_evals.py
+
+      - name: Run all mandatory evaluator cases
+        env:
+          PYTHONPATH: src
+        run: poetry run python scripts/run_final_evaluator_evals.py
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-pipeline-eval-reports
+          path: eval_runs/**
+          if-no-files-found: error
+
+  deployed_runtime_smoke:
+    name: Deployed AgentCore Runtime Smoke
+    runs-on: ubuntu-latest
+    needs:
+      - deploy_runtime
+      - quality_pipeline_evals
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          virtualenvs-create: false
+
+      - name: Install dependencies
+        run: poetry install --with dev --no-interaction --no-ansi
+
+      - name: Invoke deployed runtime and verify artifact/idempotency/SHA
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/run_agentcore_smoke.py \
+            --runtime-arn "${{ needs.deploy_runtime.outputs.runtime_arn }}" \
+            --image-s3-prefix "${CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-final-evaluator/v1/EVAL-001/}" \
+            --expected-sha "${{ github.sha }}"
+
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-runtime-smoke-report
+          path: eval_runs/agentcore-smoke.json
+          if-no-files-found: error
 
   agent_evals:
     name: Run Agent Evals

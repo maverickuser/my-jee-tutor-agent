@@ -105,46 +105,25 @@ variable "cloudwatch_log_retention_days" {
 }
 
 variable "newrelic_log_forwarding_enabled" {
-  description = "Deploy the New Relic CloudWatch log ingestion Lambda and subscribe the AgentCore log group."
+  description = "Enable direct asynchronous application log delivery to New Relic."
   type        = bool
   default     = false
 }
 
-variable "newrelic_license_key" {
-  description = "New Relic ingest license key used by the CloudWatch log ingestion Lambda."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "newrelic_log_forwarder_name" {
-  description = "Name for the New Relic CloudWatch log ingestion Lambda."
-  type        = string
-  default     = "jee-tutor-newrelic-log-ingestion"
-}
-
-variable "newrelic_log_forwarder_memory_size" {
-  description = "Memory size for the New Relic CloudWatch log ingestion Lambda."
-  type        = number
-  default     = 128
-}
-
-variable "newrelic_log_forwarder_timeout" {
-  description = "Timeout in seconds for the New Relic CloudWatch log ingestion Lambda."
-  type        = number
-  default     = 30
-}
-
-variable "newrelic_log_filter_pattern" {
-  description = "CloudWatch Logs subscription filter pattern for logs forwarded to New Relic. Empty forwards all logs."
+variable "newrelic_license_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing the New Relic ingest license key."
   type        = string
   default     = ""
 }
 
-variable "newrelic_log_tags" {
-  description = "Additional New Relic log tags in key:value format."
-  type        = list(string)
-  default     = []
+variable "newrelic_region" {
+  description = "New Relic ingest region: US or EU."
+  type        = string
+  default     = "US"
+  validation {
+    condition     = contains(["US", "EU"], upper(var.newrelic_region))
+    error_message = "newrelic_region must be US or EU."
+  }
 }
 
 variable "s3_image_input_bucket_arns" {

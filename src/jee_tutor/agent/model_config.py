@@ -7,7 +7,9 @@ from typing import Any
 from jee_tutor.agent.config_loader import LLMConfig
 
 
-DEFAULT_LLM_TIMEOUT_SECONDS = 150
+DEFAULT_LLM_TIMEOUT_SECONDS = 180
+DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
+FINAL_EVALUATOR_MODEL = "gemini/gemini-2.5-flash"
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,7 @@ class VisionModelConfig:
         self.config = config or LLMConfig.load(self.environ.get("LLM_CONFIG_FILE"))
 
     def resolve(self) -> ModelSettings:
-        model = self._setting("VISION_MODEL", "vision", "model", "openai/gpt-4o")
+        model = self._setting("VISION_MODEL", "vision", "model", DIAGNOSIS_MODEL)
         api_base = self._setting("LITELLM_BASE_URL", "litellm", "api_base")
         completion_options = self.config.section("completion")
         completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
@@ -67,6 +69,17 @@ class VisionModelConfig:
             completion_options=completion_options,
         )
 
+    @property
+    def structured_output_enabled(self) -> bool:
+        value = self.environ.get("STRUCTURED_DIAGNOSIS_ENABLED")
+        if value is not None:
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(self.config.get("structured_diagnosis", "enabled", False))
+
+    @property
+    def legacy_markdown_enabled(self) -> bool:
+        return bool(self.config.get("structured_diagnosis", "allow_legacy_markdown", True))
+
     def _setting(
         self,
         env_key: str,
@@ -86,3 +99,37 @@ class VisionModelConfig:
     @staticmethod
     def _uses_aws_credentials(model: str) -> bool:
         return model.startswith("bedrock/") or model.startswith("amazon/")
+
+
+class FinalEvaluatorModelConfig(VisionModelConfig):
+    def resolve(self) -> ModelSettings:
+        model = self._setting(
+            "FINAL_EVALUATOR_MODEL",
+            "final_evaluator",
+            "model",
+            FINAL_EVALUATOR_MODEL,
+        )
+        if model != FINAL_EVALUATOR_MODEL:
+            raise ValueError(
+                f"Final evaluator model must be pinned to {FINAL_EVALUATOR_MODEL}."
+            )
+        options = {
+            "temperature": float(self.config.get("final_evaluator", "temperature", 0)),
+            "timeout": float(
+                self.config.get(
+                    "final_evaluator",
+                    "timeout",
+                    DEFAULT_LLM_TIMEOUT_SECONDS,
+                )
+            ),
+            "num_retries": 0,
+        }
+        api_key = self._resolve_api_key(model)
+        if not api_key:
+            raise ValueError("Set GOOGLE_API_KEY or LITELLM_API_KEY for the final evaluator.")
+        return ModelSettings(
+            model=model,
+            api_key=api_key,
+            api_base=self._setting("LITELLM_BASE_URL", "litellm", "api_base"),
+            completion_options=options,
+        )

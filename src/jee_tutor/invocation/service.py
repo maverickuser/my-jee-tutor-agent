@@ -1,11 +1,15 @@
 from collections.abc import Callable
 import logging
 from typing import Any
+import os
 
 from pydantic import ValidationError
 
 from jee_tutor.artifacts.writer import AnalysisArtifactWriter
 from jee_tutor.agent import run_tutor_workflow
+from jee_tutor.agent.evaluator_client import FinalEvaluator
+from jee_tutor.agent.evaluator_sampling import EvaluatorMode, EvaluatorSamplingPolicy
+from jee_tutor.agent.final_evaluation import FinalDecision, FinalEvaluationError
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.output_validation import OutputValidationError
@@ -39,6 +43,8 @@ class TutorInvocationService:
         workflow: TutorWorkflow | None = None,
         artifact_writer: AnalysisArtifactWriter | None = None,
         idempotency_store: InvocationIdempotencyStore | None = None,
+        final_evaluator: FinalEvaluator | None = None,
+        evaluator_sampling: EvaluatorSamplingPolicy | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
@@ -46,6 +52,8 @@ class TutorInvocationService:
         self.workflow = workflow or run_tutor_workflow
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
         self.idempotency_store = idempotency_store or invocation_idempotency_store
+        self.final_evaluator = final_evaluator or FinalEvaluator(observability=self.observability)
+        self.evaluator_sampling = evaluator_sampling or EvaluatorSamplingPolicy.from_config()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -144,7 +152,8 @@ class TutorInvocationService:
                 return response
 
             try:
-                analysis = str(self._run_workflow(invocation, resolved_images))
+                workflow_result = self._run_workflow(invocation, resolved_images)
+                analysis = str(workflow_result)
             except Exception as exc:
                 response = self._error_response(
                     "Tutor workflow failed while analyzing images.",
@@ -157,6 +166,16 @@ class TutorInvocationService:
                     exc.__class__.__name__,
                     exc or "[no message]",
                 )
+                self._finish_invocation(span, response, invocation)
+                return response
+
+            evaluation_error = self._evaluate_if_selected(
+                invocation=invocation,
+                resolved_images=resolved_images,
+                workflow_result=workflow_result,
+            )
+            if evaluation_error is not None:
+                response = self._error_response(str(evaluation_error), evaluation_error.safe_details)
                 self._finish_invocation(span, response, invocation)
                 return response
 
@@ -174,6 +193,78 @@ class TutorInvocationService:
             response = self._success_response(analysis, invocation)
             self._finish_invocation(span, response, invocation)
             return response
+
+    def _evaluate_if_selected(
+        self,
+        *,
+        invocation: TutorInvocationPayload,
+        resolved_images: list[ResolvedImage],
+        workflow_result: object,
+    ) -> FinalEvaluationError | None:
+        diagnosis = getattr(workflow_result, "diagnosis", None)
+        if diagnosis is None:
+            return None
+        selected = self.evaluator_sampling.selected(
+            idempotency_key=invocation.idempotency_key,
+            canonical_payload=invocation.model_dump(exclude={"idempotency_key"}),
+        )
+        if not selected:
+            return None
+        try:
+            result = self.final_evaluator.evaluate(
+                image_data_uris=[image.data_uri for image in resolved_images],
+                diagnosis=diagnosis,
+                context=invocation.resolved_question_context,
+            )
+        except FinalEvaluationError as exc:
+            if self.evaluator_sampling.mode == EvaluatorMode.SHADOW:
+                logger.error(
+                    "final_evaluator_shadow_error category=%s",
+                    exc.category or "unknown",
+                )
+                return None
+            return exc
+
+        self.observability.score_current_trace(
+            [
+                *[
+                    self._evaluation_score(name, value)
+                    for name, value in result.metrics.as_dict().items()
+                    if name.endswith("score") or name.endswith("rate")
+                ],
+                self._evaluation_score(
+                    "artifact_allowed",
+                    int(result.decision.artifact_allowed),
+                    data_type="BOOLEAN",
+                ),
+            ]
+        )
+        if result.decision.decision == FinalDecision.PASS:
+            return None
+        logger.warning(
+            "final_evaluator_decision decision=%s failed_thresholds=%s shadow=%s",
+            result.decision.decision.value,
+            list(result.decision.failed_thresholds),
+            self.evaluator_sampling.mode == EvaluatorMode.SHADOW,
+        )
+        if self.evaluator_sampling.mode == EvaluatorMode.SHADOW:
+            return None
+        return FinalEvaluationError(
+            decision=result.decision.decision,
+            metrics=result.metrics,
+            failed_thresholds=result.decision.failed_thresholds,
+            critical_issue_count=result.decision.critical_issue_count,
+        )
+
+    @staticmethod
+    def _evaluation_score(
+        name: str,
+        value: float | int,
+        data_type: str = "NUMERIC",
+    ):
+        from jee_tutor.agent.observability import EvaluationScore
+
+        return EvaluationScore(name=name, value=value, data_type=data_type)
 
     def _run_workflow(
         self,
@@ -235,7 +326,13 @@ class TutorInvocationService:
             analysis_pdf_uri=analysis_pdf_uri,
             analysis_markdown_uri=analysis_markdown_uri,
             artifact_errors=artifact_errors,
+            runtime_commit_sha=self._runtime_commit_sha(),
         ).model_dump(exclude_none=True, exclude_defaults=True)
+
+    @staticmethod
+    def _runtime_commit_sha() -> str | None:
+        value = os.getenv("JEE_TUTOR_GIT_SHA", "").strip()
+        return value if value and value != "unknown" else None
 
     @staticmethod
     def _pdf_wait_message(analysis_pdf_uri: str | None) -> str | None:
