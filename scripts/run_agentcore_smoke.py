@@ -28,6 +28,11 @@ def main() -> int:
     parser.add_argument("--runtime-arn", required=True)
     parser.add_argument("--image-s3-prefix", required=True)
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument(
+        "--save-analysis-pdf",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--output", default="eval_runs/agentcore-smoke.json")
     args = parser.parse_args()
 
@@ -37,7 +42,7 @@ def main() -> int:
         "subject": f"cd-smoke-{run_id}",
         "image_s3_prefix": args.image_s3_prefix,
         "idempotency_key": f"cd-smoke-{run_id}",
-        "save_analysis_pdf": True,
+        "save_analysis_pdf": args.save_analysis_pdf,
     }
     started = time.time()
     client = boto3.client("bedrock-agentcore")
@@ -52,22 +57,24 @@ def main() -> int:
         if first.get("runtime_commit_sha") != args.expected_sha:
             failures.append("deployed_sha_mismatch")
         pdf_uri = first.get("analysis_pdf_uri")
-        if not pdf_uri:
-            failures.append("pdf_uri_missing")
-        else:
-            parsed = urlparse(pdf_uri)
-            head = boto3.client("s3").head_object(
-                Bucket=parsed.netloc,
-                Key=parsed.path.lstrip("/"),
-            )
-            if head["LastModified"].timestamp() < started:
-                failures.append("pdf_predates_smoke_run")
+        if args.save_analysis_pdf:
+            if not pdf_uri:
+                failures.append("pdf_uri_missing")
+            else:
+                parsed = urlparse(pdf_uri)
+                head = boto3.client("s3").head_object(
+                    Bucket=parsed.netloc,
+                    Key=parsed.path.lstrip("/"),
+                )
+                if head["LastModified"].timestamp() < started:
+                    failures.append("pdf_predates_smoke_run")
         report = {
             "gate_passed": not failures,
             "run_id": run_id,
             "runtime_arn": args.runtime_arn,
             "expected_sha": args.expected_sha,
             "actual_sha": first.get("runtime_commit_sha"),
+            "artifact_requested": args.save_analysis_pdf,
             "artifact_created": bool(pdf_uri),
             "idempotency_replayed": first == second,
             "failed_assertions": failures,

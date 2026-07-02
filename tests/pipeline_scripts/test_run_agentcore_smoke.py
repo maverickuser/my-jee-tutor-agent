@@ -51,6 +51,48 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             self.assertIn("runtime_returned_error", report["failed_assertions"])
             self.assertIn("S3 access denied.", print_mock.call_args.args[0])
 
+    def test_pdf_assertions_are_skipped_when_artifact_not_requested(self):
+        response = {
+            "analysis": "Valid analysis",
+            "runtime_commit_sha": "abc123",
+        }
+        client = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "smoke.json"
+            with (
+                patch(
+                    "scripts.run_agentcore_smoke.invoke_runtime",
+                    side_effect=[response, response],
+                ),
+                patch(
+                    "scripts.run_agentcore_smoke.boto3.client",
+                    return_value=client,
+                ) as client_factory,
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--image-s3-prefix",
+                        "s3://eval-bucket/images/",
+                        "--expected-sha",
+                        "abc123",
+                        "--no-save-analysis-pdf",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+
+            report = json.loads(output.read_text())
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(report["artifact_requested"])
+            self.assertFalse(report["artifact_created"])
+            self.assertNotIn("pdf_uri_missing", report["failed_assertions"])
+            client_factory.assert_called_once_with("bedrock-agentcore")
+
 
 if __name__ == "__main__":
     unittest.main()
