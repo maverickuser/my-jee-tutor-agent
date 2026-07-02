@@ -175,7 +175,7 @@ class QuestionEvaluation(BaseModel):
     applicable_completeness_items: list[str] = Field(max_length=9)
     satisfied_completeness_items: list[str] = Field(max_length=9)
     inference_criteria_scores: list[CriterionScore] = Field(max_length=5)
-    issues: list[str] = Field(default_factory=list, max_length=10)
+    issues: list[str] = Field(default_factory=list)
 
     @field_validator(
         "question_number",
@@ -304,12 +304,6 @@ def _remove_provider_schema_metadata(value: object) -> None:
         for key in (
             "additionalProperties",
             "default",
-            "maxItems",
-            "maxLength",
-            "maximum",
-            "minItems",
-            "minLength",
-            "minimum",
             "title",
         ):
             value.pop(key, None)
@@ -537,6 +531,7 @@ class FinalEvaluationError(RuntimeError):
         failed_thresholds: tuple[str, ...] = (),
         critical_issue_count: int = 0,
         category: str | None = None,
+        diagnostic_details: tuple[str, ...] = (),
     ):
         super().__init__(message)
         self.decision = decision
@@ -544,6 +539,7 @@ class FinalEvaluationError(RuntimeError):
         self.failed_thresholds = failed_thresholds
         self.critical_issue_count = critical_issue_count
         self.category = category
+        self.diagnostic_details = diagnostic_details
 
     @property
     def safe_details(self) -> list[str]:
@@ -559,5 +555,8 @@ class FinalEvaluationError(RuntimeError):
             details.append(f"Failed thresholds: {', '.join(self.failed_thresholds)}.")
         if self.category:
             details.append(f"Evaluator error category: {self.category}.")
+        details.extend(
+            f"Evaluator validation detail: {detail}." for detail in self.diagnostic_details
+        )
         details.append("PDF artifact was not created.")
         return details

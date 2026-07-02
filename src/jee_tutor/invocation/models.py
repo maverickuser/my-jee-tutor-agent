@@ -15,12 +15,12 @@ class TutorInvocationPayload(BaseModel):
 
     @model_validator(mode="after")
     def require_exactly_one_image_payload(self) -> "TutorInvocationPayload":
-        image_source_count = sum(bool(value) for value in [self.image_s3_prefix, self.image_data_uri])
+        image_source_count = sum(
+            bool(value) for value in [self.image_s3_prefix, self.image_data_uri]
+        )
         if image_source_count == 1:
             return self
-        raise ValueError(
-            "Send exactly one image input: image_s3_prefix or image_data_uri."
-        )
+        raise ValueError("Send exactly one image input: image_s3_prefix or image_data_uri.")
 
     @property
     def resolved_question_context(self) -> str | None:
@@ -47,3 +47,4 @@ class TutorInvocationResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     details: list[str] = Field(default_factory=list)
+    runtime_commit_sha: str | None = None

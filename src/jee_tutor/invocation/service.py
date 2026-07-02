@@ -160,8 +160,7 @@ class TutorInvocationService:
                     self._workflow_error_details(exc, resolved_images, invocation),
                 )
                 logger.exception(
-                    "tutor_workflow_error "
-                    "image_count=%s error_type=%s error=%s",
+                    "tutor_workflow_error image_count=%s error_type=%s error=%s",
                     len(resolved_images),
                     exc.__class__.__name__,
                     exc or "[no message]",
@@ -175,7 +174,9 @@ class TutorInvocationService:
                 workflow_result=workflow_result,
             )
             if evaluation_error is not None:
-                response = self._error_response(str(evaluation_error), evaluation_error.safe_details)
+                response = self._error_response(
+                    str(evaluation_error), evaluation_error.safe_details
+                )
                 self._finish_invocation(span, response, invocation)
                 return response
 
@@ -289,7 +290,11 @@ class TutorInvocationService:
 
     @staticmethod
     def _error_response(error: str, details: list[str] | None = None) -> dict[str, Any]:
-        return ErrorResponse(error=error, details=details or []).model_dump()
+        return ErrorResponse(
+            error=error,
+            details=details or [],
+            runtime_commit_sha=TutorInvocationService._runtime_commit_sha(),
+        ).model_dump(exclude_none=True)
 
     def _success_response(
         self,

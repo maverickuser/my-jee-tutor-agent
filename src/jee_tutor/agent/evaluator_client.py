@@ -123,7 +123,10 @@ class FinalEvaluator:
                             "validation_details": invalid_details,
                         }
                     )
-                raise FinalEvaluationError(category="evaluator_invalid_output") from exc
+                raise FinalEvaluationError(
+                    category="evaluator_invalid_output",
+                    diagnostic_details=(invalid_details,),
+                ) from exc
             except FinalEvaluationError:
                 raise
             except TimeoutError as exc:

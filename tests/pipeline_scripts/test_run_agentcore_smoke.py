@@ -15,6 +15,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         response = {
             "error": "Unable to resolve invocation images.",
             "details": ["S3 access denied."],
+            "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "smoke.json"
@@ -48,7 +49,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             report = json.loads(output.read_text())
             self.assertEqual(exit_code, 1)
             self.assertEqual(report["runtime_error_details"], ["S3 access denied."])
-            self.assertIn("runtime_returned_error", report["failed_assertions"])
+            self.assertEqual(report["failed_assertions"], ["runtime_returned_error"])
             self.assertIn("S3 access denied.", print_mock.call_args.args[0])
 
     def test_pdf_assertions_are_skipped_when_artifact_not_requested(self):

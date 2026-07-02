@@ -141,9 +141,11 @@ class FinalEvaluationTest(unittest.TestCase):
             metrics=valid_metrics,
             failed_thresholds=("groundedness_score",),
             category="fixture",
+            diagnostic_details=("questions.0:duplicate",),
         )
         self.assertIn("Groundedness score", " ".join(error.safe_details))
         self.assertIn("fixture", " ".join(error.safe_details))
+        self.assertIn("questions.0:duplicate", " ".join(error.safe_details))
 
     def test_invalid_assessment_references_fail_schema_validation(self):
         base = assessment().model_dump()
@@ -190,8 +192,10 @@ class FinalEvaluationTest(unittest.TestCase):
             for property_schema in definition.get("properties", {}).values():
                 self.assertNotEqual(property_schema.get("type"), "array")
         encoded = str(schema)
-        for keyword in ("additionalProperties", "default", "maxItems", "title"):
+        for keyword in ("additionalProperties", "default", "title"):
             self.assertNotIn(keyword, encoded)
+        self.assertIn("minItems", encoded)
+        self.assertIn("maxItems", encoded)
 
     def test_flat_provider_assessment_converts_to_domain_assessment(self):
         transport = EvaluatorTransportAssessment.model_validate(

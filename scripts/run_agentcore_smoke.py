@@ -50,14 +50,15 @@ def main() -> int:
     try:
         first = invoke_runtime(client, args.runtime_arn, payload)
         second = invoke_runtime(client, args.runtime_arn, payload)
-        if "error" in first:
+        runtime_failed = "error" in first
+        if runtime_failed:
             failures.append("runtime_returned_error")
-        if first != second:
+        if not runtime_failed and first != second:
             failures.append("idempotent_response_mismatch")
         if first.get("runtime_commit_sha") != args.expected_sha:
             failures.append("deployed_sha_mismatch")
         pdf_uri = first.get("analysis_pdf_uri")
-        if args.save_analysis_pdf:
+        if args.save_analysis_pdf and not runtime_failed:
             if not pdf_uri:
                 failures.append("pdf_uri_missing")
             else:
