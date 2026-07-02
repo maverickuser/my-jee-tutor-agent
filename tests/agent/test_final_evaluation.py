@@ -8,9 +8,12 @@ from jee_tutor.agent.final_evaluation import (
     EvaluationCalculationError,
     EvaluationThresholds,
     EvaluatorAssessment,
+    EvaluatorTransportAssessment,
     FinalDecision,
+    build_evaluator_assessment,
     calculate_metrics,
     decide_evaluation,
+    evaluator_response_format,
     validate_assessment_references,
     FinalEvaluationError,
 )
@@ -171,13 +174,59 @@ class FinalEvaluationTest(unittest.TestCase):
                 EvaluatorAssessment.model_validate(payload)
         self.assertTrue(base)
 
-    def test_evaluator_schema_uses_array_scores_not_free_form_map(self):
-        schema = EvaluatorAssessment.model_json_schema()
-        scores_schema = schema["$defs"]["QuestionEvaluation"]["properties"][
-            "inference_criteria_scores"
-        ]
-        self.assertEqual(scores_schema["type"], "array")
-        self.assertIn("items", scores_schema)
+    def test_provider_schema_is_flat_and_omits_non_semantic_metadata(self):
+        response_format = evaluator_response_format()
+        schema = response_format["json_schema"]["schema"]
+        self.assertEqual(
+            set(schema["properties"]),
+            {"claims", "completeness_items", "inference_scores", "evaluator_summary"},
+        )
+        for definition in schema["$defs"].values():
+            for property_schema in definition.get("properties", {}).values():
+                self.assertNotEqual(property_schema.get("type"), "array")
+        encoded = str(schema)
+        for keyword in ("additionalProperties", "default", "maxItems", "title"):
+            self.assertNotIn(keyword, encoded)
+
+    def test_flat_provider_assessment_converts_to_domain_assessment(self):
+        transport = EvaluatorTransportAssessment.model_validate(
+            {
+                "claims": [
+                    {
+                        "row_index": 0,
+                        "field_name": "topic",
+                        "claim_kind": "observation",
+                        "status": "supported",
+                        "evidence_summary": "Visible mechanics question",
+                        "issue_summary": "",
+                        "critical": False,
+                    }
+                ],
+                "completeness_items": [
+                    {
+                        "row_index": 0,
+                        "item_name": field_name,
+                        "satisfied": True,
+                    }
+                    for field_name in DIAGNOSIS_FIELD_NAMES
+                ],
+                "inference_scores": [
+                    {
+                        "row_index": 0,
+                        "criterion_name": "evidence_alignment",
+                        "score": 1.0,
+                    }
+                ],
+                "evaluator_summary": "Supported",
+            }
+        )
+        converted = build_evaluator_assessment(transport, diagnosis())
+        validate_assessment_references(converted, diagnosis())
+        self.assertEqual(converted.questions[0].question_number, "6")
+        self.assertEqual(
+            calculate_metrics(converted, diagnosis()).groundedness_score,
+            1.0,
+        )
 
     def test_zero_denominators_unreadable_and_consistency_fail_closed(self):
         no_claims = assessment()

@@ -11,7 +11,7 @@ from jee_tutor.agent.evaluator_crew import (
 )
 from jee_tutor.agent.final_evaluation import FinalDecision, FinalEvaluationError
 from jee_tutor.agent.model_config import ModelSettings
-from tests.agent.test_final_evaluation import assessment, diagnosis
+from tests.agent.test_final_evaluation import diagnosis
 
 
 class FakeGeneration:
@@ -42,6 +42,10 @@ class FakeModelConfig:
         )
 
 
+class ProviderBadRequest(Exception):
+    status_code = 400
+
+
 class EvaluatorClientTest(unittest.TestCase):
     @staticmethod
     def fake_crew(llm):
@@ -50,12 +54,40 @@ class EvaluatorClientTest(unittest.TestCase):
         return crew
 
     def test_evaluate_uses_one_structured_redacted_call(self):
-        finding = assessment(("supported",) * 5)
-        completion = Mock(
-            return_value={
-                "choices": [{"message": {"content": finding.model_dump_json()}}]
-            }
-        )
+        finding = {
+            "claims": [
+                {
+                    "row_index": 0,
+                    "field_name": "topic",
+                    "claim_kind": "observation",
+                    "status": "supported",
+                    "evidence_summary": "Visible evidence",
+                    "issue_summary": "",
+                    "critical": False,
+                }
+            ],
+            "completeness_items": [
+                {"row_index": 0, "item_name": name, "satisfied": True}
+                for name in (
+                    "question_number",
+                    "chapter",
+                    "topic",
+                    "what_you_thought",
+                    "why_that_thought_is_wrong",
+                    "exact_concept_gap",
+                    "what_you_must_deep_dive",
+                )
+            ],
+            "inference_scores": [
+                {
+                    "row_index": 0,
+                    "criterion_name": "evidence_alignment",
+                    "score": 1.0,
+                }
+            ],
+            "evaluator_summary": "Supported",
+        }
+        completion = Mock(return_value={"choices": [{"message": {"content": json.dumps(finding)}}]})
         generation = FakeGeneration()
         observability = FakeObservability(generation)
         evaluator = FinalEvaluator(
@@ -89,8 +121,10 @@ class EvaluatorClientTest(unittest.TestCase):
             ({"choices": [{"message": {"content": "not json"}}]}, "evaluator_invalid_output"),
             (TimeoutError("provider timeout"), "evaluator_timeout"),
         ]:
-            completion = Mock(side_effect=output) if isinstance(output, Exception) else Mock(
-                return_value=output
+            completion = (
+                Mock(side_effect=output)
+                if isinstance(output, Exception)
+                else Mock(return_value=output)
             )
             with self.subTest(category=category):
                 evaluator = FinalEvaluator(
@@ -110,6 +144,36 @@ class EvaluatorClientTest(unittest.TestCase):
                         diagnosis=diagnosis(),
                     )
                 self.assertEqual(raised.exception.category, category)
+
+    def test_provider_failure_logs_redacted_detail_and_status(self):
+        evaluator = FinalEvaluator(
+            model_config=FakeModelConfig(),
+            observability=FakeObservability(FakeGeneration()),
+            completion_fn=Mock(
+                side_effect=ProviderBadRequest("api_key=private schema exceeds complexity limit")
+            ),
+        )
+        with (
+            patch(
+                "jee_tutor.agent.evaluator_client.build_final_evaluator_crew",
+                side_effect=self.fake_crew,
+            ),
+            self.assertLogs(
+                "jee_tutor.agent.evaluator_client",
+                level="ERROR",
+            ) as captured,
+            self.assertRaises(FinalEvaluationError) as raised,
+        ):
+            evaluator.evaluate(
+                image_data_uris=["data:image/png;base64,x"],
+                diagnosis=diagnosis(),
+            )
+
+        message = " ".join(captured.output)
+        self.assertIn("status_code=400", message)
+        self.assertIn("schema exceeds complexity limit", message)
+        self.assertNotIn("private", message)
+        self.assertEqual(raised.exception.category, "evaluator_error")
 
     def test_evaluator_crewai_factories_have_no_tools(self):
         llm = Mock()

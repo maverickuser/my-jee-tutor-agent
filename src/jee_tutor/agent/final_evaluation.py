@@ -31,6 +31,24 @@ DiagnosisFieldName = Literal[
     "exact_concept_gap",
     "what_you_must_deep_dive",
 ]
+CompletenessItemName = Literal[
+    "question_number",
+    "chapter",
+    "topic",
+    "what_you_thought",
+    "why_that_thought_is_wrong",
+    "exact_concept_gap",
+    "what_you_must_deep_dive",
+    "missed_option_concepts",
+    "unattempted_reason",
+]
+InferenceCriterionName = Literal[
+    "evidence_alignment",
+    "qualification",
+    "specificity",
+    "no_overclaiming",
+    "root_cause_linkage",
+]
 
 
 class ClaimKind(StrEnum):
@@ -77,6 +95,60 @@ class CriterionScore(BaseModel):
     @field_validator("name", mode="before")
     @classmethod
     def strip_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class EvaluatorClaim(BaseModel):
+    """Flat model-facing claim record used to keep Gemini's schema shallow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row_index: int = Field(ge=0)
+    field_name: DiagnosisFieldName
+    claim_kind: ClaimKind
+    status: ClaimStatus
+    evidence_summary: str = Field(min_length=1, max_length=500)
+    issue_summary: str = Field(max_length=500)
+    critical: bool
+
+    @field_validator("evidence_summary", "issue_summary", mode="before")
+    @classmethod
+    def strip_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class EvaluatorCompletenessItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_index: int = Field(ge=0)
+    item_name: CompletenessItemName
+    satisfied: bool
+
+
+class EvaluatorInferenceScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_index: int = Field(ge=0)
+    criterion_name: InferenceCriterionName
+    score: float = Field(ge=0.0, le=1.0)
+
+
+class EvaluatorTransportAssessment(BaseModel):
+    """Gemini-compatible transport shape converted into EvaluatorAssessment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claims: list[EvaluatorClaim] = Field(min_length=1, max_length=1000)
+    completeness_items: list[EvaluatorCompletenessItem] = Field(
+        min_length=1,
+        max_length=900,
+    )
+    inference_scores: list[EvaluatorInferenceScore] = Field(max_length=500)
+    evaluator_summary: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("evaluator_summary", mode="before")
+    @classmethod
+    def strip_summary(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
 
@@ -133,6 +205,102 @@ class EvaluatorAssessment(BaseModel):
     @classmethod
     def strip_summary(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+
+def evaluator_response_format() -> dict[str, object]:
+    """Return a shallow schema that stays within Gemini's complexity budget."""
+
+    schema = EvaluatorTransportAssessment.model_json_schema()
+    _remove_provider_schema_metadata(schema)
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": EVALUATOR_SCHEMA_NAME,
+            "strict": True,
+            "schema": schema,
+        },
+    }
+
+
+def build_evaluator_assessment(
+    transport: EvaluatorTransportAssessment,
+    diagnosis: DiagnosisResponse,
+) -> EvaluatorAssessment:
+    question_count = len(diagnosis.questions)
+    row_indexes = [
+        *(claim.row_index for claim in transport.claims),
+        *(item.row_index for item in transport.completeness_items),
+        *(score.row_index for score in transport.inference_scores),
+    ]
+    if any(row_index >= question_count for row_index in row_indexes):
+        raise EvaluationCalculationError("Evaluator referenced an unknown diagnosis row.")
+
+    questions: list[QuestionEvaluation] = []
+    for row_index, diagnosis_question in enumerate(diagnosis.questions):
+        claims = [claim for claim in transport.claims if claim.row_index == row_index]
+        completeness = [
+            item for item in transport.completeness_items if item.row_index == row_index
+        ]
+        inference_scores = [
+            score for score in transport.inference_scores if score.row_index == row_index
+        ]
+        questions.append(
+            QuestionEvaluation(
+                row_index=row_index,
+                question_number=diagnosis_question.question_number,
+                claims=[
+                    ClaimEvaluation(
+                        row_index=claim.row_index,
+                        field_name=claim.field_name,
+                        claim_kind=claim.claim_kind,
+                        status=claim.status,
+                        evidence_summary=claim.evidence_summary,
+                        issue_summary=claim.issue_summary or None,
+                        critical=claim.critical,
+                    )
+                    for claim in claims
+                ],
+                applicable_completeness_items=[item.item_name for item in completeness],
+                satisfied_completeness_items=[
+                    item.item_name for item in completeness if item.satisfied
+                ],
+                inference_criteria_scores=[
+                    CriterionScore(name=score.criterion_name, score=score.score)
+                    for score in inference_scores
+                ],
+                issues=list(
+                    dict.fromkeys(claim.issue_summary for claim in claims if claim.issue_summary)
+                ),
+            )
+        )
+    return EvaluatorAssessment(
+        schema_version=EVALUATOR_SCHEMA_VERSION,
+        questions=questions,
+        evaluator_summary=transport.evaluator_summary,
+    )
+
+
+def _remove_provider_schema_metadata(value: object) -> None:
+    """Drop locally validated constraints that consume Gemini schema complexity."""
+
+    if isinstance(value, dict):
+        for key in (
+            "additionalProperties",
+            "default",
+            "maxItems",
+            "maxLength",
+            "maximum",
+            "minItems",
+            "minLength",
+            "minimum",
+            "title",
+        ):
+            value.pop(key, None)
+        for child in value.values():
+            _remove_provider_schema_metadata(child)
+    elif isinstance(value, list):
+        for child in value:
+            _remove_provider_schema_metadata(child)
 
 
 class EvaluationCalculationError(ValueError):
@@ -224,7 +392,9 @@ def validate_assessment_references(
         if finding.row_index != index:
             raise EvaluationCalculationError("Evaluator row order does not match diagnosis.")
         if finding.question_number.strip() != question.question_number.strip():
-            raise EvaluationCalculationError("Evaluator question reference does not match diagnosis.")
+            raise EvaluationCalculationError(
+                "Evaluator question reference does not match diagnosis."
+            )
         covered_fields = {claim.field_name for claim in finding.claims} | set(
             finding.applicable_completeness_items
         )
@@ -249,9 +419,7 @@ def calculate_metrics(
     applicable = sum(
         len(question.applicable_completeness_items) for question in assessment.questions
     )
-    satisfied = sum(
-        len(question.satisfied_completeness_items) for question in assessment.questions
-    )
+    satisfied = sum(len(question.satisfied_completeness_items) for question in assessment.questions)
     if applicable == 0:
         raise EvaluationCalculationError("Evaluator produced no applicable completeness items.")
 
