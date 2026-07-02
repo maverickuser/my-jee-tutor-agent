@@ -197,10 +197,12 @@ those values deterministically.
 
 The authoritative application model remains grouped by question as shown above.
 The Gemini-facing transport schema must be flat: top-level claim, completeness,
-and inference-score record arrays carry `row_index` directly. Application code
-converts those records into `EvaluatorAssessment` before reference validation
-and metric calculation. This avoids nested arrays in Gemini's structured-output
-schema while preserving the same evidence and deterministic decision contract.
+and inference-rating record arrays carry `row_index` directly. Inference ratings
+are `met`, `partial`, or `not_met`, deterministically mapped to `1.0`, `0.5`, and
+`0.0`. Application code converts the records into `EvaluatorAssessment` before
+reference validation and metric calculation. This avoids nested arrays and
+arbitrary model-generated floats while preserving the same evidence and
+deterministic decision contract.
 
 ## Claim Identification
 

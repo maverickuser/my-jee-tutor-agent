@@ -78,11 +78,11 @@ class EvaluatorClientTest(unittest.TestCase):
                     "what_you_must_deep_dive",
                 )
             ],
-            "inference_scores": [
+            "inference_ratings": [
                 {
                     "row_index": 0,
                     "criterion_name": "evidence_alignment",
-                    "score": 1.0,
+                    "rating": "met",
                 }
             ],
             "evaluator_summary": "Supported",
@@ -174,6 +174,56 @@ class EvaluatorClientTest(unittest.TestCase):
         self.assertIn("schema exceeds complexity limit", message)
         self.assertNotIn("private", message)
         self.assertEqual(raised.exception.category, "evaluator_error")
+
+    def test_invalid_output_logs_safe_validation_locations(self):
+        finding = {
+            "claims": [
+                {
+                    "row_index": 0,
+                    "field_name": "topic",
+                    "claim_kind": "observation",
+                    "status": "supported",
+                    "evidence_summary": "Visible evidence",
+                    "issue_summary": "",
+                    "critical": False,
+                }
+            ],
+            "completeness_items": [{"row_index": 0, "item_name": "topic", "satisfied": True}],
+            "inference_ratings": [
+                {
+                    "row_index": 0,
+                    "criterion_name": "evidence_alignment",
+                    "rating": "sometimes",
+                }
+            ],
+            "evaluator_summary": "Invalid rating",
+        }
+        evaluator = FinalEvaluator(
+            model_config=FakeModelConfig(),
+            observability=FakeObservability(FakeGeneration()),
+            completion_fn=Mock(
+                return_value={"choices": [{"message": {"content": json.dumps(finding)}}]}
+            ),
+        )
+        with (
+            patch(
+                "jee_tutor.agent.evaluator_client.build_final_evaluator_crew",
+                side_effect=self.fake_crew,
+            ),
+            self.assertLogs(
+                "jee_tutor.agent.evaluator_client",
+                level="WARNING",
+            ) as captured,
+            self.assertRaises(FinalEvaluationError),
+        ):
+            evaluator.evaluate(
+                image_data_uris=["data:image/png;base64,x"],
+                diagnosis=diagnosis(),
+            )
+
+        message = " ".join(captured.output)
+        self.assertIn("inference_ratings.0.rating", message)
+        self.assertNotIn("Invalid rating", message)
 
     def test_evaluator_crewai_factories_have_no_tools(self):
         llm = Mock()

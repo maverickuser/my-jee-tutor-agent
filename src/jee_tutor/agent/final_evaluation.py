@@ -51,6 +51,20 @@ InferenceCriterionName = Literal[
 ]
 
 
+class InferenceRating(StrEnum):
+    MET = "met"
+    PARTIAL = "partial"
+    NOT_MET = "not_met"
+
+    @property
+    def score(self) -> float:
+        return {
+            self.MET: 1.0,
+            self.PARTIAL: 0.5,
+            self.NOT_MET: 0.0,
+        }[self]
+
+
 class ClaimKind(StrEnum):
     OBSERVATION = "observation"
     INFERENCE = "inference"
@@ -125,12 +139,12 @@ class EvaluatorCompletenessItem(BaseModel):
     satisfied: bool
 
 
-class EvaluatorInferenceScore(BaseModel):
+class EvaluatorInferenceRating(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     row_index: int = Field(ge=0)
     criterion_name: InferenceCriterionName
-    score: float = Field(ge=0.0, le=1.0)
+    rating: InferenceRating
 
 
 class EvaluatorTransportAssessment(BaseModel):
@@ -143,7 +157,7 @@ class EvaluatorTransportAssessment(BaseModel):
         min_length=1,
         max_length=900,
     )
-    inference_scores: list[EvaluatorInferenceScore] = Field(max_length=500)
+    inference_ratings: list[EvaluatorInferenceRating] = Field(max_length=500)
     evaluator_summary: str = Field(min_length=1, max_length=1000)
 
     @field_validator("evaluator_summary", mode="before")
@@ -230,7 +244,7 @@ def build_evaluator_assessment(
     row_indexes = [
         *(claim.row_index for claim in transport.claims),
         *(item.row_index for item in transport.completeness_items),
-        *(score.row_index for score in transport.inference_scores),
+        *(rating.row_index for rating in transport.inference_ratings),
     ]
     if any(row_index >= question_count for row_index in row_indexes):
         raise EvaluationCalculationError("Evaluator referenced an unknown diagnosis row.")
@@ -241,8 +255,8 @@ def build_evaluator_assessment(
         completeness = [
             item for item in transport.completeness_items if item.row_index == row_index
         ]
-        inference_scores = [
-            score for score in transport.inference_scores if score.row_index == row_index
+        inference_ratings = [
+            rating for rating in transport.inference_ratings if rating.row_index == row_index
         ]
         questions.append(
             QuestionEvaluation(
@@ -265,8 +279,11 @@ def build_evaluator_assessment(
                     item.item_name for item in completeness if item.satisfied
                 ],
                 inference_criteria_scores=[
-                    CriterionScore(name=score.criterion_name, score=score.score)
-                    for score in inference_scores
+                    CriterionScore(
+                        name=rating.criterion_name,
+                        score=rating.rating.score,
+                    )
+                    for rating in inference_ratings
                 ],
                 issues=list(
                     dict.fromkeys(claim.issue_summary for claim in claims if claim.issue_summary)

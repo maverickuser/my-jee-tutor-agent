@@ -179,7 +179,12 @@ class FinalEvaluationTest(unittest.TestCase):
         schema = response_format["json_schema"]["schema"]
         self.assertEqual(
             set(schema["properties"]),
-            {"claims", "completeness_items", "inference_scores", "evaluator_summary"},
+            {
+                "claims",
+                "completeness_items",
+                "inference_ratings",
+                "evaluator_summary",
+            },
         )
         for definition in schema["$defs"].values():
             for property_schema in definition.get("properties", {}).values():
@@ -210,11 +215,11 @@ class FinalEvaluationTest(unittest.TestCase):
                     }
                     for field_name in DIAGNOSIS_FIELD_NAMES
                 ],
-                "inference_scores": [
+                "inference_ratings": [
                     {
                         "row_index": 0,
                         "criterion_name": "evidence_alignment",
-                        "score": 1.0,
+                        "rating": "met",
                     }
                 ],
                 "evaluator_summary": "Supported",
