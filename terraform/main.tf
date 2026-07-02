@@ -172,7 +172,9 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
             "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-final-evaluator/*",
             "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-evals-images/*"
           ]
-        },
+        }
+      ] : [],
+      var.cd_eval_bucket_name != "" ? [
         {
           Sid      = "S3CdEvalPrefixList"
           Effect   = "Allow"
