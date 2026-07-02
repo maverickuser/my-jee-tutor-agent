@@ -159,6 +159,35 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Resource = var.s3_image_input_bucket_arns
         }
       ] : [],
+      var.cd_eval_bucket_name != "" ? [
+        {
+          Sid    = "S3CdEvalObjectReadWrite"
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:AbortMultipartUpload"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-final-evaluator/*",
+            "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-evals-images/*"
+          ]
+        },
+        {
+          Sid      = "S3CdEvalPrefixList"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = "arn:aws:s3:::${var.cd_eval_bucket_name}"
+          Condition = {
+            StringLike = {
+              "s3:prefix" = [
+                "cd-final-evaluator/*",
+                "cd-evals-images/*"
+              ]
+            }
+          }
+        }
+      ] : [],
       var.newrelic_log_forwarding_enabled && var.newrelic_license_key_secret_arn != "" ? [
         {
           Sid      = "ReadNewRelicLicenseKey"

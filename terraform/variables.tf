@@ -137,3 +137,9 @@ variable "s3_image_input_object_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "cd_eval_bucket_name" {
+  description = "S3 bucket containing mandatory CD smoke and evaluator image prefixes."
+  type        = string
+  default     = ""
+}

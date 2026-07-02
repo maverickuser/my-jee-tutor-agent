@@ -71,6 +71,8 @@ def main() -> int:
             "artifact_created": bool(pdf_uri),
             "idempotency_replayed": first == second,
             "failed_assertions": failures,
+            "runtime_error": first.get("error"),
+            "runtime_error_details": first.get("details", [])[:10],
         }
     except Exception as exc:
         report = {
@@ -80,6 +82,7 @@ def main() -> int:
             "reason": (str(exc) or "[no message]")[:500],
         }
     write_report(report, args.output)
+    print(f"agentcore_smoke_report={json.dumps(report, sort_keys=True)}")
     return 0 if report["gate_passed"] else 1
 
 

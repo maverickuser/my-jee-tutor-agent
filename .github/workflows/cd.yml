@@ -82,6 +82,7 @@ jobs:
           TF_VAR_newrelic_region: ${{ vars.NEW_RELIC_REGION || 'US' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
+          TF_VAR_cd_eval_bucket_name: ${{ env.TF_STATE_BUCKET }}
         run: terraform apply -target=aws_ecr_repository.agentcore_repo -auto-approve
 
       - name: Read Terraform outputs
@@ -244,6 +245,7 @@ jobs:
           TF_VAR_newrelic_region: ${{ vars.NEW_RELIC_REGION || 'US' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots"]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '["arn:aws:s3:::web-scraper-dev-055173110395-ap-south-1-screenshots/*"]' }}
+          TF_VAR_cd_eval_bucket_name: ${{ env.TF_STATE_BUCKET }}
         run: terraform apply -auto-approve
 
       - name: Read security test Terraform outputs
