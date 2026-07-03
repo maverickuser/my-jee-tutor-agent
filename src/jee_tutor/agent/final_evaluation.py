@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from enum import StrEnum
@@ -49,6 +50,16 @@ InferenceCriterionName = Literal[
     "no_overclaiming",
     "root_cause_linkage",
 ]
+INFERENCE_CRITERION_NAMES: tuple[InferenceCriterionName, ...] = (
+    "evidence_alignment",
+    "qualification",
+    "specificity",
+    "no_overclaiming",
+    "root_cause_linkage",
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class InferenceRating(StrEnum):
@@ -258,6 +269,10 @@ def build_evaluator_assessment(
         inference_ratings = [
             rating for rating in transport.inference_ratings if rating.row_index == row_index
         ]
+        inference_ratings = _canonicalize_inference_ratings(
+            inference_ratings,
+            row_index=row_index,
+        )
         questions.append(
             QuestionEvaluation(
                 row_index=row_index,
@@ -295,6 +310,40 @@ def build_evaluator_assessment(
         questions=questions,
         evaluator_summary=transport.evaluator_summary,
     )
+
+
+def _canonicalize_inference_ratings(
+    ratings: list[EvaluatorInferenceRating],
+    *,
+    row_index: int,
+) -> list[EvaluatorInferenceRating]:
+    """Collapse repeated criteria and conservatively resolve conflicting ratings."""
+
+    selected: dict[InferenceCriterionName, EvaluatorInferenceRating] = {}
+    duplicate_count = 0
+    conflict_count = 0
+    for rating in ratings:
+        existing = selected.get(rating.criterion_name)
+        if existing is None:
+            selected[rating.criterion_name] = rating
+            continue
+
+        duplicate_count += 1
+        if existing.rating != rating.rating:
+            conflict_count += 1
+            if rating.rating.score < existing.rating.score:
+                selected[rating.criterion_name] = rating
+
+    if duplicate_count:
+        logger.warning(
+            "final_evaluator_duplicate_inference_ratings "
+            "row_index=%s duplicate_count=%s conflict_count=%s",
+            row_index,
+            duplicate_count,
+            conflict_count,
+        )
+
+    return [selected[name] for name in INFERENCE_CRITERION_NAMES if name in selected]
 
 
 def _remove_provider_schema_metadata(value: object) -> None:

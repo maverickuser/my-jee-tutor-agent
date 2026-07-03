@@ -72,6 +72,34 @@ def assessment(statuses=("supported",), inference=1.0, satisfied=7, critical=Fal
     )
 
 
+def transport_assessment(inference_ratings):
+    return EvaluatorTransportAssessment.model_validate(
+        {
+            "claims": [
+                {
+                    "row_index": 0,
+                    "field_name": "topic",
+                    "claim_kind": "observation",
+                    "status": "supported",
+                    "evidence_summary": "Visible mechanics question",
+                    "issue_summary": "",
+                    "critical": False,
+                }
+            ],
+            "completeness_items": [
+                {
+                    "row_index": 0,
+                    "item_name": field_name,
+                    "satisfied": True,
+                }
+                for field_name in DIAGNOSIS_FIELD_NAMES
+            ],
+            "inference_ratings": inference_ratings,
+            "evaluator_summary": "Supported",
+        }
+    )
+
+
 class FinalEvaluationTest(unittest.TestCase):
     def test_metrics_use_mutually_exclusive_claim_counts(self):
         metrics = calculate_metrics(
@@ -206,36 +234,14 @@ class FinalEvaluationTest(unittest.TestCase):
             self.assertNotIn(keyword, encoded)
 
     def test_flat_provider_assessment_converts_to_domain_assessment(self):
-        transport = EvaluatorTransportAssessment.model_validate(
-            {
-                "claims": [
-                    {
-                        "row_index": 0,
-                        "field_name": "topic",
-                        "claim_kind": "observation",
-                        "status": "supported",
-                        "evidence_summary": "Visible mechanics question",
-                        "issue_summary": "",
-                        "critical": False,
-                    }
-                ],
-                "completeness_items": [
-                    {
-                        "row_index": 0,
-                        "item_name": field_name,
-                        "satisfied": True,
-                    }
-                    for field_name in DIAGNOSIS_FIELD_NAMES
-                ],
-                "inference_ratings": [
-                    {
-                        "row_index": 0,
-                        "criterion_name": "evidence_alignment",
-                        "rating": "met",
-                    }
-                ],
-                "evaluator_summary": "Supported",
-            }
+        transport = transport_assessment(
+            [
+                {
+                    "row_index": 0,
+                    "criterion_name": "evidence_alignment",
+                    "rating": "met",
+                }
+            ]
         )
         converted = build_evaluator_assessment(transport, diagnosis())
         validate_assessment_references(converted, diagnosis())
@@ -244,6 +250,71 @@ class FinalEvaluationTest(unittest.TestCase):
             calculate_metrics(converted, diagnosis()).groundedness_score,
             1.0,
         )
+
+    def test_duplicate_inference_ratings_are_canonicalized(self):
+        criterion_names = (
+            "evidence_alignment",
+            "qualification",
+            "specificity",
+            "no_overclaiming",
+            "root_cause_linkage",
+        )
+        transport = transport_assessment(
+            [
+                *[
+                    {
+                        "row_index": 0,
+                        "criterion_name": name,
+                        "rating": "met",
+                    }
+                    for name in criterion_names
+                ],
+                {
+                    "row_index": 0,
+                    "criterion_name": "specificity",
+                    "rating": "met",
+                },
+            ]
+        )
+
+        with self.assertLogs(
+            "jee_tutor.agent.final_evaluation",
+            level="WARNING",
+        ) as captured:
+            converted = build_evaluator_assessment(transport, diagnosis())
+
+        self.assertEqual(len(converted.questions[0].inference_criteria_scores), 5)
+        self.assertEqual(
+            [score.name for score in converted.questions[0].inference_criteria_scores],
+            list(criterion_names),
+        )
+        self.assertIn("duplicate_count=1 conflict_count=0", " ".join(captured.output))
+
+    def test_conflicting_inference_ratings_use_lower_score(self):
+        transport = transport_assessment(
+            [
+                {
+                    "row_index": 0,
+                    "criterion_name": "specificity",
+                    "rating": "met",
+                },
+                {
+                    "row_index": 0,
+                    "criterion_name": "specificity",
+                    "rating": "not_met",
+                },
+            ]
+        )
+
+        with self.assertLogs(
+            "jee_tutor.agent.final_evaluation",
+            level="WARNING",
+        ) as captured:
+            converted = build_evaluator_assessment(transport, diagnosis())
+
+        scores = converted.questions[0].inference_criteria_scores
+        self.assertEqual([(score.name, score.score) for score in scores], [("specificity", 0.0)])
+        self.assertIn("duplicate_count=1 conflict_count=1", " ".join(captured.output))
 
     def test_zero_denominators_unreadable_and_consistency_fail_closed(self):
         no_claims = assessment()
