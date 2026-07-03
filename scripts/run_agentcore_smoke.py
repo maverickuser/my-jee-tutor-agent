@@ -7,13 +7,26 @@ import uuid
 from urllib.parse import urlparse
 
 import boto3
+from botocore.config import Config
 
 from eval_runner import write_report
 
 
-def invoke_runtime(client, runtime_arn: str, payload: dict) -> dict:
+AGENTCORE_READ_TIMEOUT_SECONDS = 900
+IN_PROGRESS_ERROR = "Tutor invocation is already in progress."
+IN_PROGRESS_POLL_INTERVAL_SECONDS = 5.0
+IN_PROGRESS_POLL_TIMEOUT_SECONDS = 300.0
+
+
+def invoke_runtime(
+    client,
+    runtime_arn: str,
+    runtime_session_id: str,
+    payload: dict,
+) -> dict:
     response = client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
+        runtimeSessionId=runtime_session_id,
         qualifier="DEFAULT",
         contentType="application/json",
         accept="application/json",
@@ -21,6 +34,37 @@ def invoke_runtime(client, runtime_arn: str, payload: dict) -> dict:
     )
     body = response["response"].read()
     return json.loads(body)
+
+
+def invoke_until_terminal(
+    client,
+    runtime_arn: str,
+    runtime_session_id: str,
+    payload: dict,
+    *,
+    poll_interval_seconds: float = IN_PROGRESS_POLL_INTERVAL_SECONDS,
+    poll_timeout_seconds: float = IN_PROGRESS_POLL_TIMEOUT_SECONDS,
+    monotonic=time.monotonic,
+    sleep=time.sleep,
+) -> tuple[dict, int]:
+    started = monotonic()
+    poll_count = 0
+    while True:
+        response = invoke_runtime(
+            client,
+            runtime_arn,
+            runtime_session_id,
+            payload,
+        )
+        if response.get("error") != IN_PROGRESS_ERROR:
+            return response, poll_count
+
+        remaining = poll_timeout_seconds - (monotonic() - started)
+        if remaining <= 0:
+            return response, poll_count
+
+        poll_count += 1
+        sleep(min(poll_interval_seconds, remaining))
 
 
 def main() -> int:
@@ -45,11 +89,29 @@ def main() -> int:
         "save_analysis_pdf": args.save_analysis_pdf,
     }
     started = time.time()
-    client = boto3.client("bedrock-agentcore")
+    client = boto3.client(
+        "bedrock-agentcore",
+        config=Config(
+            connect_timeout=10,
+            read_timeout=AGENTCORE_READ_TIMEOUT_SECONDS,
+            retries={"mode": "standard", "total_max_attempts": 1},
+            tcp_keepalive=True,
+        ),
+    )
     failures = []
     try:
-        first = invoke_runtime(client, args.runtime_arn, payload)
-        second = invoke_runtime(client, args.runtime_arn, payload)
+        first, first_poll_count = invoke_until_terminal(
+            client,
+            args.runtime_arn,
+            run_id,
+            payload,
+        )
+        second, second_poll_count = invoke_until_terminal(
+            client,
+            args.runtime_arn,
+            run_id,
+            payload,
+        )
         runtime_failed = "error" in first
         if runtime_failed:
             failures.append("runtime_returned_error")
@@ -78,6 +140,7 @@ def main() -> int:
             "artifact_requested": args.save_analysis_pdf,
             "artifact_created": bool(pdf_uri),
             "idempotency_replayed": first == second,
+            "in_progress_poll_count": first_poll_count + second_poll_count,
             "failed_assertions": failures,
             "runtime_error": first.get("error"),
             "runtime_error_details": first.get("details", [])[:10],
