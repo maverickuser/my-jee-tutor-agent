@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+import subprocess
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -82,6 +86,27 @@ class LiveFinalEvaluatorEvalsTest(unittest.TestCase):
         self.assertEqual(len(incomplete.questions), 3)
         self.assertIn("CD_UNSUPPORTED_SENTINEL_1", unsupported.questions[0].what_you_thought)
         self.assertEqual(incomplete.questions[0].topic, "Not provided in this diagnosis.")
+
+    def test_script_can_run_without_pythonpath(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(repo_root / "scripts" / "run_live_final_evaluator_evals.py"),
+                "--help",
+            ],
+            cwd=repo_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--image-s3-prefix", result.stdout)
 
     def test_suite_makes_exactly_two_evaluator_calls_and_passes_both_rejections(self):
         evaluator = Mock()
