@@ -164,7 +164,9 @@ jobs:
             --cache-to type=gha,mode=max \
             --tag "$ECR_REPOSITORY_URL:$IMAGE_TAG" \
             --tag "$ECR_REPOSITORY_URL:latest" \
-            --push \
+            --output type=registry,oci-mediatypes=false \
+            --provenance=false \
+            --sbom=false \
             -f src/Dockerfile .
           echo "image_uri=$ECR_REPOSITORY_URL:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
