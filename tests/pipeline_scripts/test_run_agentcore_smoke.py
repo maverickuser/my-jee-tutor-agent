@@ -96,9 +96,10 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         invoke.assert_called_once()
 
     def test_failed_runtime_response_is_printed_and_written(self):
+        details = [f"Bounded runtime detail {index}." for index in range(25)]
         response = {
             "error": "Unable to resolve invocation images.",
-            "details": ["S3 access denied."],
+            "details": details,
             "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -134,23 +135,17 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
 
             report = json.loads(output.read_text())
             self.assertEqual(exit_code, 1)
-            self.assertEqual(report["runtime_error_details"], ["S3 access denied."])
+            self.assertEqual(report["runtime_error_details"], details[:20])
             self.assertEqual(report["failed_assertions"], ["runtime_returned_error"])
             self.assertEqual(report["in_progress_poll_count"], 0)
-            self.assertIn("S3 access denied.", print_mock.call_args.args[0])
+            self.assertIn("Bounded runtime detail 19.", print_mock.call_args.args[0])
+            self.assertNotIn("Bounded runtime detail 20.", print_mock.call_args.args[0])
             session_ids = [call.args[2] for call in invoke.call_args_list]
             self.assertEqual(session_ids[0], session_ids[1])
-            self.assertTrue(invoke.call_args_list[0].args[3]["include_evaluation_metadata"])
 
     def test_smoke_fails_when_analysis_row_count_does_not_match_images(self):
         response = {
             "analysis": ("| Question Number |\n| --- |\n| 1 |\n| 2 |"),
-            "quality_gate": {
-                "evaluated": True,
-                "enforced": True,
-                "mode": "gated",
-                "decision": "PASS",
-            },
             "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -193,12 +188,6 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
     def test_pdf_assertions_are_skipped_when_artifact_not_requested(self):
         response = {
             "analysis": "| Question Number |\n| --- |\n| 1 |",
-            "quality_gate": {
-                "evaluated": True,
-                "enforced": True,
-                "mode": "gated",
-                "decision": "PASS",
-            },
             "runtime_commit_sha": "abc123",
         }
         client = Mock()
@@ -239,7 +228,6 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             self.assertFalse(report["artifact_created"])
             self.assertEqual(report["analysis_data_row_count"], 1)
             self.assertEqual(report["expected_image_count"], 1)
-            self.assertEqual(report["quality_gate"]["decision"], "PASS")
             self.assertNotIn("pdf_uri_missing", report["failed_assertions"])
             client_factory.assert_called_once()
             (service_name,) = client_factory.call_args.args
@@ -253,65 +241,10 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             )
             self.assertTrue(config.tcp_keepalive)
 
-    def test_smoke_fails_when_quality_gate_was_not_enforced(self):
-        response = {
-            "analysis": "| Question Number |\n| --- |\n| 1 |",
-            "quality_gate": {
-                "evaluated": False,
-                "enforced": False,
-                "mode": "gated",
-            },
-            "runtime_commit_sha": "abc123",
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "smoke.json"
-            with (
-                patch(
-                    "scripts.run_agentcore_smoke.invoke_runtime",
-                    side_effect=[response, response],
-                ),
-                patch(
-                    "scripts.run_agentcore_smoke.boto3.client",
-                    return_value=Mock(),
-                ),
-                patch(
-                    "sys.argv",
-                    [
-                        "run_agentcore_smoke.py",
-                        "--runtime-arn",
-                        "arn:runtime",
-                        "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
-                        "--expected-sha",
-                        "abc123",
-                        "--expected-image-count",
-                        "1",
-                        "--no-save-analysis-pdf",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-            ):
-                exit_code = main()
-
-            report = json.loads(output.read_text())
-            self.assertEqual(exit_code, 1)
-            self.assertEqual(report["quality_gate"]["evaluated"], False)
-            self.assertIn(
-                "quality_gate_metadata_mismatch",
-                report["failed_assertions"],
-            )
-
     def test_pdf_metadata_is_unchanged_after_idempotent_replay(self):
         response = {
             "analysis": "| Question Number |\n| --- |\n| 1 |",
             "analysis_pdf_uri": "s3://eval-bucket/report.pdf",
-            "quality_gate": {
-                "evaluated": True,
-                "enforced": True,
-                "mode": "gated",
-                "decision": "PASS",
-            },
             "runtime_commit_sha": "abc123",
         }
         artifact_head = {
@@ -365,12 +298,6 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         response = {
             "analysis": "| Question Number |\n| --- |\n| 1 |",
             "analysis_pdf_uri": "s3://eval-bucket/report.pdf",
-            "quality_gate": {
-                "evaluated": True,
-                "enforced": True,
-                "mode": "gated",
-                "decision": "PASS",
-            },
             "runtime_commit_sha": "abc123",
         }
         first_head = {

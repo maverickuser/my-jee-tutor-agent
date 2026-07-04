@@ -16,6 +16,7 @@ AGENTCORE_READ_TIMEOUT_SECONDS = 900
 IN_PROGRESS_ERROR = "Tutor invocation is already in progress."
 IN_PROGRESS_POLL_INTERVAL_SECONDS = 5.0
 IN_PROGRESS_POLL_TIMEOUT_SECONDS = 300.0
+MAX_RUNTIME_ERROR_DETAILS = 20
 
 
 def markdown_data_row_count(text: str) -> int:
@@ -105,7 +106,6 @@ def main() -> int:
         "image_s3_prefix": args.image_s3_prefix,
         "idempotency_key": f"cd-smoke-{run_id}",
         "save_analysis_pdf": args.save_analysis_pdf,
-        "include_evaluation_metadata": True,
     }
     started = time.time()
     client = boto3.client(
@@ -135,15 +135,6 @@ def main() -> int:
         )
         if not runtime_failed and analysis_data_row_count != args.expected_image_count:
             failures.append("analysis_row_count_mismatch")
-        quality_gate = first.get("quality_gate")
-        expected_quality_gate = {
-            "evaluated": True,
-            "enforced": True,
-            "mode": "gated",
-            "decision": "PASS",
-        }
-        if not runtime_failed and quality_gate != expected_quality_gate:
-            failures.append("quality_gate_metadata_mismatch")
         pdf_uri = first.get("analysis_pdf_uri")
         first_artifact_head = None
         replay_artifact_head = None
@@ -191,7 +182,6 @@ def main() -> int:
             "actual_sha": first.get("runtime_commit_sha"),
             "expected_image_count": args.expected_image_count,
             "analysis_data_row_count": analysis_data_row_count,
-            "quality_gate": quality_gate,
             "artifact_requested": args.save_analysis_pdf,
             "artifact_created": bool(pdf_uri),
             "artifact_last_modified_unchanged": artifact_last_modified_unchanged,
@@ -200,7 +190,7 @@ def main() -> int:
             "in_progress_poll_count": first_poll_count + second_poll_count,
             "failed_assertions": failures,
             "runtime_error": first.get("error"),
-            "runtime_error_details": first.get("details", [])[:10],
+            "runtime_error_details": first.get("details", [])[:MAX_RUNTIME_ERROR_DETAILS],
         }
     except Exception as exc:
         report = {

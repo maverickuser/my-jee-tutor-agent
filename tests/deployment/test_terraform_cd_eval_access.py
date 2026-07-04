@@ -10,10 +10,6 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         terraform = (REPO_ROOT / "terraform/main.tf").read_text()
 
         self.assertIn(
-            '"arn:aws:s3:::${var.cd_eval_bucket_name}/cd-final-evaluator/*"',
-            terraform,
-        )
-        self.assertIn(
             '"arn:aws:s3:::${var.cd_eval_bucket_name}/cd-evals-images/*"',
             terraform,
         )
@@ -30,20 +26,12 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             workflow.count("TF_VAR_cd_eval_bucket_name: ${{ env.TF_STATE_BUCKET }}"),
             2,
         )
-        self.assertNotIn("CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX", workflow)
         self.assertIn(
             "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}",
             workflow,
         )
         self.assertIn("--expected-image-count 3", workflow)
-        self.assertIn(
-            "poetry run python scripts/run_live_final_evaluator_evals.py",
-            workflow,
-        )
-        self.assertIn(
-            "--output eval_runs/live-final-evaluator-evals.json",
-            workflow,
-        )
+        self.assertIn("poetry run python scripts/run_crewai_react_evals.py", workflow)
 
 
 if __name__ == "__main__":

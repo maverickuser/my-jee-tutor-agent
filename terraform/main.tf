@@ -169,7 +169,6 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
             "s3:AbortMultipartUpload"
           ]
           Resource = [
-            "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-final-evaluator/*",
             "arn:aws:s3:::${var.cd_eval_bucket_name}/cd-evals-images/*"
           ]
         }
@@ -183,7 +182,6 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Condition = {
             StringLike = {
               "s3:prefix" = [
-                "cd-final-evaluator/*",
                 "cd-evals-images/*"
               ]
             }

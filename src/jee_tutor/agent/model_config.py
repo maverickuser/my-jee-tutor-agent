@@ -9,7 +9,6 @@ from jee_tutor.agent.config_loader import LLMConfig
 
 DEFAULT_LLM_TIMEOUT_SECONDS = 180
 DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
-FINAL_EVALUATOR_MODEL = "gemini/gemini-2.5-flash"
 
 
 @dataclass(frozen=True)
@@ -99,37 +98,3 @@ class VisionModelConfig:
     @staticmethod
     def _uses_aws_credentials(model: str) -> bool:
         return model.startswith("bedrock/") or model.startswith("amazon/")
-
-
-class FinalEvaluatorModelConfig(VisionModelConfig):
-    def resolve(self) -> ModelSettings:
-        model = self._setting(
-            "FINAL_EVALUATOR_MODEL",
-            "final_evaluator",
-            "model",
-            FINAL_EVALUATOR_MODEL,
-        )
-        if model != FINAL_EVALUATOR_MODEL:
-            raise ValueError(
-                f"Final evaluator model must be pinned to {FINAL_EVALUATOR_MODEL}."
-            )
-        options = {
-            "temperature": float(self.config.get("final_evaluator", "temperature", 0)),
-            "timeout": float(
-                self.config.get(
-                    "final_evaluator",
-                    "timeout",
-                    DEFAULT_LLM_TIMEOUT_SECONDS,
-                )
-            ),
-            "num_retries": 0,
-        }
-        api_key = self._resolve_api_key(model)
-        if not api_key:
-            raise ValueError("Set GOOGLE_API_KEY or LITELLM_API_KEY for the final evaluator.")
-        return ModelSettings(
-            model=model,
-            api_key=api_key,
-            api_base=self._setting("LITELLM_BASE_URL", "litellm", "api_base"),
-            completion_options=options,
-        )

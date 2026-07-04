@@ -3,6 +3,12 @@ from pathlib import Path
 
 
 class DockerfileTest(unittest.TestCase):
+    def test_runtime_disables_crewai_telemetry_without_disabling_langfuse(self):
+        dockerfile = Path("src/Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("ENV CREWAI_DISABLE_TELEMETRY=true", dockerfile)
+        self.assertNotIn("OTEL_SDK_DISABLED", dockerfile)
+
     def test_pdf_runtime_dependencies_include_lmodern_fonts(self):
         dockerfile = Path("src/Dockerfile").read_text(encoding="utf-8")
 

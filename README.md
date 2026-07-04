@@ -10,10 +10,9 @@ AI-powered IIT JEE instructor built for Amazon Bedrock AgentCore Runtime with li
 4. A constrained CrewAI ReAct agent requests the invocation-scoped vision tool.
 5. `VisionLLMClient` requests structured JSON from `gemini/gemini-2.5-pro`;
    duplicate tool requests replay one memoized execution.
-6. A separate tool-free CrewAI stage evaluates the diagnosis with
-   `gemini/gemini-2.5-flash`; application code calculates metrics and the decision.
-7. Runtime guardrails apply, and only `PASS` results can create artifacts.
-8. The AgentCore invocation returns the deterministic Markdown analysis as JSON.
+6. Runtime output guardrails apply.
+7. The AgentCore invocation returns the deterministic Markdown analysis as JSON
+   and optionally creates the requested artifacts.
 
 ## Local Setup With Poetry
 
@@ -67,11 +66,6 @@ again. A concurrent request with the same key is reported as already in progress
 and reusing a key with a different payload is rejected. The cache is local to one
 runtime process; use a shared persistence layer if deduplication across multiple
 runtime instances is required.
-
-`include_evaluation_metadata` is an optional observability flag. When true, a
-successful response includes bounded `quality_gate` metadata showing whether
-evaluation completed, whether it was enforced, its mode, and its decision. The
-flag cannot enable, disable, sample, or otherwise change evaluator behavior.
 
 For S3-prefix invocations with PDF output enabled, the artifact is written as
 `<subject>_analysis.pdf` under the supplied prefix. The subject is sanitized
@@ -216,11 +210,6 @@ diagnosis rows.
 
 The eval step writes `eval_runs/agent-evals.json` and fails the workflow when the
 pass rate is below `CD_EVAL_MIN_SCORE`.
-
-CD also runs two isolated live Gemini Flash rejection cases against the same
-three-image prefix. These bypass diagnosis generation and require deliberately
-unsupported and deliberately incomplete diagnoses to be rejected. Their report
-is written to `eval_runs/live-final-evaluator-evals.json`.
 
 When enabled, the garak step starts a local REST adapter around the same
 handler, supplies the same S3 eval image prefix, sends garak probe prompts as

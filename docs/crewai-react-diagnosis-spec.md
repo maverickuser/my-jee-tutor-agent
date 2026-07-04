@@ -29,12 +29,11 @@ Invocation
   -> duplicate tool request returns memoized observation
   -> CrewAI final answer must preserve the observation
   -> Pydantic and domain validation
-  -> final evaluator
-  -> PDF gate
+  -> runtime output guardrail
+  -> optional artifact creation
 ```
 
-The ReAct loop controls diagnosis orchestration only. The final quality
-evaluator remains a separate, tool-free CrewAI stage.
+The ReAct loop controls diagnosis orchestration only.
 
 ## Invariants
 
@@ -128,11 +127,10 @@ Observability and tests must keep these counters separate:
 - `vision_tool_request_count`
 - `vision_tool_execution_count`
 - `vision_transport_attempt_count`
-- `final_evaluator_llm_call_count`
 - `artifact_write_count`
 
-If Gemini is used for orchestration, vision, and evaluation, a generic
-`Gemini call count` is ambiguous. Metrics must include an operation label.
+If Gemini is used for orchestration and vision, a generic `Gemini call count`
+is ambiguous. Metrics must include an operation label.
 
 ## Retry Ownership
 
@@ -200,11 +198,10 @@ CrewAI must not:
 - Correct or repair invalid tool output.
 
 Application code parses and validates the final JSON. Markdown is rendered
-deterministically only after final evaluation passes.
+deterministically only after validation passes.
 
 If CrewAI returns content that differs from the successful tool observation,
-raise `CrewObservationMismatchError` and do not call the final evaluator or
-artifact writer.
+raise `CrewObservationMismatchError` and do not call the artifact writer.
 
 ## Failure Handling
 
@@ -216,7 +213,7 @@ After vision transport attempts are exhausted:
 - Cached failure records safe type, status, and message.
 - Further tool requests return the cached failure.
 - Crew terminates with a workflow error.
-- Final evaluator and artifact writer are not called.
+- Artifact writer is not called.
 
 ### Iteration or call-budget exhaustion
 
@@ -304,7 +301,6 @@ Expected modifications:
 - Add an orchestration LLM-call budget wrapper.
 - Keep `VisionLLMClient` transport retry ownership unchanged.
 - Add exact observation-preservation validation.
-- Pass validated diagnosis to the separate final evaluator.
 - Update observability and error details with distinct counters.
 
 ## Unit and Integration Tests
@@ -324,7 +320,7 @@ Required tests:
 9. Final answer must equal the memoized observation.
 10. Tool state is isolated across sequential and concurrent invocations.
 11. Image prompt injection cannot add a tool or alter tool input.
-12. Final evaluator runs only after CrewAI output and structured validation pass.
+12. Artifact creation runs only after CrewAI output and structured validation pass.
 
 ## Rollout
 

@@ -2,26 +2,20 @@
 
 ## Runtime controls
 
-`src/config/llm.toml` enables structured diagnosis, constrained ReAct, and the
-sampled final evaluator. Rollback controls are:
+`src/config/llm.toml` enables structured diagnosis and constrained ReAct.
+The ReAct rollback control is:
 
 - `react_diagnosis.enabled = false`: use the direct single-tool path.
-- `final_evaluator.mode = "shadow"`: evaluate sampled requests without gating.
-- `final_evaluator.mode = "disabled"` or `enabled = false`: disable evaluation.
-- `final_evaluator.sample_rate`: stable sampling from `0.0` through `1.0`.
 
-CD always runs all ten `REACT-*` cases, all ten `EVAL-*` cases, and the deployed
-runtime smoke. A failed, errored, or missing case fails the job; aggregate scores
-do not override individual failures.
+CD always runs all mandatory `REACT-*` cases and the deployed runtime smoke. A
+failed, errored, or missing case fails the job.
 
 ## Calibration and rollout
 
-Before changing thresholds, collect a versioned human-reviewed set containing
-grounded, unsupported, contradicted, incomplete, qualified-inference,
-unreadable, and prompt-injection examples. Record reviewer labels, diagnosis
-schema version, evaluator model, thresholds, false-pass rate, false-reject rate,
-and p50/p95/p99 diagnosis and evaluation latency. Threshold changes require an
-owner-approved calibration report. Shadow results cannot block responses.
+Maintain a versioned human-reviewed set containing readable, unreadable,
+multi-question, and prompt-injection examples. Record reviewer labels,
+diagnosis schema version, model version, output validity, and p50/p95/p99
+diagnosis latency.
 
 ## New Relic operations
 
@@ -34,7 +28,6 @@ Useful NRQL:
 ```sql
 SELECT count(*) FROM Log FACET terminal_outcome SINCE 1 hour ago
 SELECT count(*) FROM Log FACET workflow_stage, severity SINCE 1 hour ago
-SELECT count(*) FROM Log WHERE message LIKE '%final_evaluator_decision%' FACET message
 SELECT count(*) FROM Log WHERE message LIKE '%new_relic_log_%' SINCE 1 hour ago
 ```
 

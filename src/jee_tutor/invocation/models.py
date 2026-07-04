@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -11,7 +11,6 @@ class TutorInvocationPayload(BaseModel):
     image_s3_prefix: str | None = None
     image_data_uri: str | None = None
     save_analysis_pdf: bool = True
-    include_evaluation_metadata: bool = False
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
@@ -35,15 +34,6 @@ class TutorInvocationPayload(BaseModel):
         )
 
 
-class QualityGateMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    evaluated: bool
-    enforced: bool
-    mode: Literal["disabled", "shadow", "gated"]
-    decision: Literal["PASS", "REVIEW", "REJECT"] | None = None
-
-
 class TutorInvocationResponse(BaseModel):
     analysis: str
     message: str | None = None
@@ -52,7 +42,6 @@ class TutorInvocationResponse(BaseModel):
     analysis_markdown_uri: str | None = None
     artifact_errors: list[str] = Field(default_factory=list)
     runtime_commit_sha: str | None = None
-    quality_gate: QualityGateMetadata | None = None
 
 
 class ErrorResponse(BaseModel):

@@ -139,7 +139,7 @@ variable "s3_image_input_object_arns" {
 }
 
 variable "cd_eval_bucket_name" {
-  description = "S3 bucket containing mandatory CD smoke and evaluator image prefixes."
+  description = "S3 bucket containing mandatory CD smoke and agent-eval image prefixes."
   type        = string
   default     = ""
 }

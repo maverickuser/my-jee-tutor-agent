@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.llm_client import VisionLLMClient
-from jee_tutor.agent.model_config import FinalEvaluatorModelConfig, VisionModelConfig
+from jee_tutor.agent.model_config import VisionModelConfig
 from tests.agent.test_diagnosis_output import question
 
 
@@ -80,18 +80,3 @@ class StructuredClientConfigTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "verified Gemini"):
             client.analyze_vision(["data:image/png;base64,x"])
-
-    def test_final_evaluator_model_is_pinned_and_resolves_auth(self):
-        settings = FinalEvaluatorModelConfig(
-            environ={"GOOGLE_API_KEY": "key"},
-            config=LLMConfig({}),
-        ).resolve()
-        self.assertEqual(settings.model, "gemini/gemini-2.5-flash")
-        self.assertEqual(settings.completion_options["temperature"], 0)
-        self.assertEqual(settings.completion_options["timeout"], 180)
-
-        with self.assertRaisesRegex(ValueError, "must be pinned"):
-            FinalEvaluatorModelConfig(
-                environ={"GOOGLE_API_KEY": "key"},
-                config=LLMConfig({"final_evaluator": {"model": "gemini/other"}}),
-            ).resolve()
