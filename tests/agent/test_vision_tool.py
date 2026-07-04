@@ -1,6 +1,7 @@
 import unittest
 import threading
 import time
+import json
 
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.tools import (
@@ -16,8 +17,8 @@ class FakeVisionLLMClient(VisionLLMClient):
         self.calls = []
         self.error = error
 
-    def analyze_vision(self, image_data_uris, user_prompt=None):
-        self.calls.append((image_data_uris, user_prompt))
+    def analyze_vision(self, image_data_uris, user_prompt=None, *, expected_question_numbers=None):
+        self.calls.append((image_data_uris, user_prompt, expected_question_numbers))
         if self.error:
             raise self.error
         return "analysis"
@@ -54,7 +55,7 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual(result, "analysis")
         self.assertEqual(
             llm_client.calls,
-            [(["data:image/png;base64,ZmFrZQ=="], None)],
+            [(["data:image/png;base64,ZmFrZQ=="], None, None)],
         )
 
     def test_run_preloaded_uses_preloaded_images(self):
@@ -78,7 +79,7 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(tool.call_state.call_count, 2)
         self.assertEqual(tool.call_state.successful_call_count, 1)
-        self.assertEqual(llm_client.calls, [([image], None)])
+        self.assertEqual(llm_client.calls, [([image], None, None)])
 
     def test_tool_uses_preloaded_images_when_crewai_sends_placeholder_filename(self):
         llm_client = FakeVisionLLMClient()
@@ -92,7 +93,7 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual(result, "analysis")
         self.assertEqual(
             llm_client.calls,
-            [(["data:image/png;base64,cHJlbG9hZGVk"], None)],
+            [(["data:image/png;base64,cHJlbG9hZGVk"], None, None)],
         )
 
     def test_tool_uses_preloaded_images_over_tool_supplied_data_uris(self):
@@ -106,7 +107,7 @@ class VisionToolTest(unittest.TestCase):
 
         self.assertEqual(
             llm_client.calls,
-            [(["data:image/png;base64,cHJlbG9hZGVk"], None)],
+            [(["data:image/png;base64,cHJlbG9hZGVk"], None, None)],
         )
 
     def test_tool_failure_includes_image_resolution_context(self):
@@ -152,6 +153,50 @@ class VisionToolTest(unittest.TestCase):
         )
         tool._run(["input.png"])
         self.assertEqual(client.expected, ["6"])
+
+    def test_tool_batches_images_in_groups_of_three_and_merges_json(self):
+        class BatchAwareClient(FakeVisionLLMClient):
+            def __init__(self):
+                super().__init__()
+                self.question_index = 0
+
+            def analyze_vision(self, image_data_uris, user_prompt=None, *, expected_question_numbers=None):
+                self.calls.append((image_data_uris, user_prompt, expected_question_numbers))
+                questions = []
+                for index, _image in enumerate(image_data_uris, start=1):
+                    self.question_index += 1
+                    number = str(self.question_index)
+                    questions.append(
+                        {
+                            "question_number": number,
+                            "chapter": "Electrostatics",
+                            "topic": "Capacitance",
+                            "what_you_thought": f"batch {len(self.calls)} image {index}",
+                            "why_that_thought_is_wrong": "missed charge sharing",
+                            "exact_concept_gap": "conservation of charge",
+                            "what_you_must_deep_dive": "series and parallel capacitors",
+                        }
+                    )
+                return json.dumps({"questions": questions})
+
+        client = BatchAwareClient()
+        tool = VisionAnalysisTool(
+            llm_client=client,
+            preloaded_image_data_uris=[
+                "data:image/png;base64,1",
+                "data:image/png;base64,2",
+                "data:image/png;base64,3",
+                "data:image/png;base64,4",
+            ],
+            expected_question_numbers=["1", "2", "3", "4"],
+        )
+
+        result = tool.run_preloaded()
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual([len(call[0]) for call in client.calls], [3, 1])
+        self.assertEqual(json.loads(result)["questions"][0]["question_number"], "1")
+        self.assertEqual(json.loads(result)["questions"][-1]["question_number"], "4")
 
     def test_waiter_timeout_and_invalid_memoization_state(self):
         tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())

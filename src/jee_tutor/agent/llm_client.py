@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import base64
 import logging
 from typing import Any
 
@@ -197,6 +198,20 @@ class VisionLLMClient:
             timeout_seconds,
             model,
         )
+        request_size = self._request_size_summary(request_kwargs)
+        if request_size:
+            logger.info(
+                "llm_request_size model=%s message_count=%s image_count=%s "
+                "system_chars=%s user_text_chars=%s image_uri_chars=%s "
+                "image_bytes_estimate=%s",
+                model,
+                request_size.get("message_count"),
+                request_size.get("image_count"),
+                request_size.get("system_chars"),
+                request_size.get("user_text_chars"),
+                request_size.get("image_uri_chars"),
+                request_size.get("image_bytes_estimate"),
+            )
         generation_metadata = {
             "attempt": attempt,
             "max_attempts": max_attempts,
@@ -261,6 +276,50 @@ class VisionLLMClient:
         }
         redacted["messages"] = "[redacted: contains image payload]"
         return redacted
+
+    @staticmethod
+    def _request_size_summary(request_kwargs: dict) -> dict[str, int]:
+        messages = request_kwargs.get("messages")
+        if not isinstance(messages, list):
+            return {}
+
+        summary: dict[str, int] = {
+            "message_count": len(messages),
+            "system_chars": 0,
+            "user_text_chars": 0,
+            "image_count": 0,
+            "image_uri_chars": 0,
+            "image_bytes_estimate": 0,
+        }
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if message.get("role") == "system" and isinstance(content, str):
+                summary["system_chars"] += len(content)
+                continue
+            if message.get("role") != "user" or not isinstance(content, list):
+                continue
+
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text" and isinstance(part.get("text"), str):
+                    summary["user_text_chars"] += len(part["text"])
+                    continue
+                if part.get("type") != "image_url":
+                    continue
+                image_url = part.get("image_url", {}).get("url")
+                if not isinstance(image_url, str):
+                    continue
+                summary["image_count"] += 1
+                summary["image_uri_chars"] += len(image_url)
+                summary["image_bytes_estimate"] += _estimate_image_bytes_from_data_uri(
+                    image_url
+                )
+
+        return summary
 
     @classmethod
     def _generation_accounting(cls, response: Any, model: str) -> dict[str, dict]:
@@ -355,3 +414,15 @@ def _compact_token_detail(value: Any) -> Any:
             if nested is not None and not key.startswith("_")
         }
     return value
+
+
+def _estimate_image_bytes_from_data_uri(image_url: str) -> int:
+    prefix = "data:image/"
+    marker = ";base64,"
+    if not image_url.startswith(prefix) or marker not in image_url:
+        return 0
+    encoded = image_url.split(marker, 1)[1]
+    try:
+        return len(base64.b64decode(encoded, validate=True))
+    except Exception:
+        return 0

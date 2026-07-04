@@ -35,7 +35,7 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     EMAIL_DELIVERY_FUNCTION_ARN = aws_lambda_function.email_delivery.arn
     EMAIL_FROM_ADDRESS          = var.email_from_address
     EMAIL_SUBJECT_TEMPLATE      = var.email_subject_template
-    EMAIL_BODY_TEMPLATE         = var.email_body_template
+    EMAIL_BODY_TEMPLATE         = local.email_body_template_compact
     EMAIL_REGION                = var.aws_region
   }
 

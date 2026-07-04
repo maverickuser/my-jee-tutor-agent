@@ -105,6 +105,39 @@ class LLMClientAccountingTest(unittest.TestCase):
         self.assertEqual(messages[0]["role"], "system")
         self.assertIn("Question Number", messages[1]["content"][0]["text"])
 
+    def test_request_size_summary_counts_prompt_and_image_payload(self):
+        request_kwargs = {
+            "messages": [
+                {"role": "system", "content": "system text"},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "user prompt"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64,ZmFrZQ=="},
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/jpeg;base64,c2Vjb25k"},
+                        },
+                    ],
+                },
+            ]
+        }
+
+        self.assertEqual(
+            VisionLLMClient._request_size_summary(request_kwargs),
+            {
+                "message_count": 2,
+                "system_chars": 11,
+                "user_text_chars": 11,
+                "image_count": 2,
+                "image_uri_chars": 61,
+                "image_bytes_estimate": 10,
+            },
+        )
+
     def test_analyze_vision_forces_stateless_completion_kwargs(self):
         config = LLMConfig(
             {

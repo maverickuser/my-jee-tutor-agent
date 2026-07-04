@@ -69,6 +69,7 @@ resource "aws_lambda_function" "email_delivery" {
   function_name = local.email_delivery_function_name
   role          = aws_iam_role.email_delivery.arn
   package_type  = "Image"
+  architectures = ["arm64"]
   image_uri     = var.agentcore_image_uri
   timeout       = var.email_delivery_function_timeout_seconds
   memory_size   = var.email_delivery_function_memory_mb
@@ -87,7 +88,7 @@ resource "aws_lambda_function" "email_delivery" {
       EMAIL_DELIVERY_PROVIDER          = "lambda"
       EMAIL_FROM_ADDRESS               = var.email_from_address
       EMAIL_SUBJECT_TEMPLATE           = var.email_subject_template
-      EMAIL_BODY_TEMPLATE              = var.email_body_template
+      EMAIL_BODY_TEMPLATE              = local.email_body_template_compact
       EMAIL_REGION                     = var.aws_region
       NEW_RELIC_LOG_ENABLED            = tostring(var.newrelic_log_forwarding_enabled)
       NEW_RELIC_LICENSE_KEY_SECRET_ARN = var.newrelic_license_key_secret_arn
