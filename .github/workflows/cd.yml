@@ -358,6 +358,7 @@ jobs:
           poetry run python scripts/run_agentcore_smoke.py \
             --runtime-arn "${{ needs.deploy_runtime.outputs.runtime_arn }}" \
             --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
+            --expected-image-count 3 \
             --expected-sha "${{ github.sha }}"
 
       - name: Upload smoke report
@@ -422,6 +423,22 @@ jobs:
             --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
             --output eval_runs/agent-evals.json \
             --min-score "$CD_EVAL_MIN_SCORE"
+
+      - name: Run isolated live evaluator rejection cases
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
+        run: |
+          poetry run python scripts/run_live_final_evaluator_evals.py \
+            --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
+            --expected-image-count 3 \
+            --output eval_runs/live-final-evaluator-evals.json
 
       - name: Upload eval reports
         if: always()

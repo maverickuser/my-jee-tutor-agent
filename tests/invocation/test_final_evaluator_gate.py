@@ -77,6 +77,29 @@ class FinalEvaluatorGateTest(unittest.TestCase):
             {"image_data_uri": "data:image/png;base64,x", "save_analysis_pdf": True}
         )
         self.assertIn("analysis_pdf_uri", response)
+        self.assertNotIn("quality_gate", response)
+        writer.write_for_invocation.assert_called_once()
+
+    def test_opt_in_reports_enforced_pass_metadata(self):
+        service, writer = self.service(assessment(("supported",) * 5))
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,x",
+                "save_analysis_pdf": True,
+                "include_evaluation_metadata": True,
+            }
+        )
+
+        self.assertEqual(
+            response["quality_gate"],
+            {
+                "evaluated": True,
+                "enforced": True,
+                "mode": "gated",
+                "decision": "PASS",
+            },
+        )
         writer.write_for_invocation.assert_called_once()
 
     def test_review_and_reject_do_not_write_artifact(self):
@@ -118,9 +141,22 @@ class FinalEvaluatorGateTest(unittest.TestCase):
             mode=EvaluatorMode.SHADOW,
         )
         response = service.handle(
-            {"image_data_uri": "data:image/png;base64,x", "save_analysis_pdf": True}
+            {
+                "image_data_uri": "data:image/png;base64,x",
+                "save_analysis_pdf": True,
+                "include_evaluation_metadata": True,
+            }
         )
         self.assertIn("analysis_pdf_uri", response)
+        self.assertEqual(
+            response["quality_gate"],
+            {
+                "evaluated": True,
+                "enforced": False,
+                "mode": "shadow",
+                "decision": "REJECT",
+            },
+        )
         writer.write_for_invocation.assert_called_once()
 
     def test_evaluator_errors_gate_or_fail_open_in_shadow(self):
@@ -151,8 +187,37 @@ class FinalEvaluatorGateTest(unittest.TestCase):
             mode=EvaluatorMode.GATED,
         )
         response = service.handle(
-            {"image_data_uri": "data:image/png;base64,x", "save_analysis_pdf": True}
+            {
+                "image_data_uri": "data:image/png;base64,x",
+                "save_analysis_pdf": True,
+                "include_evaluation_metadata": True,
+            }
         )
         self.assertIn("analysis", response)
+        self.assertEqual(
+            response["quality_gate"],
+            {
+                "evaluated": False,
+                "enforced": False,
+                "mode": "gated",
+            },
+        )
         service.final_evaluator.evaluate.assert_not_called()
         writer.write_for_invocation.assert_called_once()
+
+    def test_metadata_flag_does_not_change_sampling_payload(self):
+        service, _ = self.service(assessment())
+        sampling = Mock()
+        sampling.mode = EvaluatorMode.GATED
+        sampling.selected.return_value = False
+        service.evaluator_sampling = sampling
+
+        service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,x",
+                "include_evaluation_metadata": True,
+            }
+        )
+
+        canonical_payload = sampling.selected.call_args.kwargs["canonical_payload"]
+        self.assertNotIn("include_evaluation_metadata", canonical_payload)

@@ -53,7 +53,6 @@ include_image = true
 enabled = true
 trace_name = "jee-tutor-agentcore-invocation"
 generation_name = "vision-question-analysis"
-flush_after_invocation = false
 
 [langfuse.prompts]
 vision_system = "jee-tutor-vision-system-prompt"

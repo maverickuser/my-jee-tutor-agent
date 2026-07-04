@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -12,10 +13,22 @@ from scripts.run_agentcore_smoke import (  # noqa: E402
     invoke_runtime,
     invoke_until_terminal,
     main,
+    markdown_data_row_count,
 )
 
 
 class RunAgentCoreSmokeTest(unittest.TestCase):
+    def test_markdown_data_row_count(self):
+        analysis = (
+            "| Question Number | Topic |\n"
+            "| --- | --- |\n"
+            "| 1 | Friction |\n"
+            "| 2 | Rotation |\n"
+            "| 3 | Electrostatics |"
+        )
+
+        self.assertEqual(markdown_data_row_count(analysis), 3)
+
     def test_runtime_invocation_uses_explicit_session_id(self):
         body = Mock()
         body.read.return_value = b'{"analysis":"ok"}'
@@ -109,6 +122,8 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "s3://eval-bucket/images/",
                         "--expected-sha",
                         "abc123",
+                        "--expected-image-count",
+                        "1",
                         "--output",
                         str(output),
                     ],
@@ -125,10 +140,65 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             self.assertIn("S3 access denied.", print_mock.call_args.args[0])
             session_ids = [call.args[2] for call in invoke.call_args_list]
             self.assertEqual(session_ids[0], session_ids[1])
+            self.assertTrue(invoke.call_args_list[0].args[3]["include_evaluation_metadata"])
+
+    def test_smoke_fails_when_analysis_row_count_does_not_match_images(self):
+        response = {
+            "analysis": ("| Question Number |\n| --- |\n| 1 |\n| 2 |"),
+            "quality_gate": {
+                "evaluated": True,
+                "enforced": True,
+                "mode": "gated",
+                "decision": "PASS",
+            },
+            "runtime_commit_sha": "abc123",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "smoke.json"
+            with (
+                patch(
+                    "scripts.run_agentcore_smoke.invoke_runtime",
+                    side_effect=[response, response],
+                ),
+                patch(
+                    "scripts.run_agentcore_smoke.boto3.client",
+                    return_value=Mock(),
+                ),
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--image-s3-prefix",
+                        "s3://eval-bucket/images/",
+                        "--expected-sha",
+                        "abc123",
+                        "--expected-image-count",
+                        "3",
+                        "--no-save-analysis-pdf",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+
+            report = json.loads(output.read_text())
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(report["analysis_data_row_count"], 2)
+            self.assertEqual(report["expected_image_count"], 3)
+            self.assertIn("analysis_row_count_mismatch", report["failed_assertions"])
 
     def test_pdf_assertions_are_skipped_when_artifact_not_requested(self):
         response = {
-            "analysis": "Valid analysis",
+            "analysis": "| Question Number |\n| --- |\n| 1 |",
+            "quality_gate": {
+                "evaluated": True,
+                "enforced": True,
+                "mode": "gated",
+                "decision": "PASS",
+            },
             "runtime_commit_sha": "abc123",
         }
         client = Mock()
@@ -153,6 +223,8 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "s3://eval-bucket/images/",
                         "--expected-sha",
                         "abc123",
+                        "--expected-image-count",
+                        "1",
                         "--no-save-analysis-pdf",
                         "--output",
                         str(output),
@@ -165,6 +237,9 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertFalse(report["artifact_requested"])
             self.assertFalse(report["artifact_created"])
+            self.assertEqual(report["analysis_data_row_count"], 1)
+            self.assertEqual(report["expected_image_count"], 1)
+            self.assertEqual(report["quality_gate"]["decision"], "PASS")
             self.assertNotIn("pdf_uri_missing", report["failed_assertions"])
             client_factory.assert_called_once()
             (service_name,) = client_factory.call_args.args
@@ -177,6 +252,179 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                 {"mode": "standard", "total_max_attempts": 1},
             )
             self.assertTrue(config.tcp_keepalive)
+
+    def test_smoke_fails_when_quality_gate_was_not_enforced(self):
+        response = {
+            "analysis": "| Question Number |\n| --- |\n| 1 |",
+            "quality_gate": {
+                "evaluated": False,
+                "enforced": False,
+                "mode": "gated",
+            },
+            "runtime_commit_sha": "abc123",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "smoke.json"
+            with (
+                patch(
+                    "scripts.run_agentcore_smoke.invoke_runtime",
+                    side_effect=[response, response],
+                ),
+                patch(
+                    "scripts.run_agentcore_smoke.boto3.client",
+                    return_value=Mock(),
+                ),
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--image-s3-prefix",
+                        "s3://eval-bucket/images/",
+                        "--expected-sha",
+                        "abc123",
+                        "--expected-image-count",
+                        "1",
+                        "--no-save-analysis-pdf",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+
+            report = json.loads(output.read_text())
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(report["quality_gate"]["evaluated"], False)
+            self.assertIn(
+                "quality_gate_metadata_mismatch",
+                report["failed_assertions"],
+            )
+
+    def test_pdf_metadata_is_unchanged_after_idempotent_replay(self):
+        response = {
+            "analysis": "| Question Number |\n| --- |\n| 1 |",
+            "analysis_pdf_uri": "s3://eval-bucket/report.pdf",
+            "quality_gate": {
+                "evaluated": True,
+                "enforced": True,
+                "mode": "gated",
+                "decision": "PASS",
+            },
+            "runtime_commit_sha": "abc123",
+        }
+        artifact_head = {
+            "LastModified": datetime.fromtimestamp(200, tz=timezone.utc),
+            "ETag": '"etag-1"',
+        }
+        runtime_client = Mock()
+        s3_client = Mock()
+        s3_client.head_object.side_effect = [artifact_head, artifact_head]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "smoke.json"
+            with (
+                patch(
+                    "scripts.run_agentcore_smoke.invoke_runtime",
+                    side_effect=[response, response],
+                ),
+                patch(
+                    "scripts.run_agentcore_smoke.boto3.client",
+                    side_effect=lambda service, **_kwargs: (
+                        runtime_client if service == "bedrock-agentcore" else s3_client
+                    ),
+                ),
+                patch("scripts.run_agentcore_smoke.time.time", return_value=100),
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--image-s3-prefix",
+                        "s3://eval-bucket/images/",
+                        "--expected-sha",
+                        "abc123",
+                        "--expected-image-count",
+                        "1",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+
+            report = json.loads(output.read_text())
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(report["artifact_last_modified_unchanged"])
+            self.assertTrue(report["artifact_etag_unchanged"])
+            self.assertEqual(s3_client.head_object.call_count, 2)
+
+    def test_smoke_fails_when_replay_rewrites_pdf(self):
+        response = {
+            "analysis": "| Question Number |\n| --- |\n| 1 |",
+            "analysis_pdf_uri": "s3://eval-bucket/report.pdf",
+            "quality_gate": {
+                "evaluated": True,
+                "enforced": True,
+                "mode": "gated",
+                "decision": "PASS",
+            },
+            "runtime_commit_sha": "abc123",
+        }
+        first_head = {
+            "LastModified": datetime.fromtimestamp(200, tz=timezone.utc),
+            "ETag": '"etag-1"',
+        }
+        replay_head = {
+            "LastModified": datetime.fromtimestamp(201, tz=timezone.utc),
+            "ETag": '"etag-2"',
+        }
+        s3_client = Mock()
+        s3_client.head_object.side_effect = [first_head, replay_head]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "smoke.json"
+            with (
+                patch(
+                    "scripts.run_agentcore_smoke.invoke_runtime",
+                    side_effect=[response, response],
+                ),
+                patch(
+                    "scripts.run_agentcore_smoke.boto3.client",
+                    side_effect=lambda service, **_kwargs: (
+                        Mock() if service == "bedrock-agentcore" else s3_client
+                    ),
+                ),
+                patch("scripts.run_agentcore_smoke.time.time", return_value=100),
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--image-s3-prefix",
+                        "s3://eval-bucket/images/",
+                        "--expected-sha",
+                        "abc123",
+                        "--expected-image-count",
+                        "1",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+
+            report = json.loads(output.read_text())
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(report["artifact_last_modified_unchanged"])
+            self.assertFalse(report["artifact_etag_unchanged"])
+            self.assertIn(
+                "artifact_rewritten_on_idempotent_replay",
+                report["failed_assertions"],
+            )
 
 
 if __name__ == "__main__":

@@ -68,6 +68,11 @@ and reusing a key with a different payload is rejected. The cache is local to on
 runtime process; use a shared persistence layer if deduplication across multiple
 runtime instances is required.
 
+`include_evaluation_metadata` is an optional observability flag. When true, a
+successful response includes bounded `quality_gate` metadata showing whether
+evaluation completed, whether it was enforced, its mode, and its decision. The
+flag cannot enable, disable, sample, or otherwise change evaluator behavior.
+
 For S3-prefix invocations with PDF output enabled, the artifact is written as
 `<subject>_analysis.pdf` under the supplied prefix. The subject is sanitized
 before it is used in the filename.
@@ -205,10 +210,17 @@ role must have `s3:ListBucket` on the bucket and `s3:GetObject` on the
 `cd-evals-images/*` objects.
 
 The deployed-runtime smoke test uses the same `CD_EVAL_IMAGE_S3_PREFIX` as the
-agent evals so both gates evaluate the same image set.
+agent evals so both gates evaluate the same image set. The live prefix must
+contain exactly three supported images; both gates require exactly three
+diagnosis rows.
 
 The eval step writes `eval_runs/agent-evals.json` and fails the workflow when the
 pass rate is below `CD_EVAL_MIN_SCORE`.
+
+CD also runs two isolated live Gemini Flash rejection cases against the same
+three-image prefix. These bypass diagnosis generation and require deliberately
+unsupported and deliberately incomplete diagnoses to be rejected. Their report
+is written to `eval_runs/live-final-evaluator-evals.json`.
 
 When enabled, the garak step starts a local REST adapter around the same
 handler, supplies the same S3 eval image prefix, sends garak probe prompts as

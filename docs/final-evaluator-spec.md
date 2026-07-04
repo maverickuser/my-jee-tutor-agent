@@ -590,7 +590,7 @@ Expected modifications:
 
 ### Live evaluation
 
-- One-image and six-image cases.
+- One-image and three-image cases.
 - Incorrect question number.
 - Invented student selection.
 - Contradicted visible option.
@@ -626,5 +626,5 @@ The feature is complete when:
 6. Upstream ReAct orchestration supplies exactly one memoized, validated
    diagnosis observation.
 7. Images and raw invalid output remain redacted.
-8. Unit, integration, Ruff, coverage, and live one-image/six-image tests pass.
+8. Unit, integration, Ruff, coverage, and live one-image/three-image tests pass.
 9. Thresholds are calibrated in shadow mode before production fail-closed gating.

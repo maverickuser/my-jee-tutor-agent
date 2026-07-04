@@ -11,6 +11,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CD evals for the JEE tutor agent.")
     parser.add_argument("--cases", default="evals/jee_tutor_eval_cases.json")
@@ -199,7 +200,13 @@ def _score_markdown_table_case(case: dict[str, Any], response: dict[str, Any]) -
     ]
     min_required_columns = int(case.get("min_required_columns", len(required_columns)))
     min_data_rows = int(case.get("min_data_rows", 1))
-    passed = len(matched_columns) >= min_required_columns and len(data_rows) >= min_data_rows
+    expected_data_rows = case.get("expected_data_rows")
+    row_count_passed = (
+        len(data_rows) == int(expected_data_rows)
+        if expected_data_rows is not None
+        else len(data_rows) >= min_data_rows
+    )
+    passed = len(matched_columns) >= min_required_columns and row_count_passed
 
     return {
         "id": case["id"],
@@ -211,9 +218,13 @@ def _score_markdown_table_case(case: dict[str, Any], response: dict[str, Any]) -
         "data_row_count": len(data_rows),
         "min_required_columns": min_required_columns,
         "min_data_rows": min_data_rows,
+        "expected_data_rows": expected_data_rows,
         "reason": None
         if passed
-        else "Analysis did not include the required markdown table structure.",
+        else (
+            "Analysis did not include the required markdown table structure "
+            "or exact data-row count."
+        ),
         "response": _redacted_response(response),
     }
 
@@ -257,17 +268,28 @@ def _score_guardrail_case(case: dict[str, Any], response: dict[str, Any]) -> dic
             " ".join(str(detail) for detail in response.get("details", [])),
         ]
     ).lower()
-    matched_markers = [
-        marker for marker in case.get("expected_markers", []) if marker.lower() in text
-    ]
-    passed = "error" in response and bool(matched_markers)
+    expected_markers = case.get("expected_markers", [])
+    matched_markers = [marker for marker in expected_markers if marker.lower() in text]
+    required_marker_groups = case.get("required_marker_groups", {})
+    matched_marker_groups = {
+        name: [marker for marker in markers if marker.lower() in text]
+        for name, markers in required_marker_groups.items()
+    }
+    marker_requirements_passed = (
+        all(bool(matches) for matches in matched_marker_groups.values())
+        if required_marker_groups
+        else bool(matched_markers)
+    )
+    passed = "error" in response and marker_requirements_passed
 
     return {
         "id": case["id"],
         "type": case["type"],
         "passed": passed,
         "matched_markers": matched_markers,
-        "expected_markers": case.get("expected_markers", []),
+        "expected_markers": expected_markers,
+        "matched_marker_groups": matched_marker_groups,
+        "required_marker_groups": required_marker_groups,
         "reason": None if passed else "Guardrail did not return the expected block response.",
         "response": _redacted_response(response),
     }

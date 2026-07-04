@@ -35,6 +35,15 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}",
             workflow,
         )
+        self.assertIn("--expected-image-count 3", workflow)
+        self.assertIn(
+            "poetry run python scripts/run_live_final_evaluator_evals.py",
+            workflow,
+        )
+        self.assertIn(
+            "--output eval_runs/live-final-evaluator-evals.json",
+            workflow,
+        )
 
 
 if __name__ == "__main__":

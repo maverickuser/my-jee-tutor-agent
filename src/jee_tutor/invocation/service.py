@@ -24,6 +24,7 @@ from jee_tutor.invocation.idempotency import (
 from jee_tutor.invocation.image_inputs import ImageInputResolver, ResolvedImage
 from jee_tutor.invocation.models import (
     ErrorResponse,
+    QualityGateMetadata,
     TutorInvocationPayload,
     TutorInvocationResponse,
 )
@@ -172,7 +173,7 @@ class TutorInvocationService:
                 self._finish_invocation(span, response, invocation)
                 return response
 
-            evaluation_error = self._evaluate_if_selected(
+            evaluation_error, quality_gate = self._evaluate_if_selected(
                 invocation=invocation,
                 resolved_images=resolved_images,
                 workflow_result=workflow_result,
@@ -195,7 +196,11 @@ class TutorInvocationService:
                     or "I cannot return that response because it was blocked by a runtime guardrail."
                 )
 
-            response = self._success_response(analysis, invocation)
+            response = self._success_response(
+                analysis,
+                invocation,
+                quality_gate=(quality_gate if invocation.include_evaluation_metadata else None),
+            )
             self._finish_invocation(span, response, invocation)
             return response
 
@@ -205,16 +210,18 @@ class TutorInvocationService:
         invocation: TutorInvocationPayload,
         resolved_images: list[ResolvedImage],
         workflow_result: object,
-    ) -> FinalEvaluationError | None:
+    ) -> tuple[FinalEvaluationError | None, QualityGateMetadata]:
         diagnosis = getattr(workflow_result, "diagnosis", None)
         if diagnosis is None:
-            return None
+            return None, self._quality_gate_metadata()
         selected = self.evaluator_sampling.selected(
             idempotency_key=invocation.idempotency_key,
-            canonical_payload=invocation.model_dump(exclude={"idempotency_key"}),
+            canonical_payload=invocation.model_dump(
+                exclude={"idempotency_key", "include_evaluation_metadata"}
+            ),
         )
         if not selected:
-            return None
+            return None, self._quality_gate_metadata()
         try:
             result = self.final_evaluator.evaluate(
                 image_data_uris=[image.data_uri for image in resolved_images],
@@ -227,8 +234,8 @@ class TutorInvocationService:
                     "final_evaluator_shadow_error category=%s",
                     exc.category or "unknown",
                 )
-                return None
-            return exc
+                return None, self._quality_gate_metadata()
+            return exc, self._quality_gate_metadata()
 
         self.observability.score_current_trace(
             [
@@ -244,8 +251,11 @@ class TutorInvocationService:
                 ),
             ]
         )
+        quality_gate = self._quality_gate_metadata(
+            decision=result.decision.decision,
+        )
         if result.decision.decision == FinalDecision.PASS:
-            return None
+            return None, quality_gate
         logger.warning(
             "final_evaluator_decision decision=%s failed_thresholds=%s "
             "unsatisfied_completeness_items=%s shadow=%s",
@@ -255,13 +265,31 @@ class TutorInvocationService:
             self.evaluator_sampling.mode == EvaluatorMode.SHADOW,
         )
         if self.evaluator_sampling.mode == EvaluatorMode.SHADOW:
-            return None
-        return FinalEvaluationError(
-            decision=result.decision.decision,
-            metrics=result.metrics,
-            failed_thresholds=result.decision.failed_thresholds,
-            critical_issue_count=result.decision.critical_issue_count,
-            unsatisfied_completeness_items=self._unsatisfied_completeness_items(result.assessment),
+            return None, quality_gate
+        return (
+            FinalEvaluationError(
+                decision=result.decision.decision,
+                metrics=result.metrics,
+                failed_thresholds=result.decision.failed_thresholds,
+                critical_issue_count=result.decision.critical_issue_count,
+                unsatisfied_completeness_items=self._unsatisfied_completeness_items(
+                    result.assessment
+                ),
+            ),
+            quality_gate,
+        )
+
+    def _quality_gate_metadata(
+        self,
+        *,
+        decision: FinalDecision | None = None,
+    ) -> QualityGateMetadata:
+        evaluated = decision is not None
+        return QualityGateMetadata(
+            evaluated=evaluated,
+            enforced=evaluated and self.evaluator_sampling.mode == EvaluatorMode.GATED,
+            mode=self.evaluator_sampling.mode.value,
+            decision=decision.value if decision else None,
         )
 
     @staticmethod
@@ -304,7 +332,6 @@ class TutorInvocationService:
     ) -> None:
         if span:
             span.update(output=response)
-        self.observability.flush()
 
     @staticmethod
     def _error_response(error: str, details: list[str] | None = None) -> dict[str, Any]:
@@ -318,6 +345,8 @@ class TutorInvocationService:
         self,
         analysis: str,
         invocation: TutorInvocationPayload,
+        *,
+        quality_gate: QualityGateMetadata | None = None,
     ) -> dict[str, Any]:
         analysis_pdf_uri = None
         analysis_markdown_uri = None
@@ -350,6 +379,7 @@ class TutorInvocationService:
             analysis_markdown_uri=analysis_markdown_uri,
             artifact_errors=artifact_errors,
             runtime_commit_sha=self._runtime_commit_sha(),
+            quality_gate=quality_gate,
         ).model_dump(exclude_none=True, exclude_defaults=True)
 
     @staticmethod

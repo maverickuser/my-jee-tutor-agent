@@ -36,6 +36,7 @@ class FakeLangfuseClient:
         self.scores = []
         self.trace_updates = []
         self.flushed = False
+        self.flush_count = 0
 
     def start_as_current_observation(self, **kwargs):
         observation = FakeObservation()
@@ -54,6 +55,7 @@ class FakeLangfuseClient:
 
     def flush(self):
         self.flushed = True
+        self.flush_count += 1
 
 
 @contextmanager
@@ -130,6 +132,87 @@ class ObservabilityTest(unittest.TestCase):
         self.assertEqual(len(client.observations), 3)
         self.assertEqual(len(client.scores), 2)
         self.assertEqual(client.trace_updates[-1]["name"], "deploy-summary")
+
+    def test_invocation_flushes_after_parent_span_closes_even_when_legacy_flag_is_false(self):
+        events = []
+        client = FakeLangfuseClient()
+
+        class TrackingObservation(FakeObservation):
+            def __exit__(self, *_args):
+                events.append("span_closed")
+                return False
+
+        observation = TrackingObservation()
+        client.start_as_current_observation = Mock(return_value=observation)
+        client.flush = Mock(side_effect=lambda: events.append("flushed"))
+        config = LLMConfig(
+            {
+                "langfuse": {
+                    "enabled": True,
+                    "flush_after_invocation": False,
+                }
+            }
+        )
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "LANGFUSE_PUBLIC_KEY": "public",
+                    "LANGFUSE_SECRET_KEY": "secret",
+                },
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}):
+                events.append("invocation")
+
+        client.flush.assert_called_once_with()
+        self.assertEqual(events[-2:], ["span_closed", "flushed"])
+
+    def test_invocation_flushes_when_work_inside_span_raises(self):
+        client = FakeLangfuseClient()
+        config = LLMConfig({"langfuse": {"enabled": True}})
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "LANGFUSE_PUBLIC_KEY": "public",
+                    "LANGFUSE_SECRET_KEY": "secret",
+                },
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertRaisesRegex(RuntimeError, "invocation failed"),
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}):
+                raise RuntimeError("invocation failed")
+
+        self.assertEqual(client.flush_count, 1)
+
+    def test_flush_failure_does_not_fail_invocation(self):
+        client = FakeLangfuseClient()
+        client.flush = Mock(side_effect=RuntimeError("collector unavailable"))
+        config = LLMConfig({"langfuse": {"enabled": True}})
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "LANGFUSE_PUBLIC_KEY": "public",
+                    "LANGFUSE_SECRET_KEY": "secret",
+                },
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as captured,
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}):
+                pass
+
+        self.assertIn("langfuse_flush_failed", " ".join(captured.output))
 
     def test_prompt_fetch_success_returns_compiled_prompt(self):
         client = FakeLangfuseClient()

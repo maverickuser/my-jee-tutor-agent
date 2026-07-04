@@ -54,21 +54,25 @@ The current agent eval runner invokes the checked-out Python handler after
 deployment. It uses live S3 images and external services, but it does not prove
 that the deployed AgentCore runtime image and endpoint behave correctly.
 
-CD must therefore have three separate jobs:
+CD must therefore cover four separate evaluation layers:
 
 1. `crewai_react_evals`
    - Exercises CrewAI tool selection, memoization, retry ownership, observation
      preservation, and exact execution counts.
 2. `final_evaluator_evals`
-   - Directly exercises the live evaluator with controlled images and predefined
-     diagnoses.
-   - Isolates metric behavior from diagnosis-model variability.
-3. `deployed_runtime_smoke`
+   - Exercises deterministic evaluator validation, metric, and decision policy
+     cases without provider variability.
+3. `live_final_evaluator_evals`
+   - Directly exercises Gemini Flash with controlled images and predefined
+     negative diagnoses.
+   - Isolates evaluator rejection behavior from diagnosis-model variability.
+4. `deployed_runtime_smoke`
    - Invokes the deployed AgentCore runtime endpoint.
    - Verifies the integrated diagnosis, evaluation, PDF gate, S3 artifact, and
      deployed image.
 
-Both jobs are required for CD success.
+All four layers are required for CD success. They may share a GitHub Actions job
+when they use the same credentials and fixtures.
 
 ## CD Evaluation Configuration
 
@@ -513,9 +517,9 @@ eval_runs/crewai-react-evals.json
 
 No ReAct case may be retried, skipped, or absorbed into an aggregate score.
 
-## Evaluator Runner
+## Evaluator Runners
 
-Add:
+The deterministic policy runner is:
 
 ```text
 scripts/run_final_evaluator_evals.py
@@ -523,15 +527,23 @@ scripts/run_final_evaluator_evals.py
 
 Responsibilities:
 
-1. Load and validate the case manifest.
-2. Resolve each immutable S3 image prefix.
-3. Load the predefined structured diagnosis.
-4. Run structured diagnosis validation.
-5. Invoke the final evaluator when structural validation succeeds.
-6. Calculate metrics and decision with application policy.
-7. Compare all actual values with case expectations.
-8. Write a redacted JSON report.
-9. Exit nonzero unless every case passes.
+1. Construct controlled evaluator assessments.
+2. Validate assessment references.
+3. Calculate metrics and decisions with application policy.
+4. Compare all actual values with case expectations.
+5. Write a redacted JSON report.
+6. Exit nonzero unless every case passes.
+
+The isolated live-provider runner is:
+
+```text
+scripts/run_live_final_evaluator_evals.py
+```
+
+It resolves the shared three-image CD prefix and makes exactly two direct
+Gemini Flash calls. One diagnosis contains deliberately unsupported claims and
+one is deliberately incomplete. Both must produce `REJECT`, disallow artifacts,
+and fail the corresponding metric. Gemini Pro diagnosis generation is bypassed.
 
 The runner must not:
 
@@ -617,7 +629,8 @@ Smoke payload requirements:
   "task": "Diagnose the supplied JEE attempts.",
   "subject": "CD_Eval_<run-id>",
   "image_s3_prefix": "s3://<eval-bucket>/cd-final-evaluator/end-to-end/",
-  "save_analysis_pdf": true
+  "save_analysis_pdf": true,
+  "include_evaluation_metadata": true
 }
 ```
 
@@ -625,21 +638,21 @@ Assertions:
 
 1. Invocation returns no application error.
 2. Structured diagnosis passes schema and semantic validation.
-3. Final evaluator decision is `PASS`.
-4. Every metric satisfies pass thresholds.
-5. Response question count equals input image count.
-6. PDF URI is present.
-7. Expected PDF exists in the eval S3 location.
-8. Object creation or modification time is from the current workflow run.
-9. A repeated request with the same idempotency key returns the same successful
-   response without a second artifact write.
-10. Runtime logs identify the deployed commit SHA.
-11. CrewAI kickoff count is one.
-12. Real vision tool execution count is one.
-13. Vision transport attempts are within the configured maximum.
-14. CrewAI final diagnosis matches the memoized tool observation.
-15. Final evaluator call count is one for the 100%-sampled CD request.
-16. Final evaluator model is `gemini/gemini-2.5-flash`.
+3. Quality-gate metadata reports `evaluated=true`, `enforced=true`,
+   `mode=gated`, and `decision=PASS`.
+4. Response question count equals input image count.
+5. PDF URI is present.
+6. Expected PDF exists in the eval S3 location.
+7. Object creation or modification time is from the current workflow run.
+8. A repeated request with the same idempotency key returns the same successful
+   response, and the PDF object's S3 `LastModified` and `ETag` remain unchanged
+   across the replay.
+9. The response identifies the deployed commit SHA.
+
+Detailed evaluator metrics and model identity belong to final-evaluator cases.
+CrewAI, vision-tool, transport-attempt, observation-preservation, and evaluator
+call counts belong to the mandatory ReAct/evaluator suites and correlated
+observability checks rather than the black-box deployment smoke.
 
 The smoke job must delete only artifacts created under its unique run-specific
 prefix or filename. Shared immutable image fixtures must not be deleted.
@@ -665,63 +678,61 @@ These checks belong in the mandatory unit/integration job and retain the existin
 
 ## GitHub Actions Jobs
 
-Add the following jobs after `deploy_runtime`:
+Use the following jobs after `deploy_runtime`:
 
 ```text
-crewai_react_evals
-final_evaluator_evals
+quality_pipeline_evals
+agent_evals
 deployed_runtime_smoke
 ```
 
 Dependency requirements:
 
 ```text
-crewai_react_evals needs deploy_runtime
-final_evaluator_evals needs [deploy_runtime, crewai_react_evals]
-deployed_runtime_smoke needs [deploy_runtime, crewai_react_evals, final_evaluator_evals]
+quality_pipeline_evals needs deploy_runtime
+agent_evals needs deploy_runtime
+deployed_runtime_smoke needs [deploy_runtime, quality_pipeline_evals]
 garak_scan may run in parallel after deploy_runtime
 deployment success requires all mandatory jobs
 ```
 
-`crewai_react_evals` command:
+`quality_pipeline_evals` commands:
 
 ```shell
 poetry run python scripts/run_crewai_react_evals.py \
-  --output eval_runs/crewai-react-evals.json \
-  --require-all
-```
-
-`final_evaluator_evals` command:
-
-```shell
+  --output eval_runs/crewai-react-evals.json
 poetry run python scripts/run_final_evaluator_evals.py \
-  --cases evals/final_evaluator_cases.json \
-  --image-s3-prefix "$CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX" \
-  --output eval_runs/final-evaluator-evals.json \
-  --require-all
+  --output eval_runs/final-evaluator-evals.json
 ```
 
 There must be no `--min-score` argument.
+
+`agent_evals` includes this live evaluator command after the integrated agent
+eval:
+
+```shell
+poetry run python scripts/run_live_final_evaluator_evals.py \
+  --image-s3-prefix "$CD_EVAL_IMAGE_S3_PREFIX" \
+  --expected-image-count 3 \
+  --output eval_runs/live-final-evaluator-evals.json
+```
+
+There must be exactly two live evaluator calls and no diagnosis-model call.
 
 Upload reports with `if: always()`, but artifact upload must not mask the runner
 exit status.
 
 ## Required Repository Variables
 
-Add:
+Use the shared image prefix already used by agent eval and smoke:
 
 ```text
-CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX
-CD_FINAL_EVALUATOR_ENABLED=true
-CD_DEPLOYED_RUNTIME_SMOKE_ENABLED=true
-CD_CREWAI_REACT_EVALS_ENABLED=true
-CREWAI_REACT_DIAGNOSIS_ENABLED=true
+CD_EVAL_IMAGE_S3_PREFIX
 FINAL_EVALUATOR_MODEL=gemini/gemini-2.5-flash
 ```
 
-Feature flags may disable these jobs only before evaluator rollout. Once the
-evaluator gates production PDFs, disabling any mandatory CD gate requires an
-explicit emergency workflow input, approval, and audit log.
+Once the evaluator gates production PDFs, disabling any mandatory CD gate
+requires an explicit emergency workflow input, approval, and audit log.
 
 ## IAM Requirements
 
@@ -864,7 +875,8 @@ block or approve production PDF artifacts.
 
 The CD evaluator specification is complete when:
 
-1. All ten mandatory ReAct cases and ten mandatory evaluator cases exist.
+1. All ten mandatory ReAct cases, ten deterministic evaluator-policy cases,
+   and two isolated live evaluator rejection cases exist.
 2. Every case must pass; no `0.75` or other aggregate threshold applies.
 3. Failed, errored, or skipped cases fail the workflow.
 4. ReAct cases prove duplicate requests cannot cause duplicate real vision
@@ -874,8 +886,8 @@ The CD evaluator specification is complete when:
 6. Prompt-injection and unreadable-image behavior are covered.
 7. `REVIEW`, `REJECT`, ReAct failures, and evaluator errors cannot write artifacts.
 8. A separate smoke job invokes the deployed AgentCore runtime.
-9. The smoke job verifies ReAct counts, PDF creation, idempotency, S3 state, and
-   deployed SHA.
+9. The smoke job verifies enforced evaluator `PASS`, diagnosis row count, PDF
+   creation, idempotency, S3 state, and deployed SHA.
 10. Every executed case publishes a correlated Langfuse observation with its
     boolean assertion result and applicable numeric metrics.
 11. Failed, errored, `REVIEW`, and `REJECT` results publish bounded diagnostics

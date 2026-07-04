@@ -33,6 +33,7 @@ class IdempotencyTest(unittest.TestCase):
         self.payload = {
             "image_data_uri": "data:image/png;base64,ZmFrZQ==",
             "save_analysis_pdf": False,
+            "include_evaluation_metadata": False,
             "idempotency_key": "attempt-123",
         }
 
@@ -52,6 +53,7 @@ class IdempotencyTest(unittest.TestCase):
             "image_s3_prefix": None,
             "image_data_uri": "data:image/png;base64,ZmFrZQ==",
             "save_analysis_pdf": False,
+            "include_evaluation_metadata": False,
             "idempotency_key": "attempt-123",
         }
         self.store.claim("attempt-123", normalized_payload)
@@ -87,9 +89,7 @@ class IdempotencyTest(unittest.TestCase):
         self.assertEqual(store.claim("key", payload).status, "acquired")
 
     def test_unexpected_failure_abandons_claim(self):
-        self.service._handle_validated_invocation = Mock(
-            side_effect=RuntimeError("unexpected")
-        )
+        self.service._handle_validated_invocation = Mock(side_effect=RuntimeError("unexpected"))
 
         with self.assertRaisesRegex(RuntimeError, "unexpected"):
             self.service.handle(self.payload)

@@ -250,7 +250,7 @@ Recommended rollout:
 1. Unit-test schema, semantic validation, and rendering.
 2. Run a local mocked end-to-end test.
 3. Run a one-image live Gemini test.
-4. Run a six-image live Gemini test.
+4. Run a three-image live Gemini test.
 5. Deploy behind a configuration flag.
 6. Monitor validation failures before removing the legacy path.
 
@@ -283,4 +283,4 @@ The feature is complete when:
 4. Markdown is generated only by application code.
 5. The external Markdown table contract is unchanged.
 6. Structured validation failures do not trigger an LLM retry.
-7. Tests, Ruff, coverage, and a six-image live validation pass.
+7. Tests, Ruff, coverage, and a three-image live validation pass.

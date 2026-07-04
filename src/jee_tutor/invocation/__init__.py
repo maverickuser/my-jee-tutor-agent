@@ -1,6 +1,7 @@
 from jee_tutor.invocation.image_inputs import ImageInputResolver
 from jee_tutor.invocation.models import (
     ErrorResponse,
+    QualityGateMetadata,
     TutorInvocationPayload,
     TutorInvocationResponse,
 )
@@ -8,6 +9,7 @@ from jee_tutor.invocation.models import (
 __all__ = [
     "ErrorResponse",
     "ImageInputResolver",
+    "QualityGateMetadata",
     "TutorInvocationPayload",
     "TutorInvocationResponse",
     "TutorInvocationService",

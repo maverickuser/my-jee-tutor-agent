@@ -47,10 +47,6 @@ class LangfuseObservability:
     def generation_name(self) -> str:
         return self.config.get("langfuse", "generation_name", "vision-question-analysis")
 
-    @property
-    def flush_after_invocation(self) -> bool:
-        return bool(self.config.get("langfuse", "flush_after_invocation", False))
-
     @contextmanager
     def invocation_span(
         self,
@@ -78,13 +74,19 @@ class LangfuseObservability:
             propagate_attributes(**attributes) if propagate_attributes else nullcontext()
         )
 
-        with attribute_context:
-            with langfuse.start_as_current_observation(
-                as_type="span",
-                name=self.trace_name,
-                input=input_payload,
-            ) as span:
-                yield span
+        try:
+            with attribute_context:
+                with langfuse.start_as_current_observation(
+                    as_type="span",
+                    name=self.trace_name,
+                    input=input_payload,
+                ) as span:
+                    yield span
+        finally:
+            # AgentCore may freeze the runtime as soon as the response is returned.
+            # Flush only after the parent span has closed so the complete invocation,
+            # including its generation children, is exported reliably.
+            self._flush_client(langfuse)
 
     @contextmanager
     def generation_span(
@@ -171,5 +173,16 @@ class LangfuseObservability:
         langfuse.flush()
 
     def flush(self) -> None:
-        if self.enabled and self.flush_after_invocation:
-            get_client().flush()
+        if self.enabled:
+            self._flush_client(get_client())
+
+    @staticmethod
+    def _flush_client(langfuse: Any) -> None:
+        try:
+            langfuse.flush()
+        except Exception as exc:
+            logger.warning(
+                "langfuse_flush_failed error_type=%s error=%s",
+                type(exc).__name__,
+                exc or "[no message]",
+            )

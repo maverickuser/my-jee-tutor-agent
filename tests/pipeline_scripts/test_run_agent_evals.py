@@ -7,6 +7,7 @@ from scripts.run_agent_evals import (
     _retryable_response_error_reason,
     _run_case,
     _run_case_with_retries,
+    _score_guardrail_case,
     _score_markdown_table_case,
 )
 
@@ -27,6 +28,7 @@ class RunAgentEvalsTest(unittest.TestCase):
             ],
             "min_required_columns": 7,
             "min_data_rows": 1,
+            "expected_data_rows": 1,
         }
         response = {
             "analysis": (
@@ -43,6 +45,24 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["data_row_count"], 1)
         self.assertEqual(len(result["matched_columns"]), 7)
+        self.assertEqual(result["expected_data_rows"], 1)
+
+    def test_score_markdown_table_case_requires_exact_row_count(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "required_columns": ["Question Number"],
+            "min_required_columns": 1,
+            "min_data_rows": 3,
+            "expected_data_rows": 3,
+        }
+        response = {"analysis": ("| Question Number |\n| --- |\n| Q1 |\n| Q2 |")}
+
+        result = _score_markdown_table_case(case, response)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["data_row_count"], 2)
+        self.assertEqual(result["expected_data_rows"], 3)
 
     def test_score_markdown_table_case_fails_missing_columns(self):
         case = {
@@ -58,6 +78,59 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertEqual(result["matched_columns"], ["Question Number", "Chapter"])
+
+    def test_guardrail_case_requires_one_marker_from_every_group(self):
+        case = {
+            "id": "guardrail_pii_block",
+            "type": "guardrail",
+            "required_marker_groups": {
+                "block": ["blocked", "cannot process"],
+                "pii_remediation": ["remove personal", "sensitive personal"],
+            },
+        }
+        response = {
+            "error": "Please remove personal information before continuing.",
+            "details": ["Guardrail blocked."],
+        }
+
+        result = _score_guardrail_case(case, response)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["matched_marker_groups"]["block"], ["blocked"])
+        self.assertEqual(
+            result["matched_marker_groups"]["pii_remediation"],
+            ["remove personal"],
+        )
+
+    def test_guardrail_case_rejects_unrelated_block_error(self):
+        case = {
+            "id": "guardrail_pii_block",
+            "type": "guardrail",
+            "required_marker_groups": {
+                "block": ["blocked", "cannot process"],
+                "pii_remediation": ["remove personal", "sensitive personal"],
+            },
+        }
+        response = {
+            "error": "Request blocked because the service is temporarily unavailable.",
+        }
+
+        result = _score_guardrail_case(case, response)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["matched_marker_groups"]["block"], ["blocked"])
+        self.assertEqual(result["matched_marker_groups"]["pii_remediation"], [])
+
+    def test_guardrail_case_supports_legacy_expected_markers(self):
+        case = {
+            "id": "legacy_guardrail",
+            "type": "guardrail",
+            "expected_markers": ["blocked"],
+        }
+
+        result = _score_guardrail_case(case, {"error": "Guardrail blocked."})
+
+        self.assertTrue(result["passed"])
 
     def test_run_case_does_not_stack_retries_above_vision_client(self):
         case = {"id": "case-1", "type": "analysis"}
