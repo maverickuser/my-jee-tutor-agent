@@ -5,6 +5,7 @@ import json
 
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.tools import (
+    OutputValidationError,
     ToolExecutionStatus,
     VisionAnalysisTool,
     VisionInput,
@@ -197,6 +198,51 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual([len(call[0]) for call in client.calls], [3, 1])
         self.assertEqual(json.loads(result)["questions"][0]["question_number"], "1")
         self.assertEqual(json.loads(result)["questions"][-1]["question_number"], "4")
+
+    def test_merge_batch_outputs_covers_markdown_single_and_error_paths(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+        markdown = (
+            "| Question Number | Chapter | Topic | What You Thought | Why That Thought Is Wrong | Exact Concept Gap | What You Must Deep-Dive |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| 1 | Electrostatics | Capacitors | x | y | z | a |\n"
+        )
+        merged = tool._merge_batch_outputs([markdown, markdown], [1, 1], 2)
+        self.assertIn("| 1 | Electrostatics | Capacitors | x | y | z | a |", merged)
+
+        self.assertEqual(tool._merge_batch_outputs(["analysis"], [1], 1), "analysis")
+
+        with self.assertRaisesRegex(RuntimeError, "no batch outputs"):
+            tool._merge_batch_outputs([], [], 0)
+
+        with self.assertRaisesRegex(OutputValidationError, "Batched vision outputs"):
+            tool._merge_batch_outputs(["{x}", "| row |"], [1, 1], 2)
+
+    def test_markdown_table_helpers_handle_escaping_and_validation(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+        headers, rows = tool._parse_markdown_table(
+            "| A | B |\n| --- | --- |\n| x\\\\y | p | q |\n"
+        )
+        self.assertEqual(headers, ["A", "B"])
+        self.assertEqual(rows[0], ["x\\\\y", "p", "q"])
+        self.assertTrue(tool._looks_like_markdown("| a |\n| --- |\n| b |\n"))
+        self.assertFalse(tool._looks_like_json("analysis"))
+        self.assertEqual(tool._split_markdown_row("| a \\| b | c |"), ["a \\| b", "c"])
+        self.assertTrue(tool._is_separator_cells(["---", ":---:", "----"]))
+        self.assertEqual(tool._escape_markdown_cell("x|\ny\\z"), "x\\| y\\\\z")
+
+        with self.assertRaisesRegex(OutputValidationError, "markdown table"):
+            tool._parse_markdown_table("| only one line |\n")
+
+    def test_wait_for_or_replay_returns_observation_and_reconstructs_failure(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+        tool.call_state.status = ToolExecutionStatus.SUCCEEDED
+        tool.call_state.observation = "cached observation"
+        self.assertEqual(tool._wait_for_or_replay(), "cached observation")
+
+        tool.call_state.status = ToolExecutionStatus.FAILED
+        tool.call_state.error_snapshot = None
+        with self.assertRaisesRegex(RuntimeError, "invalid memoization"):
+            tool._wait_for_or_replay()
 
     def test_waiter_timeout_and_invalid_memoization_state(self):
         tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
