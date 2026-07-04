@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import json
+import sys
 
-from jee_tutor.new_relic_logging import build_new_relic_handler, redact_log_value
+from jee_tutor.new_relic_logging import NewRelicLogHandler, build_new_relic_handler, redact_log_value
 
 
 DEFAULT_SERVICE_NAME = "jee-tutor-agent"
@@ -47,12 +47,21 @@ def configure_logging() -> None:
     service_name = os.getenv("JEE_TUTOR_SERVICE_NAME", DEFAULT_SERVICE_NAME)
 
     root_logger = logging.getLogger()
-    root_logger.addFilter(ServiceNameFilter(service_name))
-    if not root_logger.handlers:
+    if not any(isinstance(existing_filter, ServiceNameFilter) for existing_filter in root_logger.filters):
+        root_logger.addFilter(ServiceNameFilter(service_name))
+
+    has_stdout_handler = any(
+        isinstance(handler, logging.StreamHandler) and isinstance(handler.formatter, StructuredJsonFormatter)
+        for handler in root_logger.handlers
+    )
+    if not has_stdout_handler:
         handler = logging.StreamHandler(sys.stdout)
         handler.addFilter(ServiceNameFilter(service_name))
         handler.setFormatter(StructuredJsonFormatter())
         root_logger.addHandler(handler)
+
+    has_new_relic_handler = any(isinstance(handler, NewRelicLogHandler) for handler in root_logger.handlers)
+    if not has_new_relic_handler:
         new_relic_handler = build_new_relic_handler()
         if new_relic_handler:
             new_relic_handler.addFilter(ServiceNameFilter(service_name))

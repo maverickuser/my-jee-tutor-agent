@@ -7,7 +7,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 class TerraformCdEvalAccessTest(unittest.TestCase):
     def test_runtime_role_access_is_limited_to_cd_image_prefixes(self):
-        terraform = (REPO_ROOT / "terraform/main.tf").read_text()
+        terraform = "\n".join(
+            path.read_text()
+            for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
+        )
 
         self.assertIn(
             '"arn:aws:s3:::${var.cd_eval_bucket_name}/cd-evals-images/*"',

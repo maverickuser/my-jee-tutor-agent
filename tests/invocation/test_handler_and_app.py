@@ -23,6 +23,15 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertEqual(payload.image_s3_prefix, "s3://attempt-bucket/maths/attempt-123/")
         self.assertEqual(payload.subject, "maths")
 
+    def test_validate_tutor_invocation_rejects_invalid_recipient_email(self):
+        with self.assertRaises(Exception):
+            validate_tutor_invocation(
+                {
+                    "image_s3_prefix": "s3://attempt-bucket/maths/attempt-123/",
+                    "recipient_email": "not-an-email",
+                }
+            )
+
     def test_validate_tutor_invocation_rejects_legacy_extra_fields(self):
         with self.assertRaises(Exception):
             validate_tutor_invocation(

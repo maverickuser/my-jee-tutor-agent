@@ -143,3 +143,68 @@ variable "cd_eval_bucket_name" {
   type        = string
   default     = ""
 }
+
+variable "email_delivery_function_memory_mb" {
+  description = "Memory size for the email delivery Lambda worker."
+  type        = number
+  default     = 512
+}
+
+variable "email_delivery_function_timeout_seconds" {
+  description = "Timeout for the email delivery Lambda worker."
+  type        = number
+  default     = 60
+}
+
+variable "email_from_address" {
+  description = "Configured sender email address used by the email delivery flow."
+  type        = string
+  default     = "analysis@konceptai.com"
+}
+
+variable "email_subject_template" {
+  description = "Configured subject template for analysis email delivery."
+  type        = string
+  default     = "Test Analysis Report"
+}
+
+variable "email_body_template" {
+  description = "Configured email body template for analysis email delivery."
+  type        = string
+  default     = <<-EOT
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>JEE Tutor Analysis</title>
+      </head>
+      <body style="margin:0;padding:0;background-color:#f6f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f7fb;padding:32px 16px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+                <tr>
+                  <td style="padding:28px 32px;border-bottom:1px solid #e5e7eb;">
+                    <h1 style="margin:0;font-size:22px;line-height:1.3;color:#111827;">Your analysis report is ready</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 32px;">
+                    <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">The PDF report for your latest JEE Tutor analysis is attached to this email.</p>
+                    <p style="margin:0;font-size:14px;line-height:1.6;color:#6b7280;">If you need to review the report later, keep this email for reference.</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 32px 28px;">
+                    <p style="margin:0;font-size:13px;line-height:1.5;color:#9ca3af;">Delivery ID: {delivery_id}</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  EOT
+}

@@ -72,7 +72,9 @@ class InvocationIdempotencyStore:
     @staticmethod
     def _fingerprint(payload: dict[str, Any]) -> str:
         canonical_payload = {
-            key: value for key, value in payload.items() if key != "idempotency_key"
+            key: value
+            for key, value in payload.items()
+            if key != "idempotency_key" and value is not None
         }
         encoded = json.dumps(
             canonical_payload,

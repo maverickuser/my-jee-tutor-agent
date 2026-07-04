@@ -10,6 +10,8 @@ from jee_tutor.agent import run_tutor_workflow
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.output_validation import OutputValidationError
+from jee_tutor.email.delivery import EmailDeliveryCoordinator
+from jee_tutor.email.models import EmailDeliveryOutcome, EmailDeliveryStatus
 from jee_tutor.invocation.idempotency import (
     InvocationIdempotencyStore,
     invocation_idempotency_store,
@@ -39,6 +41,7 @@ class TutorInvocationService:
         observability: LangfuseObservability | None = None,
         workflow: TutorWorkflow | None = None,
         artifact_writer: AnalysisArtifactWriter | None = None,
+        email_coordinator: EmailDeliveryCoordinator | None = None,
         idempotency_store: InvocationIdempotencyStore | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
@@ -46,6 +49,7 @@ class TutorInvocationService:
         self.observability = observability or LangfuseObservability()
         self.workflow = workflow or run_tutor_workflow
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
+        self.email_coordinator = email_coordinator or EmailDeliveryCoordinator()
         self.idempotency_store = idempotency_store or invocation_idempotency_store
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -215,7 +219,7 @@ class TutorInvocationService:
         analysis_pdf_uri = None
         analysis_markdown_uri = None
         artifact_errors: list[str] = []
-        if invocation.save_analysis_pdf:
+        if invocation.should_write_analysis_pdf:
             try:
                 artifact_result = self.artifact_writer.write_for_invocation(
                     analysis_markdown=analysis,
@@ -235,6 +239,11 @@ class TutorInvocationService:
                     exc or "[no message]",
                 )
 
+        email_outcome = self._request_email_delivery(
+            invocation=invocation,
+            analysis_pdf_uri=analysis_pdf_uri,
+        )
+
         return TutorInvocationResponse(
             analysis=analysis,
             message=self._pdf_wait_message(analysis_pdf_uri),
@@ -242,8 +251,49 @@ class TutorInvocationService:
             analysis_pdf_uri=analysis_pdf_uri,
             analysis_markdown_uri=analysis_markdown_uri,
             artifact_errors=artifact_errors,
+            email_status=email_outcome.status.value,
+            email_delivery_id=email_outcome.delivery_id,
+            email_error=email_outcome.error,
             runtime_commit_sha=self._runtime_commit_sha(),
         ).model_dump(exclude_none=True, exclude_defaults=True)
+
+    def _request_email_delivery(
+        self,
+        *,
+        invocation: TutorInvocationPayload,
+        analysis_pdf_uri: str | None,
+    ) -> EmailDeliveryOutcome:
+        if not invocation.recipient_email:
+            return EmailDeliveryOutcome(status=EmailDeliveryStatus.NOT_REQUESTED)
+
+        if not analysis_pdf_uri:
+            error = "Email delivery requires a stored PDF artifact."
+            logger.warning(
+                "email_delivery_missing_pdf recipient_domain=%s",
+                invocation.recipient_email.split("@", 1)[-1] if "@" in invocation.recipient_email else "unknown",
+            )
+            return EmailDeliveryOutcome(
+                status=EmailDeliveryStatus.FAILED,
+                error=error,
+            )
+
+        try:
+            return self.email_coordinator.request_delivery(
+                recipient_email=invocation.recipient_email,
+                pdf_uri=analysis_pdf_uri,
+                invocation_id=invocation.idempotency_key,
+                idempotency_key=invocation.idempotency_key,
+            )
+        except Exception as exc:
+            logger.exception(
+                "email_delivery_runtime_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
+            return EmailDeliveryOutcome(
+                status=EmailDeliveryStatus.FAILED,
+                error=f"{exc.__class__.__name__}: {exc or '[no message]'}",
+            )
 
     @staticmethod
     def _runtime_commit_sha() -> str | None:

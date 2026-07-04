@@ -12,6 +12,7 @@ bedrock-agentcore = "^1.6.2"
 crewai = "0.150.0"
 langfuse = "^3.0.0"
 litellm = "1.74.3"
+awslambdaric = "^2.1.0"
 pypandoc = "^1.15"
 pydantic = "2.11.4"
 

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from jee_tutor.agent.guardrails import GuardrailCheck
+from jee_tutor.email.models import EmailDeliveryOutcome, EmailDeliveryStatus
 from jee_tutor.handler import handle_tutor_invocation
 from jee_tutor.invocation.image_inputs import ResolvedImage
 from jee_tutor.invocation.service import TutorInvocationService
@@ -252,6 +253,42 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
                 "analysis_pdf_uri": "s3://attempt-bucket/maths/analysis.pdf",
             },
         )
+        self.assertEqual(artifact_writer.calls[0]["analysis_markdown"], "analysis markdown")
+
+    def test_recipient_email_triggers_async_email_request(self):
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
+
+        image_resolver = Mock()
+        image_resolver.resolve_images.return_value = [resolved_image()]
+        email_coordinator = Mock()
+        email_coordinator.request_delivery.return_value = EmailDeliveryOutcome(
+            status=EmailDeliveryStatus.QUEUED,
+            delivery_id="delivery-123",
+        )
+        artifact_writer = FakeArtifactWriter(
+            AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/analysis.pdf")
+        )
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=artifact_writer,
+            email_coordinator=email_coordinator,
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": "s3://attempt-bucket/maths/attempt-123/",
+                "recipient_email": "student@example.com",
+                "save_analysis_pdf": False,
+            }
+        )
+
+        self.assertEqual(response["analysis"], "analysis markdown")
+        self.assertEqual(response["email_status"], "queued")
+        self.assertEqual(response["email_delivery_id"], "delivery-123")
+        self.assertEqual(response["analysis_pdf_uri"], "s3://attempt-bucket/maths/analysis.pdf")
+        email_coordinator.request_delivery.assert_called_once()
         self.assertEqual(artifact_writer.calls[0]["analysis_markdown"], "analysis markdown")
 
     def test_pdf_artifact_failure_is_returned_without_dropping_analysis(self):

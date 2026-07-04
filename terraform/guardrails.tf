@@ -120,18 +120,3 @@ resource "awscc_bedrock_guardrail" "jee_tutor" {
     },
   ]
 }
-
-output "bedrock_guardrail_id" {
-  value       = local.bedrock_guardrail_id
-  description = "Bedrock Guardrail ID injected into the AgentCore runtime."
-}
-
-output "bedrock_guardrail_arn" {
-  value       = try(awscc_bedrock_guardrail.jee_tutor[0].guardrail_arn, null)
-  description = "Bedrock Guardrail ARN."
-}
-
-output "bedrock_guardrail_version" {
-  value       = var.bedrock_guardrail_version
-  description = "Guardrail version injected into the AgentCore runtime."
-}
