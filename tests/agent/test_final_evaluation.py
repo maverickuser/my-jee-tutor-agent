@@ -170,10 +170,12 @@ class FinalEvaluationTest(unittest.TestCase):
             failed_thresholds=("groundedness_score",),
             category="fixture",
             diagnostic_details=("questions.0:duplicate",),
+            unsatisfied_completeness_items=("row_0.what_you_thought",),
         )
         self.assertIn("Groundedness score", " ".join(error.safe_details))
         self.assertIn("fixture", " ".join(error.safe_details))
         self.assertIn("questions.0:duplicate", " ".join(error.safe_details))
+        self.assertIn("row_0.what_you_thought", " ".join(error.safe_details))
 
     def test_invalid_assessment_references_fail_schema_validation(self):
         base = assessment().model_dump()

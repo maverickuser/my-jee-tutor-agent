@@ -30,15 +30,9 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             workflow.count("TF_VAR_cd_eval_bucket_name: ${{ env.TF_STATE_BUCKET }}"),
             2,
         )
+        self.assertNotIn("CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX", workflow)
         self.assertIn(
-            "CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX: "
-            "${{ vars.CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX || '' }}",
-            workflow,
-        )
-        self.assertIn(
-            "${CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX:-"
-            "${CD_EVAL_IMAGE_S3_PREFIX:-"
-            "s3://${TF_STATE_BUCKET}/cd-evals-images/}}",
+            "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}",
             workflow,
         )
 

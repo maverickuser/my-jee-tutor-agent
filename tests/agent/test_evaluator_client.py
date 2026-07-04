@@ -3,7 +3,7 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from jee_tutor.agent.evaluator_client import FinalEvaluator
+from jee_tutor.agent.evaluator_client import EVALUATOR_SYSTEM_PROMPT, FinalEvaluator
 from jee_tutor.agent.evaluator_crew import (
     build_final_evaluation_task,
     build_final_evaluator_agent,
@@ -44,6 +44,10 @@ class FakeModelConfig:
 
 class ProviderBadRequest(Exception):
     status_code = 400
+
+
+class ProviderTimeout(Exception):
+    status_code = 408
 
 
 class EvaluatorClientTest(unittest.TestCase):
@@ -120,6 +124,7 @@ class EvaluatorClientTest(unittest.TestCase):
         for output, category in [
             ({"choices": [{"message": {"content": "not json"}}]}, "evaluator_invalid_output"),
             (TimeoutError("provider timeout"), "evaluator_timeout"),
+            (ProviderTimeout("Connection timed out"), "evaluator_timeout"),
         ]:
             completion = (
                 Mock(side_effect=output)
@@ -144,6 +149,18 @@ class EvaluatorClientTest(unittest.TestCase):
                         diagnosis=diagnosis(),
                     )
                 self.assertEqual(raised.exception.category, category)
+
+    def test_prompt_counts_qualified_likely_path_as_complete(self):
+        normalized_prompt = " ".join(EVALUATOR_SYSTEM_PROMPT.split())
+        self.assertIn(
+            "A clearly qualified inference counts as supported and complete",
+            normalized_prompt,
+        )
+        self.assertIn(
+            "Do not mark a diagnosis field incomplete merely because it",
+            normalized_prompt,
+        )
+        self.assertIn("written calculations are not visible", normalized_prompt)
 
     def test_provider_failure_logs_redacted_detail_and_status(self):
         evaluator = FinalEvaluator(

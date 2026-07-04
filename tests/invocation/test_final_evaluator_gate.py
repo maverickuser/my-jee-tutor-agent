@@ -95,6 +95,23 @@ class FinalEvaluatorGateTest(unittest.TestCase):
                 self.assertIn("error", response)
                 writer.write_for_invocation.assert_not_called()
 
+    def test_reject_reports_unsatisfied_completeness_fields(self):
+        service, writer = self.service(
+            assessment(("supported", "unsupported"), inference=0.4, satisfied=5)
+        )
+
+        response = service.handle(
+            {"image_data_uri": "data:image/png;base64,x", "save_analysis_pdf": True}
+        )
+
+        self.assertIn("error", response)
+        self.assertIn(
+            "Unsatisfied completeness items: row_0.exact_concept_gap, "
+            "row_0.what_you_must_deep_dive.",
+            response["details"],
+        )
+        writer.write_for_invocation.assert_not_called()
+
     def test_shadow_reject_does_not_block_artifact(self):
         service, writer = self.service(
             assessment(("supported", "unsupported"), inference=0.4, satisfied=4),

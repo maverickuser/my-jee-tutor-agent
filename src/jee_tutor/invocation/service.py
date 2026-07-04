@@ -9,7 +9,11 @@ from jee_tutor.artifacts.writer import AnalysisArtifactWriter
 from jee_tutor.agent import run_tutor_workflow
 from jee_tutor.agent.evaluator_client import FinalEvaluator
 from jee_tutor.agent.evaluator_sampling import EvaluatorMode, EvaluatorSamplingPolicy
-from jee_tutor.agent.final_evaluation import FinalDecision, FinalEvaluationError
+from jee_tutor.agent.final_evaluation import (
+    EvaluatorAssessment,
+    FinalDecision,
+    FinalEvaluationError,
+)
 from jee_tutor.agent.guardrails import RuntimeGuardrail
 from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.output_validation import OutputValidationError
@@ -243,9 +247,11 @@ class TutorInvocationService:
         if result.decision.decision == FinalDecision.PASS:
             return None
         logger.warning(
-            "final_evaluator_decision decision=%s failed_thresholds=%s shadow=%s",
+            "final_evaluator_decision decision=%s failed_thresholds=%s "
+            "unsatisfied_completeness_items=%s shadow=%s",
             result.decision.decision.value,
             list(result.decision.failed_thresholds),
+            self._unsatisfied_completeness_items(result.assessment),
             self.evaluator_sampling.mode == EvaluatorMode.SHADOW,
         )
         if self.evaluator_sampling.mode == EvaluatorMode.SHADOW:
@@ -255,6 +261,18 @@ class TutorInvocationService:
             metrics=result.metrics,
             failed_thresholds=result.decision.failed_thresholds,
             critical_issue_count=result.decision.critical_issue_count,
+            unsatisfied_completeness_items=self._unsatisfied_completeness_items(result.assessment),
+        )
+
+    @staticmethod
+    def _unsatisfied_completeness_items(
+        assessment: EvaluatorAssessment,
+    ) -> tuple[str, ...]:
+        return tuple(
+            f"row_{question.row_index}.{item}"
+            for question in assessment.questions
+            for item in question.applicable_completeness_items
+            if item not in question.satisfied_completeness_items
         )
 
     @staticmethod

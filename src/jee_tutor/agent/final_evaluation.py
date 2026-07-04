@@ -587,6 +587,7 @@ class FinalEvaluationError(RuntimeError):
         critical_issue_count: int = 0,
         category: str | None = None,
         diagnostic_details: tuple[str, ...] = (),
+        unsatisfied_completeness_items: tuple[str, ...] = (),
     ):
         super().__init__(message)
         self.decision = decision
@@ -595,6 +596,7 @@ class FinalEvaluationError(RuntimeError):
         self.critical_issue_count = critical_issue_count
         self.category = category
         self.diagnostic_details = diagnostic_details
+        self.unsatisfied_completeness_items = unsatisfied_completeness_items
 
     @property
     def safe_details(self) -> list[str]:
@@ -613,5 +615,9 @@ class FinalEvaluationError(RuntimeError):
         details.extend(
             f"Evaluator validation detail: {detail}." for detail in self.diagnostic_details
         )
+        if self.unsatisfied_completeness_items:
+            details.append(
+                f"Unsatisfied completeness items: {', '.join(self.unsatisfied_completeness_items)}."
+            )
         details.append("PDF artifact was not created.")
         return details

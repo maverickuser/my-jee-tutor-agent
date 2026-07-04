@@ -37,9 +37,7 @@ class StructuredClientConfigTest(unittest.TestCase):
         )
         completion = Mock(
             return_value={
-                "choices": [
-                    {"message": {"content": json.dumps({"questions": [question()]})}}
-                ]
+                "choices": [{"message": {"content": json.dumps({"questions": [question()]})}}]
             }
         )
         client = VisionLLMClient(
@@ -90,6 +88,7 @@ class StructuredClientConfigTest(unittest.TestCase):
         ).resolve()
         self.assertEqual(settings.model, "gemini/gemini-2.5-flash")
         self.assertEqual(settings.completion_options["temperature"], 0)
+        self.assertEqual(settings.completion_options["timeout"], 180)
 
         with self.assertRaisesRegex(ValueError, "must be pinned"):
             FinalEvaluatorModelConfig(

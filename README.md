@@ -204,10 +204,8 @@ eval location with `CD_EVAL_IMAGE_S3_PREFIX` when needed. The GitHub Actions AWS
 role must have `s3:ListBucket` on the bucket and `s3:GetObject` on the
 `cd-evals-images/*` objects.
 
-The deployed-runtime smoke test reuses `CD_EVAL_IMAGE_S3_PREFIX` by default so
-it cannot silently point at an unseeded fixture hierarchy. Set
-`CD_FINAL_EVALUATOR_IMAGE_S3_PREFIX` only when the dedicated final-evaluator
-prefix has been populated with supported images.
+The deployed-runtime smoke test uses the same `CD_EVAL_IMAGE_S3_PREFIX` as the
+agent evals so both gates evaluate the same image set.
 
 The eval step writes `eval_runs/agent-evals.json` and fails the workflow when the
 pass rate is below `CD_EVAL_MIN_SCORE`.
