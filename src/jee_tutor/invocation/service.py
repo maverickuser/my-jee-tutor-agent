@@ -19,7 +19,6 @@ from jee_tutor.invocation.idempotency import (
 )
 from jee_tutor.invocation.image_inputs import ImageInputResolver, ResolvedImage
 from jee_tutor.invocation.models import (
-    AgentInvocationRecord,
     AgentInvocationStatus,
     ErrorResponse,
     TutorInvocationPayload,

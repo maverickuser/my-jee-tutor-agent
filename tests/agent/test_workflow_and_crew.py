@@ -216,14 +216,13 @@ class WorkflowAndCrewTest(unittest.TestCase):
         fake_tool = object()
 
         with (
-            patch("jee_tutor.agent.crew.PromptProvider") as prompt_provider_class,
+            patch("jee_tutor.agent.crew.PromptProvider"),
             patch("jee_tutor.agent.crew.VisionLLMClient") as llm_client_class,
             patch("jee_tutor.agent.crew.build_vision_tool", return_value=fake_tool) as build_tool,
             patch("jee_tutor.agent.crew.build_tutor_agent", return_value=object()),
             patch("jee_tutor.agent.crew.build_diagnosis_task", return_value=object()),
             patch("jee_tutor.agent.crew.Crew"),
         ):
-            prompts = prompt_provider_class.return_value
             llm_client = llm_client_class.return_value
             build_tutor_crew(
                 image_data_uris=["data:image/png;base64,ZmFrZQ=="],
