@@ -151,7 +151,6 @@ class DynamoDbInvocationStatusStore:
                 "SET llm_calls = list_append(if_not_exists(llm_calls, :empty_calls), :call), "
                 "updated_at = :updated_at"
             ),
-            ExpressionAttributeNames={"#updated_at": "updated_at"},
             ExpressionAttributeValues={
                 ":empty_calls": [],
                 ":call": [call],

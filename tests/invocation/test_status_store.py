@@ -177,6 +177,7 @@ class StatusStoreTest(unittest.TestCase):
             )
         self.assertEqual(len(table.calls), 1)
         self.assertIn("llm_calls = list_append", table.calls[0]["UpdateExpression"])
+        self.assertNotIn("ExpressionAttributeNames", table.calls[0])
 
 
 if __name__ == "__main__":
