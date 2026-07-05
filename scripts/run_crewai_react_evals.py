@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import threading
 from unittest.mock import Mock
 
@@ -8,7 +9,6 @@ from eval_runner import run_strict_cases, write_report
 from jee_tutor.agent.factories import MandatoryVisionToolLLM, OrchestrationCallBudgetError
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.tools import VisionAnalysisTool
-from jee_tutor.agent.workflow import _normalized_json
 
 
 IMAGE = "data:image/png;base64,cmVkYWN0ZWQ="
@@ -130,6 +130,13 @@ def _counts(tool):
         "vision_tool_execution_count": state.execution_count,
         "vision_tool_success_count": state.successful_execution_count,
     }
+
+
+def _normalized_json(value: str) -> str | None:
+    try:
+        return json.dumps(json.loads(value), sort_keys=True, separators=(",", ":"))
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 CASES = {
