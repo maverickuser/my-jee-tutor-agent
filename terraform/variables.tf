@@ -165,7 +165,7 @@ variable "email_delivery_function_timeout_seconds" {
 variable "email_from_address" {
   description = "Configured sender email address used by the email delivery flow."
   type        = string
-  default     = "analysis@konceptai.com"
+  default     = "Koncept Agent App <sociusnest@gmail.com>"
 }
 
 variable "email_subject_template" {

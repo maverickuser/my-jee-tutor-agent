@@ -164,7 +164,7 @@ class EmailDeliveryWorkerTest(unittest.TestCase):
         s3_client.get_object.return_value = {"Body": Mock(read=Mock(return_value=b"pdf-bytes"))}
         ses_sender = Mock()
         ses_sender.send.return_value = {"MessageId": "msg-123"}
-        with patch("jee_tutor.email.worker.boto3.client", return_value=s3_client):
+        with patch("boto3.client", return_value=s3_client):
             worker = EmailDeliveryWorker(
                 config=EmailConfig(
                     from_address="noreply@example.com",

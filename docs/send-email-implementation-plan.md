@@ -147,7 +147,7 @@ Changes:
 
 Expected env vars:
 
-- `EMAIL_FROM_ADDRESS=analysis@konceptai.com`
+- `EMAIL_FROM_ADDRESS=Koncept Agent App <sociusnest@gmail.com>`
 - `EMAIL_SUBJECT_TEMPLATE=Analysis Report`
 - `EMAIL_BODY_TEMPLATE=<HTML template>`
 - `EMAIL_REGION=<AWS region>`

@@ -25,7 +25,7 @@ class SesAdapterTest(unittest.TestCase):
         sender = SesEmailSender(ses_client=ses_client)
 
         response = sender.send(
-            from_address="analysis@example.com",
+            from_address="Koncept Agent App <sociusnest@gmail.com>",
             recipient_email="student@example.com",
             subject="Report",
             body_html="<p>Hello</p>",
@@ -35,8 +35,9 @@ class SesAdapterTest(unittest.TestCase):
 
         self.assertEqual(response["MessageId"], "msg-123")
         ses_client.send_raw_email.assert_called_once()
+        self.assertEqual(ses_client.send_raw_email.call_args.kwargs["Source"], "sociusnest@gmail.com")
         raw_message = ses_client.send_raw_email.call_args.kwargs["RawMessage"]["Data"]
-        self.assertIn(b"analysis@example.com", raw_message)
+        self.assertIn(b"Koncept Agent App <sociusnest@gmail.com>", raw_message)
         self.assertIn(b"student@example.com", raw_message)
         self.assertIn(b"report.pdf", raw_message)
 

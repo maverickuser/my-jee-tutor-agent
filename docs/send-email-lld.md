@@ -269,7 +269,7 @@ Recommended dimensions:
 
 The runtime and worker should read these environment variables:
 
-- `EMAIL_FROM_ADDRESS` default: `analysis@konceptai.com`
+- `EMAIL_FROM_ADDRESS` default: `Koncept Agent App <sociusnest@gmail.com>`
 - `EMAIL_SUBJECT_TEMPLATE` default: `Analysis Report`
 - `EMAIL_BODY_TEMPLATE` default: HTML analysis email template with `{delivery_id}`
 - `EMAIL_REGION` default: deployment AWS region

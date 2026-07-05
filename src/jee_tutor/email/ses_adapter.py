@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+from email.utils import parseaddr
 import logging
 from urllib.parse import urlparse
 
@@ -24,6 +25,10 @@ class SesEmailSender:
         attachment_bytes: bytes,
         attachment_filename: str,
     ) -> dict[str, object]:
+        _from_name, from_email = parseaddr(from_address)
+        source_address = from_email or from_address.strip()
+        if "@" not in source_address:
+            raise ValueError("from_address must include a valid email address.")
         message = EmailMessage()
         message["From"] = from_address
         message["To"] = recipient_email
@@ -38,13 +43,13 @@ class SesEmailSender:
         )
         raw_message = message.as_bytes()
         response = self._ses_client().send_raw_email(
-            Source=from_address,
+            Source=source_address,
             Destinations=[recipient_email],
             RawMessage={"Data": raw_message},
         )
         logger.info(
             "email_ses_send source=%s recipient_domain=%s bytes=%s",
-            from_address,
+            source_address,
             recipient_email.split("@", 1)[-1] if "@" in recipient_email else "unknown",
             len(raw_message),
         )
