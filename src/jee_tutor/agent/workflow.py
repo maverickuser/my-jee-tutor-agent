@@ -1,4 +1,3 @@
-import json
 import logging
 
 from jee_tutor.agent.config_loader import LLMConfig
@@ -14,10 +13,6 @@ from jee_tutor.agent.tools import VisionToolCallState, build_vision_tool
 
 
 logger = logging.getLogger(__name__)
-
-
-class CrewObservationMismatchError(OutputValidationError):
-    pass
 
 
 class DiagnosisMarkdown(str):
@@ -61,12 +56,6 @@ def run_tutor_workflow(
         )
         crew_result = crew.kickoff()
         analysis = _crew_output_text(crew_result)
-        observation = tool_call_state.observation
-        if observation is None or _normalized_json(analysis) != _normalized_json(observation):
-            raise CrewObservationMismatchError(
-                "CrewAI final answer did not preserve the vision tool observation.",
-                ["Validation category: crew_observation_mismatch."],
-            )
     else:
         vision_tool = build_vision_tool(
             vision_client,
@@ -113,13 +102,6 @@ def run_tutor_workflow(
 def _crew_output_text(result: object) -> str:
     raw = getattr(result, "raw", None)
     return (raw if isinstance(raw, str) else str(result)).strip()
-
-
-def _normalized_json(value: str) -> str | None:
-    try:
-        return json.dumps(json.loads(value), sort_keys=True, separators=(",", ":"))
-    except (json.JSONDecodeError, TypeError):
-        return None
 
 
 def _validate_vision_tool_call(

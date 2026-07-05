@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from jee_tutor.agent.config_loader import LLMConfig
-from jee_tutor.agent.model_config import ModelSettings, VisionModelConfig
+from jee_tutor.agent.model_config import CrewAIModelConfig, ModelSettings, VisionModelConfig
 
 
 class ConfigAndModelTest(unittest.TestCase):
@@ -83,6 +83,14 @@ class ConfigAndModelTest(unittest.TestCase):
         ).resolve()
 
         self.assertEqual(settings.aws_region_name, "us-east-1")
+
+    def test_crewai_model_defaults_to_flash(self):
+        settings = CrewAIModelConfig(
+            environ={"GOOGLE_API_KEY": "google-key"},
+            config=LLMConfig({}),
+        ).resolve()
+
+        self.assertEqual(settings.model, "gemini/gemini-3-flash-preview")
 
 
 if __name__ == "__main__":

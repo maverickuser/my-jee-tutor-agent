@@ -4,7 +4,7 @@ from typing import Any
 from crewai import Agent, LLM, Task
 from crewai.llms.base_llm import BaseLLM
 
-from jee_tutor.agent.model_config import VisionModelConfig
+from jee_tutor.agent.model_config import CrewAIModelConfig
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import (
     TUTOR_AGENT_ROLE,
@@ -147,8 +147,8 @@ def build_diagnosis_task(
     )
 
 
-def build_crewai_llm(model_config: VisionModelConfig | None = None) -> LLM | BaseLLM:
-    settings = (model_config or VisionModelConfig()).resolve()
+def build_crewai_llm(model_config: CrewAIModelConfig | None = None) -> LLM | BaseLLM:
+    settings = (model_config or CrewAIModelConfig()).resolve()
     kwargs = settings.to_litellm_kwargs()
     model = kwargs.pop("model")
     llm = LLM(model=model, **kwargs)

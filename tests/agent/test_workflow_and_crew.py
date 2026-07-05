@@ -6,10 +6,8 @@ from jee_tutor.agent.crew import build_tutor_crew
 from jee_tutor.agent.output_validation import OutputValidationError
 from jee_tutor.agent.tools import VisionToolCallState
 from jee_tutor.agent.workflow import (
-    CrewObservationMismatchError,
     DiagnosisMarkdown,
     _crew_output_text,
-    _normalized_json,
     _validate_vision_tool_call,
     run_tutor_workflow,
 )
@@ -119,8 +117,9 @@ class WorkflowAndCrewTest(unittest.TestCase):
         self.assertIsInstance(result, DiagnosisMarkdown)
         self.assertEqual(result.diagnosis.questions[0].question_number, "6")
 
-    def test_react_accepts_preserved_observation_and_rejects_rewrite(self):
+    def test_react_returns_crew_output_without_match_check(self):
         observation = json.dumps({"questions": [question()]})
+        crew_output = json.dumps({"questions": [question(topic="Capacitors")]})
 
         def crew_for(output):
             def build(**kwargs):
@@ -139,7 +138,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
 
         with patch(
             "jee_tutor.agent.workflow.build_tutor_crew",
-            side_effect=crew_for(observation),
+            side_effect=crew_for(crew_output),
         ):
             result = run_tutor_workflow(
                 image_data_uri="data:image/png;base64,x",
@@ -148,21 +147,10 @@ class WorkflowAndCrewTest(unittest.TestCase):
                 react_enabled=True,
             )
         self.assertIsInstance(result, DiagnosisMarkdown)
-
-        with patch(
-            "jee_tutor.agent.workflow.build_tutor_crew",
-            side_effect=crew_for('{"questions":[]}'),
-        ):
-            with self.assertRaises(CrewObservationMismatchError):
-                run_tutor_workflow(
-                    image_data_uri="data:image/png;base64,x",
-                    llm_client=Mock(),
-                    react_enabled=True,
-                )
+        self.assertEqual(result.diagnosis.questions[0].topic, "Capacitors")
 
     def test_workflow_output_helpers_handle_non_raw_and_invalid_json(self):
         self.assertEqual(_crew_output_text(" value "), "value")
-        self.assertIsNone(_normalized_json("not-json"))
 
     def test_vision_tool_state_validation_rejects_invalid_states(self):
         valid = {

@@ -13,7 +13,7 @@ from jee_tutor.agent.factories import (
     build_diagnosis_task,
     build_tutor_agent,
 )
-from jee_tutor.agent.model_config import VisionModelConfig
+from jee_tutor.agent.model_config import CrewAIModelConfig
 
 
 class DummyGeminiLLM:
@@ -94,11 +94,11 @@ class CrewAIModelConfigTest(unittest.TestCase):
     def test_crewai_llm_uses_gemini_google_api_key(self):
         config = LLMConfig(
             {
-                "vision": {"model": "gemini/gemini-3-flash-preview"},
+                "crewai": {"model": "gemini/gemini-3-flash-preview"},
                 "completion": {"temperature": 0.2},
             }
         )
-        model_config = VisionModelConfig(
+        model_config = CrewAIModelConfig(
             environ={"GOOGLE_API_KEY": "google-key"},
             config=config,
         )
@@ -116,11 +116,11 @@ class CrewAIModelConfigTest(unittest.TestCase):
     def test_crewai_llm_uses_aws_region_for_bedrock_model(self):
         config = LLMConfig(
             {
-                "vision": {"model": "bedrock/anthropic.claude-3-5-sonnet"},
+                "crewai": {"model": "bedrock/anthropic.claude-3-5-sonnet"},
                 "completion": {"temperature": 0.2},
             }
         )
-        model_config = VisionModelConfig(
+        model_config = CrewAIModelConfig(
             environ={"AWS_REGION": "ap-south-1"},
             config=config,
         )

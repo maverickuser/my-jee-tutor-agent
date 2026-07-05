@@ -4,6 +4,9 @@
 [vision]
 model = "gemini/gemini-2.5-pro"
 
+[crewai]
+model = "gemini/gemini-3-flash-preview"
+
 [structured_diagnosis]
 enabled = true
 allow_legacy_markdown = false

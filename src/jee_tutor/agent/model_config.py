@@ -9,6 +9,7 @@ from jee_tutor.agent.config_loader import LLMConfig
 
 DEFAULT_LLM_TIMEOUT_SECONDS = 180
 DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
+CREWAI_MODEL = "gemini/gemini-3-flash-preview"
 
 
 @dataclass(frozen=True)
@@ -41,31 +42,12 @@ class VisionModelConfig:
         self.config = config or LLMConfig.load(self.environ.get("LLM_CONFIG_FILE"))
 
     def resolve(self) -> ModelSettings:
-        model = self._setting("VISION_MODEL", "vision", "model", DIAGNOSIS_MODEL)
-        api_base = self._setting("LITELLM_BASE_URL", "litellm", "api_base")
-        completion_options = self.config.section("completion")
-        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
-
-        if self._uses_aws_credentials(model):
-            return ModelSettings(
-                model=model,
-                aws_region_name=self._setting("AWS_REGION", "aws", "region")
-                or self.environ.get("AWS_DEFAULT_REGION"),
-                completion_options=completion_options,
-            )
-
-        api_key = self._resolve_api_key(model)
-        if not api_key:
-            raise ValueError(
-                "No API key configured for the selected VISION_MODEL. Set OPENAI_API_KEY, "
-                "GOOGLE_API_KEY, or LITELLM_API_KEY."
-            )
-
-        return ModelSettings(
-            model=model,
-            api_key=api_key,
-            api_base=api_base,
-            completion_options=completion_options,
+        return self._resolve_model(
+            env_key="VISION_MODEL",
+            config_section="vision",
+            config_key="model",
+            default_model=DIAGNOSIS_MODEL,
+            error_label="VISION_MODEL",
         )
 
     @property
@@ -98,3 +80,50 @@ class VisionModelConfig:
     @staticmethod
     def _uses_aws_credentials(model: str) -> bool:
         return model.startswith("bedrock/") or model.startswith("amazon/")
+
+    def _resolve_model(
+        self,
+        *,
+        env_key: str,
+        config_section: str,
+        config_key: str,
+        default_model: str,
+        error_label: str,
+    ) -> ModelSettings:
+        model = self._setting(env_key, config_section, config_key, default_model)
+        api_base = self._setting("LITELLM_BASE_URL", "litellm", "api_base")
+        completion_options = self.config.section("completion")
+        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
+
+        if self._uses_aws_credentials(model):
+            return ModelSettings(
+                model=model,
+                aws_region_name=self._setting("AWS_REGION", "aws", "region")
+                or self.environ.get("AWS_DEFAULT_REGION"),
+                completion_options=completion_options,
+            )
+
+        api_key = self._resolve_api_key(model)
+        if not api_key:
+            raise ValueError(
+                f"No API key configured for the selected {error_label}. Set OPENAI_API_KEY, "
+                "GOOGLE_API_KEY, or LITELLM_API_KEY."
+            )
+
+        return ModelSettings(
+            model=model,
+            api_key=api_key,
+            api_base=api_base,
+            completion_options=completion_options,
+        )
+
+
+class CrewAIModelConfig(VisionModelConfig):
+    def resolve(self) -> ModelSettings:
+        return self._resolve_model(
+            env_key="CREWAI_MODEL",
+            config_section="crewai",
+            config_key="model",
+            default_model=CREWAI_MODEL,
+            error_label="CREWAI_MODEL",
+        )
