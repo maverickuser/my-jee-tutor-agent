@@ -114,7 +114,8 @@ class StatusStoreTest(unittest.TestCase):
         call = table.calls[0]
         self.assertEqual(call["Key"], {"invocation_id": "inv-1"})
         self.assertIn("created_at = if_not_exists(created_at, :created_at)", call["UpdateExpression"])
-        self.assertIn("status = :status", call["UpdateExpression"])
+        self.assertIn("#status = :status", call["UpdateExpression"])
+        self.assertEqual(call["ExpressionAttributeNames"]["#status"], "status")
         self.assertEqual(call["ExpressionAttributeValues"][":status"], "SUCCEEDED")
         self.assertEqual(call["ExpressionAttributeValues"][":image_count"], 2)
         self.assertEqual(call["ExpressionAttributeValues"][":subject"], "Physics")
@@ -145,9 +146,10 @@ class StatusStoreTest(unittest.TestCase):
         self.assertEqual(len(table.calls), 1)
         call = table.calls[0]
         self.assertEqual(call["Key"], {"invocation_id": "inv-1"})
-        self.assertIn("updated_at = :updated_at", call["UpdateExpression"])
-        self.assertIn("status = :status", call["UpdateExpression"])
-        self.assertIn("completed_at = :completed_at", call["UpdateExpression"])
+        self.assertIn("#updated_at = :updated_at", call["UpdateExpression"])
+        self.assertIn("#status = :status", call["UpdateExpression"])
+        self.assertIn("#completed_at = :completed_at", call["UpdateExpression"])
+        self.assertEqual(call["ExpressionAttributeNames"]["#status"], "status")
         self.assertEqual(call["ExpressionAttributeValues"][":status"], "SUCCEEDED")
         self.assertEqual(call["ExpressionAttributeValues"][":completed_at"], "2026-07-05T00:00:00Z")
 

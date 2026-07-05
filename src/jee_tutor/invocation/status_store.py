@@ -77,10 +77,15 @@ class DynamoDbInvocationStatusStore:
             ":updated_at": record.updated_at,
             ":image_count": record.image_count,
         }
+        names: dict[str, str] = {
+            "#status": "status",
+            "#updated_at": "updated_at",
+            "#image_count": "image_count",
+        }
         update_parts = [
-            "status = :status",
-            "updated_at = :updated_at",
-            "image_count = :image_count",
+            "#status = :status",
+            "#updated_at = :updated_at",
+            "#image_count = :image_count",
         ]
         set_if_not_none = {
             "idempotency_key": record.idempotency_key,
@@ -103,12 +108,14 @@ class DynamoDbInvocationStatusStore:
             if field_value is None:
                 continue
             placeholder = f":{field_name}"
+            names[f"#{field_name}"] = field_name
             values[placeholder] = field_value
-            update_parts.append(f"{field_name} = {placeholder}")
+            update_parts.append(f"#{field_name} = {placeholder}")
 
         table.update_item(
             Key={"invocation_id": record.invocation_id},
             UpdateExpression="SET " + ", ".join(update_parts),
+            ExpressionAttributeNames=names,
             ExpressionAttributeValues=values,
         )
 
@@ -117,18 +124,21 @@ class DynamoDbInvocationStatusStore:
             return None
         table = self._table_client()
         values: dict[str, Any] = {":updated_at": _utc_now()}
-        set_parts = ["updated_at = :updated_at"]
+        names: dict[str, str] = {"#updated_at": "updated_at"}
+        set_parts = ["#updated_at = :updated_at"]
         for field_name, field_value in fields.items():
             if field_value is None:
                 continue
             placeholder = f":{field_name}"
+            names[f"#{field_name}"] = field_name
             values[placeholder] = field_value
-            set_parts.append(f"{field_name} = {placeholder}")
+            set_parts.append(f"#{field_name} = {placeholder}")
         if len(set_parts) == 1:
             return None
         table.update_item(
             Key={"invocation_id": invocation_id},
             UpdateExpression="SET " + ", ".join(set_parts),
+            ExpressionAttributeNames=names,
             ExpressionAttributeValues=values,
         )
 
@@ -141,6 +151,7 @@ class DynamoDbInvocationStatusStore:
                 "SET llm_calls = list_append(if_not_exists(llm_calls, :empty_calls), :call), "
                 "updated_at = :updated_at"
             ),
+            ExpressionAttributeNames={"#updated_at": "updated_at"},
             ExpressionAttributeValues={
                 ":empty_calls": [],
                 ":call": [call],
