@@ -1,8 +1,11 @@
 import logging
+from datetime import datetime, timezone
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +17,8 @@ from jee_tutor.agent.diagnosis_output import (
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.output_validation import REQUIRED_MARKDOWN_COLUMNS, OutputValidationError
 from jee_tutor.agent.prompts import VISION_TOOL_DESCRIPTION
+from jee_tutor.invocation.models import AgentLLMCallRecord, AgentLLMCallStatus
+from jee_tutor.invocation.status_store import InvocationStatusStore
 
 
 logger = logging.getLogger(__name__)
@@ -93,6 +98,8 @@ class VisionAnalysisTool(BaseTool):
     preloaded_image_data_uris: list[str] = Field(default_factory=list, exclude=True)
     expected_question_numbers: list[str | None] = Field(default_factory=list, exclude=True)
     max_images_per_call: int = Field(default=3, exclude=True)
+    invocation_id: str | None = Field(default=None, exclude=True)
+    status_store: Any = Field(default=None, exclude=True)
     call_state: VisionToolCallState = Field(
         default_factory=VisionToolCallState,
         exclude=True,
@@ -160,6 +167,7 @@ class VisionAnalysisTool(BaseTool):
             return self._analyze_batch(
                 resolved_images,
                 self.expected_question_numbers[: len(resolved_images)] or None,
+                batch_index=0,
             )
 
         batch_outputs: list[str] = []
@@ -171,7 +179,11 @@ class VisionAnalysisTool(BaseTool):
             batch_expected_question_numbers = batch_question_numbers[start:end] or None
             batch_sizes.append(len(batch_images))
             batch_outputs.append(
-                self._analyze_batch(batch_images, batch_expected_question_numbers)
+                self._analyze_batch(
+                    batch_images,
+                    batch_expected_question_numbers,
+                    batch_index=len(batch_outputs),
+                )
             )
         return self._merge_batch_outputs(batch_outputs, batch_sizes, len(resolved_images))
 
@@ -179,13 +191,102 @@ class VisionAnalysisTool(BaseTool):
         self,
         resolved_images: list[str],
         expected_question_numbers: list[str | None] | None,
+        *,
+        batch_index: int,
     ) -> str:
+        started_at = datetime.now(timezone.utc)
         if expected_question_numbers:
-            return self.llm_client.analyze_vision(
-                resolved_images,
-                expected_question_numbers=expected_question_numbers,
+            try:
+                result = self.llm_client.analyze_vision(
+                    resolved_images,
+                    expected_question_numbers=expected_question_numbers,
+                )
+            except Exception as exc:
+                self._record_llm_call(
+                    started_at=started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    batch_index=batch_index,
+                    batch_size=len(resolved_images),
+                    attempt_number=max(getattr(self.llm_client, "transport_attempt_count", 1), 1),
+                    status=AgentLLMCallStatus.FAILED,
+                    error_type=exc.__class__.__name__,
+                    error_message=str(exc) or "[no message]",
+                )
+                raise
+            self._record_llm_call(
+                started_at=started_at,
+                ended_at=datetime.now(timezone.utc),
+                batch_index=batch_index,
+                batch_size=len(resolved_images),
+                attempt_number=max(getattr(self.llm_client, "transport_attempt_count", 1), 1),
+                status=AgentLLMCallStatus.SUCCEEDED,
             )
-        return self.llm_client.analyze_vision(resolved_images)
+            return result
+        try:
+            result = self.llm_client.analyze_vision(resolved_images)
+        except Exception as exc:
+            self._record_llm_call(
+                started_at=started_at,
+                ended_at=datetime.now(timezone.utc),
+                batch_index=batch_index,
+                batch_size=len(resolved_images),
+                attempt_number=max(getattr(self.llm_client, "transport_attempt_count", 1), 1),
+                status=AgentLLMCallStatus.FAILED,
+                error_type=exc.__class__.__name__,
+                error_message=str(exc) or "[no message]",
+            )
+            raise
+        self._record_llm_call(
+            started_at=started_at,
+            ended_at=datetime.now(timezone.utc),
+            batch_index=batch_index,
+            batch_size=len(resolved_images),
+            attempt_number=max(getattr(self.llm_client, "transport_attempt_count", 1), 1),
+            status=AgentLLMCallStatus.SUCCEEDED,
+        )
+        return result
+
+    def _record_llm_call(
+        self,
+        *,
+        started_at: datetime,
+        ended_at: datetime,
+        batch_index: int,
+        batch_size: int,
+        attempt_number: int,
+        status: AgentLLMCallStatus,
+        error_type: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        if self.status_store is None or self.invocation_id is None:
+            return
+        duration_ms = max(int((ended_at - started_at).total_seconds() * 1000), 0)
+        model_name = (
+            getattr(self.llm_client, "model", None)
+            or getattr(self.llm_client, "model_name", None)
+            or getattr(self.llm_client, "deployment_name", None)
+            or getattr(self.llm_client, "name", None)
+            or "unknown"
+        )
+        provider = model_name.split("/", 1)[0] if "/" in model_name else "unknown"
+        self.status_store.append_llm_call(
+            self.invocation_id,
+            AgentLLMCallRecord(
+                llm_call_id=uuid.uuid4().hex,
+                batch_index=batch_index,
+                batch_size=batch_size,
+                model=model_name,
+                provider=provider,
+                purpose="vision_analysis",
+                status=status,
+                attempt_number=attempt_number,
+                started_at=started_at.isoformat(),
+                ended_at=ended_at.isoformat(),
+                duration_ms=duration_ms,
+                error_type=error_type,
+                error_message=error_message,
+            ),
+        )
 
     def _merge_batch_outputs(
         self,
@@ -384,6 +485,8 @@ def build_vision_tool(
     call_state: VisionToolCallState | None = None,
     expected_question_numbers: list[str | None] | None = None,
     max_images_per_call: int = 3,
+    invocation_id: str | None = None,
+    status_store: InvocationStatusStore | None = None,
 ) -> VisionAnalysisTool:
     return VisionAnalysisTool(
         result_as_answer=True,
@@ -391,5 +494,7 @@ def build_vision_tool(
         preloaded_image_data_uris=image_data_uris or [],
         expected_question_numbers=expected_question_numbers or [],
         max_images_per_call=max_images_per_call,
+        invocation_id=invocation_id,
+        status_store=status_store,
         call_state=call_state or VisionToolCallState(),
     )

@@ -129,6 +129,19 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
         ]
       }
       ],
+      var.invocation_status_enabled ? [
+        {
+          Sid    = "WriteInvocationStatus"
+          Effect = "Allow"
+          Action = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
+            "dynamodb:DescribeTable"
+          ]
+          Resource = aws_dynamodb_table.invocation_status.arn
+        }
+      ] : [],
       length(var.s3_image_input_object_arns) > 0 ? [
         {
           Sid    = "S3ImageObjectReadWrite"

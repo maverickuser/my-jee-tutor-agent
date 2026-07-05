@@ -41,7 +41,7 @@ class NewRelicLogConfig:
 
     @classmethod
     def from_environment(cls) -> "NewRelicLogConfig":
-        enabled = os.getenv("NEW_RELIC_LOG_ENABLED", "false").lower() == "true"
+        enabled = os.getenv("NEW_RELIC_LOG_ENABLED", "true").lower() == "true"
         return cls(
             enabled=enabled,
             secret_arn=os.getenv("NEW_RELIC_LICENSE_KEY_SECRET_ARN", ""),

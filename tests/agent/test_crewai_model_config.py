@@ -9,6 +9,8 @@ from jee_tutor.agent.factories import (
     MandatoryVisionToolLLM,
     RateLimitedLLM,
     _format_llm_failure,
+    _normalize_stop_sequences,
+    _provider_from_model,
     build_crewai_llm,
     build_diagnosis_task,
     build_tutor_agent,
@@ -90,6 +92,12 @@ class CrewAIModelConfigTest(unittest.TestCase):
             wrapped.get_context_window_size(),
             super(MandatoryVisionToolLLM, wrapped).get_context_window_size(),
         )
+
+    def test_mandatory_vision_tool_llm_enforces_call_budget(self):
+        wrapped = MandatoryVisionToolLLM(DummyGeminiLLM(), max_calls=1)
+        self.assertEqual(wrapped.call([{"role": "user", "content": "analyze"}]), MANDATORY_VISION_TOOL_ACTION)
+        with self.assertRaisesRegex(RuntimeError, "exceeded its 1-call"):
+            wrapped.call([{"role": "user", "content": "analyze"}])
 
     def test_crewai_llm_uses_gemini_google_api_key(self):
         config = LLMConfig(
@@ -226,6 +234,20 @@ class CrewAIModelConfigTest(unittest.TestCase):
             super(RateLimitedLLM, wrapped).get_context_window_size(),
         )
 
+    def test_rate_limited_llm_function_calling_support_note_is_omitted_when_supported(self):
+        llm = DummyGeminiLLM()
+        llm.supports_function_calling = lambda: True
+        wrapped = RateLimitedLLM(llm)
+
+        self.assertIsNone(wrapped._function_calling_support_note())
+
+    def test_rate_limited_llm_function_calling_support_note_ignores_errors(self):
+        llm = DummyGeminiLLM()
+        wrapped = RateLimitedLLM(llm)
+        wrapped.supports_function_calling = Mock(side_effect=RuntimeError("boom"))
+
+        self.assertIsNone(wrapped._function_calling_support_note())
+
     def test_rate_limited_llm_uses_string_fallback_and_sequence_stop(self):
         llm = Mock()
         llm.model = " "
@@ -296,6 +318,12 @@ class CrewAIModelConfigTest(unittest.TestCase):
         self.assertEqual(task_kwargs["tools"], [vision_tool])
         self.assertIn("MANDATORY RUNTIME STEP", task_kwargs["description"])
         self.assertIn("call `jee_question_vision_analyzer` exactly once", task_kwargs["description"])
+
+    def test_helper_functions_cover_provider_and_stop_sequences(self):
+        self.assertEqual(_provider_from_model("gemini/model"), "gemini")
+        self.assertIsNone(_provider_from_model("model"))
+        self.assertEqual(_normalize_stop_sequences("END"), ["END"])
+        self.assertEqual(_normalize_stop_sequences(["END", None, 3]), ["END", "3"])
 
 
 if __name__ == "__main__":

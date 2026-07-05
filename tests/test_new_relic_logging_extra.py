@@ -11,7 +11,7 @@ class NewRelicLoggingExtraTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             config = NewRelicLogConfig.from_environment()
 
-        self.assertFalse(config.enabled)
+        self.assertTrue(config.enabled)
         self.assertEqual(config.secret_arn, "")
         self.assertEqual(config.region, "US")
 

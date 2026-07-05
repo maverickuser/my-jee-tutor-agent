@@ -107,7 +107,7 @@ variable "cloudwatch_log_retention_days" {
 variable "newrelic_log_forwarding_enabled" {
   description = "Enable direct asynchronous application log delivery to New Relic."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "newrelic_license_key_secret_arn" {
@@ -124,6 +124,12 @@ variable "newrelic_region" {
     condition     = contains(["US", "EU"], upper(var.newrelic_region))
     error_message = "newrelic_region must be US or EU."
   }
+}
+
+variable "invocation_status_enabled" {
+  description = "Enable persistent invocation status tracking in DynamoDB."
+  type        = bool
+  default     = true
 }
 
 variable "s3_image_input_bucket_arns" {

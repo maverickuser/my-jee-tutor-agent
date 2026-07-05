@@ -50,6 +50,19 @@ resource "aws_iam_role_policy" "email_delivery_access" {
           Action   = ["secretsmanager:GetSecretValue"]
           Resource = var.newrelic_license_key_secret_arn
         }
+      ] : [],
+      var.invocation_status_enabled ? [
+        {
+          Sid    = "WriteInvocationStatus"
+          Effect = "Allow"
+          Action = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
+            "dynamodb:DescribeTable"
+          ]
+          Resource = aws_dynamodb_table.invocation_status.arn
+        }
       ] : []
     )
   })
@@ -93,6 +106,8 @@ resource "aws_lambda_function" "email_delivery" {
       NEW_RELIC_LOG_ENABLED            = tostring(var.newrelic_log_forwarding_enabled)
       NEW_RELIC_LICENSE_KEY_SECRET_ARN = var.newrelic_license_key_secret_arn
       NEW_RELIC_REGION                 = var.newrelic_region
+      INVOCATION_STATUS_ENABLED        = tostring(var.invocation_status_enabled)
+      INVOCATION_STATUS_TABLE_NAME     = local.invocation_status_table_name
     }
   }
 

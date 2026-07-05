@@ -2,6 +2,7 @@ from collections.abc import Callable
 import logging
 from typing import Any
 import os
+import uuid
 
 from pydantic import ValidationError
 
@@ -18,9 +19,17 @@ from jee_tutor.invocation.idempotency import (
 )
 from jee_tutor.invocation.image_inputs import ImageInputResolver, ResolvedImage
 from jee_tutor.invocation.models import (
+    AgentInvocationRecord,
+    AgentInvocationStatus,
     ErrorResponse,
     TutorInvocationPayload,
     TutorInvocationResponse,
+)
+from jee_tutor.invocation.status_store import (
+    InvocationStatusStore,
+    build_agent_invocation_record,
+    build_invocation_status_store,
+    _utc_now,
 )
 
 
@@ -43,6 +52,7 @@ class TutorInvocationService:
         artifact_writer: AnalysisArtifactWriter | None = None,
         email_coordinator: EmailDeliveryCoordinator | None = None,
         idempotency_store: InvocationIdempotencyStore | None = None,
+        status_store: InvocationStatusStore | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
@@ -51,6 +61,7 @@ class TutorInvocationService:
         self.artifact_writer = artifact_writer or AnalysisArtifactWriter()
         self.email_coordinator = email_coordinator or EmailDeliveryCoordinator()
         self.idempotency_store = idempotency_store or invocation_idempotency_store
+        self.status_store = status_store or build_invocation_status_store()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -68,26 +79,64 @@ class TutorInvocationService:
                 [error["msg"] for error in exc.errors()],
             )
 
+        invocation_id = self._invocation_id(invocation)
+        self._record_invocation(
+            invocation_id=invocation_id,
+            invocation=invocation,
+            status=AgentInvocationStatus.RECEIVED,
+            status_reason="Request received",
+        )
         if invocation.idempotency_key:
             claim = self.idempotency_store.claim(
                 invocation.idempotency_key,
                 invocation.model_dump(),
             )
             if claim.status == "completed":
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.REPLAYED,
+                    status_reason="Returned stored result from idempotency cache",
+                    completed_at=True,
+                )
                 return claim.response or {}
             if claim.status == "in_progress":
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.BLOCKED,
+                    status_reason="Invocation already in progress",
+                    error_type="IdempotencyInProgress",
+                    error_message="Retry later using the same idempotency_key.",
+                    completed_at=True,
+                )
                 return self._error_response(
                     "Tutor invocation is already in progress.",
                     ["Retry later using the same idempotency_key."],
                 )
             if claim.status == "conflict":
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.BLOCKED,
+                    status_reason="Idempotency key conflict",
+                    error_type="IdempotencyConflict",
+                    error_message="Use a new idempotency_key for a different request.",
+                    completed_at=True,
+                )
                 return self._error_response(
                     "Idempotency key was already used with a different payload.",
                     ["Use a new idempotency_key for a different request."],
                 )
 
+        self._record_invocation(
+            invocation_id=invocation_id,
+            invocation=invocation,
+            status=AgentInvocationStatus.VALIDATED,
+            status_reason="Request validated",
+        )
         try:
-            response = self._handle_validated_invocation(invocation)
+            response = self._handle_validated_invocation(invocation, invocation_id)
         except Exception:
             if invocation.idempotency_key:
                 self.idempotency_store.abandon(invocation.idempotency_key)
@@ -100,6 +149,7 @@ class TutorInvocationService:
     def _handle_validated_invocation(
         self,
         invocation: TutorInvocationPayload,
+        invocation_id: str,
     ) -> dict[str, Any]:
         try:
             resolved_images = self.image_resolver.resolve_images(
@@ -120,12 +170,13 @@ class TutorInvocationService:
                 self._image_resolution_error_details(exc, invocation),
             )
 
-        return self._run_guarded_workflow(invocation, resolved_images)
+        return self._run_guarded_workflow(invocation, resolved_images, invocation_id)
 
     def _run_guarded_workflow(
         self,
         invocation: TutorInvocationPayload,
         resolved_images: list[ResolvedImage],
+        invocation_id: str,
     ) -> dict[str, Any]:
         image_data_uris = [image.data_uri for image in resolved_images]
         with self.observability.invocation_span(
@@ -145,16 +196,41 @@ class TutorInvocationService:
                     input_guardrail.message or "Tutor invocation blocked by runtime guardrail.",
                     [input_guardrail.action_reason] if input_guardrail.action_reason else [],
                 )
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.BLOCKED,
+                    status_reason=input_guardrail.action_reason or "Blocked by runtime guardrail",
+                    error_type="GuardrailBlockedError",
+                    error_message=input_guardrail.message,
+                    image_count=len(resolved_images),
+                )
                 self._finish_invocation(span, response, invocation)
                 return response
 
             try:
-                workflow_result = self._run_workflow(invocation, resolved_images)
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.IN_PROGRESS,
+                    status_reason="Vision analysis in progress",
+                    image_count=len(resolved_images),
+                )
+                workflow_result = self._run_workflow(invocation, resolved_images, invocation_id)
                 analysis = str(workflow_result)
             except Exception as exc:
                 response = self._error_response(
                     "Tutor workflow failed while analyzing images.",
                     self._workflow_error_details(exc, resolved_images, invocation),
+                )
+                self._record_invocation(
+                    invocation_id=invocation_id,
+                    invocation=invocation,
+                    status=AgentInvocationStatus.FAILED,
+                    status_reason="Tutor workflow failed while analyzing images",
+                    error_type=exc.__class__.__name__,
+                    error_message=str(exc) or "[no message]",
+                    image_count=len(resolved_images),
                 )
                 logger.exception(
                     "tutor_workflow_error image_count=%s error_type=%s error=%s",
@@ -180,6 +256,18 @@ class TutorInvocationService:
                 analysis,
                 invocation,
             )
+            self._record_invocation(
+                invocation_id=invocation_id,
+                invocation=invocation,
+                status=AgentInvocationStatus.SUCCEEDED,
+                status_reason="Analysis complete",
+                image_count=len(resolved_images),
+                analysis_pdf_uri=response.get("analysis_pdf_uri"),
+                email_delivery_id=response.get("email_delivery_id"),
+                email_status=response.get("email_status"),
+                email_error=response.get("email_error"),
+                completed_at=True,
+            )
             self._finish_invocation(span, response, invocation)
             return response
 
@@ -187,11 +275,14 @@ class TutorInvocationService:
         self,
         invocation: TutorInvocationPayload,
         resolved_images: list[ResolvedImage],
+        invocation_id: str,
     ) -> str:
         return self.workflow(
             image_data_uris=[image.data_uri for image in resolved_images],
             question_context=invocation.resolved_question_context,
             expected_question_numbers=[image.question_number for image in resolved_images],
+            invocation_id=invocation_id,
+            status_store=self.status_store,
         )
 
     def _finish_invocation(
@@ -358,3 +449,52 @@ class TutorInvocationService:
             f"Exception type: {exc.__class__.__name__}.",
             f"Exception message: {exc or '[no message]'}",
         ]
+
+    def _invocation_id(self, invocation: TutorInvocationPayload) -> str:
+        return invocation.idempotency_key or uuid.uuid4().hex
+
+    def _record_invocation(
+        self,
+        *,
+        invocation_id: str,
+        invocation: TutorInvocationPayload,
+        status: AgentInvocationStatus,
+        status_reason: str | None = None,
+        image_count: int | None = None,
+        analysis_pdf_uri: str | None = None,
+        email_delivery_id: str | None = None,
+        email_status: str | None = None,
+        email_error: str | None = None,
+        error_type: str | None = None,
+        error_message: str | None = None,
+        completed_at: bool = False,
+    ) -> None:
+        if self.status_store is None:
+            return
+        if status == AgentInvocationStatus.REPLAYED:
+            self.status_store.update_invocation(
+                invocation_id,
+                status=status.value,
+                status_reason=status_reason,
+                completed_at=_utc_now(),
+            )
+            return
+
+        record = build_agent_invocation_record(
+            invocation_id=invocation_id,
+            idempotency_key=invocation.idempotency_key,
+            status=status,
+            image_count=image_count if image_count is not None else 0,
+            subject=invocation.subject,
+            recipient_email=invocation.recipient_email,
+            status_reason=status_reason,
+            runtime_commit_sha=self._runtime_commit_sha(),
+            analysis_pdf_uri=analysis_pdf_uri,
+            email_delivery_id=email_delivery_id,
+            email_status=email_status,
+            email_error=email_error,
+            error_type=error_type,
+            error_message=error_message,
+            completed_at=_utc_now() if completed_at else None,
+        )
+        self.status_store.upsert_invocation(record)

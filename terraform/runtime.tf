@@ -30,6 +30,8 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     NEW_RELIC_LOG_ENABLED            = tostring(var.newrelic_log_forwarding_enabled)
     NEW_RELIC_LICENSE_KEY_SECRET_ARN = var.newrelic_license_key_secret_arn
     NEW_RELIC_REGION                 = var.newrelic_region
+    INVOCATION_STATUS_ENABLED        = tostring(var.invocation_status_enabled)
+    INVOCATION_STATUS_TABLE_NAME     = local.invocation_status_table_name
 
     EMAIL_DELIVERY_PROVIDER     = "lambda"
     EMAIL_DELIVERY_FUNCTION_ARN = aws_lambda_function.email_delivery.arn

@@ -64,6 +64,15 @@ def fake_attribute_context(**kwargs):
 
 
 class ObservabilityTest(unittest.TestCase):
+    def test_enabled_is_false_when_langfuse_client_is_unavailable(self):
+        with patch(
+            "jee_tutor.agent.observability.get_client",
+            None,
+        ):
+            observability = LangfuseObservability(LLMConfig({"langfuse": {"enabled": True}}))
+
+        self.assertFalse(observability.enabled)
+
     def test_disabled_without_credentials(self):
         with patch.dict(os.environ, {}, clear=True):
             observability = LangfuseObservability(LLMConfig({"langfuse": {"enabled": True}}))
@@ -213,6 +222,24 @@ class ObservabilityTest(unittest.TestCase):
                 pass
 
         self.assertIn("langfuse_flush_failed", " ".join(captured.output))
+
+    def test_score_current_trace_noops_when_disabled_or_empty(self):
+        observability = LangfuseObservability(LLMConfig({"langfuse": {"enabled": False}}))
+        with patch("jee_tutor.agent.observability.get_client") as get_client:
+            observability.score_current_trace([])
+            observability.score_current_trace([EvaluationScore(name="score", value=1)])
+        get_client.assert_not_called()
+
+    def test_publish_deploy_summary_noops_when_disabled(self):
+        observability = LangfuseObservability(LLMConfig({"langfuse": {"enabled": False}}))
+        with patch("jee_tutor.agent.observability.get_client") as get_client:
+            observability.publish_deploy_summary(
+                name="deploy",
+                input_payload={"a": 1},
+                output_payload={"b": 2},
+                scores=[],
+            )
+        get_client.assert_not_called()
 
     def test_prompt_fetch_success_returns_compiled_prompt(self):
         client = FakeLangfuseClient()

@@ -10,6 +10,7 @@ from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.output_validation import OutputValidationError, validate_markdown_analysis
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.tools import VisionToolCallState, build_vision_tool
+from jee_tutor.invocation.status_store import InvocationStatusStore
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ def run_tutor_workflow(
     llm_client: VisionLLMClient | None = None,
     prompt_provider: PromptProvider | None = None,
     react_enabled: bool | None = None,
+    invocation_id: str | None = None,
+    status_store: InvocationStatusStore | None = None,
 ) -> str:
     resolved_image_data_uris = image_data_uris or ([image_data_uri] if image_data_uri else [])
     if not resolved_image_data_uris:
@@ -53,6 +56,8 @@ def run_tutor_workflow(
             image_data_uris=resolved_image_data_uris,
             tool_call_state=tool_call_state,
             expected_question_numbers=expected_question_numbers,
+            invocation_id=invocation_id,
+            status_store=status_store,
         )
         crew_result = crew.kickoff()
         analysis = _crew_output_text(crew_result)
@@ -61,6 +66,8 @@ def run_tutor_workflow(
             vision_client,
             resolved_image_data_uris,
             tool_call_state,
+            invocation_id=invocation_id,
+            status_store=status_store,
         )
         if hasattr(vision_tool, "expected_question_numbers"):
             vision_tool.expected_question_numbers = expected_question_numbers or []

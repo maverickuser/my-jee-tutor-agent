@@ -1,10 +1,12 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from jee_tutor.agent.guardrails import GuardrailCheck
+from jee_tutor.agent.output_validation import OutputValidationError
 from jee_tutor.email.models import EmailDeliveryOutcome, EmailDeliveryStatus
 from jee_tutor.handler import handle_tutor_invocation
 from jee_tutor.invocation.image_inputs import ResolvedImage
+from jee_tutor.invocation.models import AgentInvocationStatus, TutorInvocationPayload
 from jee_tutor.invocation.service import TutorInvocationService
 
 
@@ -41,6 +43,35 @@ class FakeArtifactWriter:
         return self.result
 
 
+class FakeSpan:
+    def __init__(self):
+        self.outputs = []
+
+    def update(self, *, output):
+        self.outputs.append(output)
+
+
+class FakeInvocationSpanContext:
+    def __init__(self, span):
+        self.span = span
+
+    def __enter__(self):
+        return self.span
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeObservability:
+    def __init__(self):
+        self.span = FakeSpan()
+        self.calls = []
+
+    def invocation_span(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeInvocationSpanContext(self.span)
+
+
 def resolved_image(data_uri="data:image/png;base64,ZmFrZQ==", question_number=None):
     return ResolvedImage(
         data_uri=data_uri,
@@ -50,6 +81,268 @@ def resolved_image(data_uri="data:image/png;base64,ZmFrZQ==", question_number=No
 
 
 class AgentCoreHandlerIntegrationTest(unittest.TestCase):
+    def test_idempotency_completed_replays_stored_response(self):
+        image_resolver = Mock()
+        idempotency_store = Mock()
+        idempotency_store.claim.return_value = Mock(
+            status="completed",
+            response={"analysis": "cached"},
+        )
+        status_store = Mock()
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+            idempotency_store=idempotency_store,
+            status_store=status_store,
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "idempotency_key": "attempt-123",
+            }
+        )
+
+        self.assertEqual(response, {"analysis": "cached"})
+        image_resolver.resolve_images.assert_not_called()
+        service.workflow.assert_not_called()
+        idempotency_store.complete.assert_not_called()
+        status_store.upsert_invocation.assert_called()
+        status_store.update_invocation.assert_called_once()
+
+    def test_idempotency_in_progress_returns_blocked_error(self):
+        image_resolver = Mock()
+        idempotency_store = Mock()
+        idempotency_store.claim.return_value = Mock(status="in_progress")
+        status_store = Mock()
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+            idempotency_store=idempotency_store,
+            status_store=status_store,
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "idempotency_key": "attempt-123",
+            }
+        )
+
+        self.assertEqual(response["error"], "Tutor invocation is already in progress.")
+        self.assertIn("Retry later", response["details"][0])
+        service.workflow.assert_not_called()
+        image_resolver.resolve_images.assert_not_called()
+        status_store.update_invocation.assert_not_called()
+        status_store.upsert_invocation.assert_called()
+
+    def test_idempotency_conflict_returns_blocked_error(self):
+        image_resolver = Mock()
+        idempotency_store = Mock()
+        idempotency_store.claim.return_value = Mock(status="conflict")
+        status_store = Mock()
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+            idempotency_store=idempotency_store,
+            status_store=status_store,
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "idempotency_key": "attempt-123",
+            }
+        )
+
+        self.assertEqual(
+            response["error"],
+            "Idempotency key was already used with a different payload.",
+        )
+        self.assertIn("Use a new idempotency_key", response["details"][0])
+        service.workflow.assert_not_called()
+        image_resolver.resolve_images.assert_not_called()
+        status_store.upsert_invocation.assert_called()
+
+    def test_image_resolution_value_error_returns_invalid_payload_error(self):
+        image_resolver = Mock()
+        image_resolver.resolve_images.side_effect = ValueError("bad prefix")
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": "s3://attempt-bucket/maths/",
+            }
+        )
+
+        self.assertEqual(response["error"], "Invalid tutor invocation payload.")
+        self.assertIn("bad prefix", response["details"])
+        service.workflow.assert_not_called()
+
+    def test_artifact_writer_failure_keeps_analysis_and_records_error(self):
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(error=RuntimeError("no tex")),
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                "save_analysis_pdf": True,
+            }
+        )
+
+        self.assertEqual(response["analysis"], "analysis markdown")
+        self.assertIn("artifact_errors", response)
+        self.assertTrue(
+            any("Failed to write analysis artifacts: RuntimeError: no tex" == item for item in response["artifact_errors"])
+        )
+
+    def test_email_delivery_missing_pdf_returns_failure_status(self):
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
+
+        image_resolver = Mock()
+        image_resolver.resolve_images.return_value = [resolved_image()]
+        email_coordinator = Mock()
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(AnalysisArtifactResult()),
+            email_coordinator=email_coordinator,
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": "s3://attempt-bucket/maths/",
+                "recipient_email": "student@example.com",
+                "save_analysis_pdf": False,
+            }
+        )
+
+        self.assertEqual(response["email_status"], "failed")
+        self.assertIn("stored PDF artifact", response["email_error"])
+        email_coordinator.request_delivery.assert_not_called()
+
+    def test_email_delivery_runtime_exception_is_captured(self):
+        from jee_tutor.artifacts.writer import AnalysisArtifactResult
+
+        image_resolver = Mock()
+        image_resolver.resolve_images.return_value = [resolved_image()]
+        email_coordinator = Mock()
+        email_coordinator.request_delivery.side_effect = RuntimeError("ses down")
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(
+                AnalysisArtifactResult(pdf_uri="s3://attempt-bucket/maths/report.pdf")
+            ),
+            email_coordinator=email_coordinator,
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": "s3://attempt-bucket/maths/",
+                "recipient_email": "student@example.com",
+                "save_analysis_pdf": False,
+            }
+        )
+
+        self.assertEqual(response["email_status"], "failed")
+        self.assertIn("RuntimeError: ses down", response["email_error"])
+        email_coordinator.request_delivery.assert_called_once()
+
+    def test_output_validation_error_details_are_preserved(self):
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(side_effect=OutputValidationError("bad table", details=["missing header"])),
+            artifact_writer=FakeArtifactWriter(),
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+            }
+        )
+
+        self.assertEqual(response["error"], "Tutor workflow failed while analyzing images.")
+        self.assertIn("missing header", response["details"])
+
+    def test_successful_span_is_updated_with_response(self):
+        observability = FakeObservability()
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            observability=observability,
+            workflow=lambda **_: "analysis markdown",
+            artifact_writer=FakeArtifactWriter(),
+        )
+
+        response = service.handle(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+            }
+        )
+
+        self.assertEqual(response["analysis"], "analysis markdown")
+        self.assertTrue(observability.calls)
+        self.assertTrue(observability.span.outputs)
+        self.assertEqual(observability.span.outputs[-1]["analysis"], "analysis markdown")
+
+    def test_workflow_error_details_handles_empty_image_list(self):
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+        )
+        invocation = TutorInvocationPayload.model_validate(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+            }
+        )
+
+        details = service._workflow_error_details(
+            OutputValidationError("bad table", details=["missing header"]),
+            [],
+            invocation,
+        )
+
+        self.assertIn("Expected question numbers: [none].", details)
+        self.assertIn("missing header", details)
+
+    def test_record_invocation_noops_when_status_store_is_missing(self):
+        service = TutorInvocationService(
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(),
+            artifact_writer=FakeArtifactWriter(),
+        )
+        service.status_store = None
+        invocation = TutorInvocationPayload.model_validate(
+            {
+                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+            }
+        )
+
+        self.assertIsNone(
+            service._record_invocation(
+                invocation_id="inv-1",
+                invocation=invocation,
+                status=AgentInvocationStatus.RECEIVED,
+            )
+        )
+
     def test_successful_invocation_checks_guardrails_around_workflow(self):
         guardrail_calls = []
 
@@ -75,6 +368,8 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             image_data_uris=["data:image/png;base64,ZmFrZQ=="],
             question_context="student context",
             expected_question_numbers=[None],
+            invocation_id=ANY,
+            status_store=ANY,
         )
         self.assertEqual(
             guardrail_calls,

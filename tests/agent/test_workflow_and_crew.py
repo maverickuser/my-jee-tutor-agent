@@ -46,7 +46,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
         llm_client = Mock()
         fake_tool = FakeVisionTool()
 
-        def fake_build_vision_tool(_client, _images, state):
+        def fake_build_vision_tool(_client, _images, state, **kwargs):
             fake_tool.state = state
             return fake_tool
 
@@ -84,7 +84,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
     def test_run_tutor_workflow_rejects_invalid_markdown(self):
         fake_tool = FakeVisionTool(output="generic answer")
 
-        def fake_build_vision_tool(_client, _images, state):
+        def fake_build_vision_tool(_client, _images, state, **kwargs):
             fake_tool.state = state
             return fake_tool
 
@@ -104,7 +104,7 @@ class WorkflowAndCrewTest(unittest.TestCase):
             output=json.dumps({"questions": [question()]})
         )
 
-        def fake_build(_client, _images, state):
+        def fake_build(_client, _images, state, **kwargs):
             fake_tool.state = state
             return fake_tool
 
@@ -196,7 +196,13 @@ class WorkflowAndCrewTest(unittest.TestCase):
             build_tutor_crew(image_data_uris=["data:image/png;base64,ZmFrZQ=="])
 
         llm_client_class.assert_called_once_with(prompt_provider=prompts)
-        build_tool.assert_called_once_with(llm_client, ["data:image/png;base64,ZmFrZQ=="], None)
+        build_tool.assert_called_once_with(
+            llm_client,
+            ["data:image/png;base64,ZmFrZQ=="],
+            None,
+            invocation_id=None,
+            status_store=None,
+        )
         build_agent.assert_called_once_with(fake_tool, prompts)
         build_task.assert_called_once_with(fake_agent, fake_tool, prompts)
         crew_class.assert_called_once()
@@ -205,6 +211,34 @@ class WorkflowAndCrewTest(unittest.TestCase):
         self.assertEqual(kwargs["tasks"], [fake_task])
         self.assertFalse(kwargs["verbose"])
         self.assertIsNotNone(llm_client)
+
+    def test_build_tutor_crew_threads_expected_questions_into_tool(self):
+        fake_tool = object()
+
+        with (
+            patch("jee_tutor.agent.crew.PromptProvider") as prompt_provider_class,
+            patch("jee_tutor.agent.crew.VisionLLMClient") as llm_client_class,
+            patch("jee_tutor.agent.crew.build_vision_tool", return_value=fake_tool) as build_tool,
+            patch("jee_tutor.agent.crew.build_tutor_agent", return_value=object()),
+            patch("jee_tutor.agent.crew.build_diagnosis_task", return_value=object()),
+            patch("jee_tutor.agent.crew.Crew"),
+        ):
+            prompts = prompt_provider_class.return_value
+            llm_client = llm_client_class.return_value
+            build_tutor_crew(
+                image_data_uris=["data:image/png;base64,ZmFrZQ=="],
+                expected_question_numbers=["6"],
+                invocation_id="inv-1",
+            )
+
+        build_tool.assert_called_once_with(
+            llm_client,
+            ["data:image/png;base64,ZmFrZQ=="],
+            None,
+            ["6"],
+            invocation_id="inv-1",
+            status_store=None,
+        )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ locals {
   agentcore_runtime_name       = substr("JeeTutorAgent_${replace(var.project_name, "/[^a-zA-Z0-9_]/", "_")}", 0, 48)
   agentcore_endpoint_name      = "DEFAULT"
   email_delivery_function_name = substr("${var.project_name}-email-delivery", 0, 64)
+  invocation_status_table_name = "${var.project_name}-invocations"
   email_body_template_compact  = replace(replace(trimspace(var.email_body_template), "\n", " "), "\r", " ")
 
   # Use created guardrail if not overridden via var.bedrock_guardrail_id.

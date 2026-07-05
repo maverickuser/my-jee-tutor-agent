@@ -1,3 +1,4 @@
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -77,3 +78,64 @@ class ErrorResponse(BaseModel):
     error: str
     details: list[str] = Field(default_factory=list)
     runtime_commit_sha: str | None = None
+
+
+class AgentInvocationStatus(StrEnum):
+    RECEIVED = "RECEIVED"
+    VALIDATED = "VALIDATED"
+    IN_PROGRESS = "IN_PROGRESS"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    REPLAYED = "REPLAYED"
+    BLOCKED = "BLOCKED"
+
+
+class AgentLLMCallStatus(StrEnum):
+    STARTED = "STARTED"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    RETRIED = "RETRIED"
+
+
+class AgentLLMCallRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    llm_call_id: str = Field(min_length=1)
+    batch_index: int = Field(ge=0)
+    batch_size: int | None = Field(default=None, ge=0)
+    model: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    status: AgentLLMCallStatus
+    attempt_number: int = Field(ge=1)
+    started_at: str
+    ended_at: str | None = None
+    duration_ms: int | None = Field(default=None, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    error_type: str | None = None
+    error_message: str | None = None
+    response_summary: str | None = None
+
+
+class AgentInvocationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invocation_id: str = Field(min_length=1)
+    idempotency_key: str | None = None
+    status: AgentInvocationStatus
+    status_reason: str | None = None
+    subject: str | None = None
+    image_count: int = Field(ge=0)
+    recipient_email: str | None = None
+    created_at: str
+    updated_at: str
+    completed_at: str | None = None
+    runtime_commit_sha: str | None = None
+    analysis_pdf_uri: str | None = None
+    email_delivery_id: str | None = None
+    email_status: str | None = None
+    email_error: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    llm_calls: list[AgentLLMCallRecord] = Field(default_factory=list)

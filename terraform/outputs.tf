@@ -40,3 +40,8 @@ output "bedrock_guardrail_version" {
   value       = var.bedrock_guardrail_version
   description = "Guardrail version injected into the AgentCore runtime."
 }
+
+output "invocation_status_table_name" {
+  value       = aws_dynamodb_table.invocation_status.name
+  description = "DynamoDB table used for agent invocation status tracking."
+}

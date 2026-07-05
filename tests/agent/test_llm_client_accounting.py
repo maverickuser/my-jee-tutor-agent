@@ -3,7 +3,12 @@ from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 from jee_tutor.agent.config_loader import LLMConfig
-from jee_tutor.agent.llm_client import VisionLLMClient
+from jee_tutor.agent.llm_client import (
+    VisionLLMClient,
+    _compact_token_detail,
+    _estimate_image_bytes_from_data_uri,
+    _response_value,
+)
 from jee_tutor.agent.model_config import VisionModelConfig
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import VISION_SYSTEM, VISION_USER
@@ -186,6 +191,71 @@ class LLMClientAccountingTest(unittest.TestCase):
         self.assertNotIn("preset_cache_key", kwargs)
         self.assertEqual(kwargs["extra_body"], {"safe": "kept"})
 
+    def test_structured_output_rejects_non_gemini_without_legacy_mode(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "openai/gpt-4o"},
+                "completion": {"temperature": 0.2},
+                "structured_diagnosis": {
+                    "enabled": True,
+                    "allow_legacy_markdown": False,
+                },
+            }
+        )
+        observability = RecordingObservability()
+        client = VisionLLMClient(
+            model_config=VisionModelConfig(environ={"OPENAI_API_KEY": "openai-key"}, config=config),
+            observability=observability,
+            prompt_provider=PromptProvider(config=config, observability=observability),
+            completion_fn=Mock(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Structured diagnosis output is enabled only"):
+            client.analyze_vision("data:image/png;base64,AA==")
+
+    def test_structured_output_falls_back_to_markdown_when_legacy_mode_is_enabled(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "openai/gpt-4o"},
+                "completion": {"temperature": 0.2},
+                "structured_diagnosis": {
+                    "enabled": True,
+                    "allow_legacy_markdown": True,
+                },
+            }
+        )
+        observability = RecordingObservability()
+        prompt_provider = PromptProvider(config=config, observability=observability)
+        client = VisionLLMClient(
+            model_config=VisionModelConfig(environ={"OPENAI_API_KEY": "openai-key"}, config=config),
+            observability=observability,
+            prompt_provider=prompt_provider,
+            completion_fn=Mock(
+                return_value={"choices": [{"message": {"content": " markdown "}}]}
+            ),
+        )
+
+        self.assertEqual(client.analyze_vision("data:image/png;base64,AA=="), "markdown")
+
+    def test_structured_output_rejects_unpinned_gemini_model(self):
+        config = LLMConfig(
+            {
+                "vision": {"model": "gemini/gemini-3-flash-preview"},
+                "completion": {"temperature": 0.2},
+                "structured_diagnosis": {"enabled": True},
+            }
+        )
+        observability = RecordingObservability()
+        client = VisionLLMClient(
+            model_config=VisionModelConfig(environ={"GOOGLE_API_KEY": "google-key"}, config=config),
+            observability=observability,
+            prompt_provider=PromptProvider(config=config, observability=observability),
+            completion_fn=Mock(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "Structured diagnosis model must be pinned"):
+            client.analyze_vision("data:image/png;base64,AA==")
+
     def test_updates_langfuse_generation_with_usage_and_cost_details(self):
         config = LLMConfig(
             {
@@ -350,6 +420,47 @@ class LLMClientAccountingTest(unittest.TestCase):
     def test_accounting_is_empty_without_usage_or_cost(self):
         with patch("jee_tutor.agent.llm_client.completion_cost", return_value=None):
             self.assertEqual(VisionLLMClient._generation_accounting({}, "model"), {})
+
+    def test_request_size_summary_handles_non_list_messages(self):
+        self.assertEqual(VisionLLMClient._request_size_summary({"messages": None}), {})
+
+    def test_request_size_summary_ignores_malformed_message_parts(self):
+        request_kwargs = {
+            "messages": [
+                "ignored",
+                {"role": "assistant", "content": "ignored"},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": None}},
+                        {"type": "image_url", "image_url": {}},
+                        {"type": "image_url", "image_url": {"url": "http://example.com"}},
+                        {"type": "unsupported", "text": "ignored"},
+                    ],
+                },
+            ]
+        }
+
+        self.assertEqual(
+            VisionLLMClient._request_size_summary(request_kwargs),
+            {
+                "message_count": 3,
+                "system_chars": 0,
+                "user_text_chars": 0,
+                "image_count": 1,
+                "image_uri_chars": 18,
+                "image_bytes_estimate": 0,
+            },
+        )
+
+    def test_response_value_and_image_estimation_helpers_handle_invalid_inputs(self):
+        self.assertIsNone(_response_value({}, "usage"))
+        self.assertEqual(_compact_token_detail("value"), "value")
+        self.assertEqual(_estimate_image_bytes_from_data_uri("not-a-data-uri"), 0)
+        self.assertEqual(
+            _estimate_image_bytes_from_data_uri("data:image/png;base64,%%%"),
+            0,
+        )
 
     def test_usage_details_compact_pydantic_like_models(self):
         response = {"usage": UsageModel()}
