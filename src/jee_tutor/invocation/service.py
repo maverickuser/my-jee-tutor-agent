@@ -310,6 +310,10 @@ class TutorInvocationService:
         analysis_markdown_uri = None
         artifact_errors: list[str] = []
         if invocation.should_write_analysis_pdf:
+            logger.info(
+                "artifact_write_after_guardrail_pass_count metric_name=artifact.write_after_guardrail_pass "
+                "metric_value=1 metric_unit=Count"
+            )
             try:
                 artifact_result = self.artifact_writer.write_for_invocation(
                     analysis_markdown=analysis,
@@ -334,6 +338,10 @@ class TutorInvocationService:
             analysis_pdf_uri=analysis_pdf_uri,
         )
 
+        logger.info(
+            "response_after_guardrail_pass_count metric_name=response.after_guardrail_pass "
+            "metric_value=1 metric_unit=Count"
+        )
         return TutorInvocationResponse(
             analysis=analysis,
             message=self._pdf_wait_message(analysis_pdf_uri),

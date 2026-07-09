@@ -17,6 +17,7 @@ from jee_tutor.agent.diagnosis_output import (
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.output_validation import REQUIRED_MARKDOWN_COLUMNS, OutputValidationError
 from jee_tutor.agent.prompts import VISION_TOOL_DESCRIPTION
+from jee_tutor.application.vision import VisionDiagnosisService
 from jee_tutor.invocation.models import AgentLLMCallRecord, AgentLLMCallStatus
 from jee_tutor.invocation.status_store import InvocationStatusStore
 
@@ -58,6 +59,14 @@ class VisionToolCallState:
     error: str | None = None
     first_error: str | None = None
     observation: str | None = None
+    observation_validated: bool = False
+    observation_rejected: bool = False
+    observation_rejection_category: str | None = None
+    semantic_retry_count: int = 0
+    semantic_retry_budget: int = 1
+    cached_replay_count: int = 0
+    observation_replaced_count: int = 0
+    semantic_retry_exhausted_count: int = 0
     error_snapshot: ExceptionSnapshot | None = None
     transport_attempt_count: int = 0
     waiter_timeout_seconds: float = 30.0
@@ -73,6 +82,74 @@ class VisionToolCallState:
     @property
     def successful_execution_count(self) -> int:
         return self.successful_call_count
+
+    @property
+    def semantic_retry_budget_remaining(self) -> int:
+        return max(self.semantic_retry_budget - self.semantic_retry_count, 0)
+
+    def mark_observation_valid(self) -> None:
+        self.observation_validated = True
+        self.observation_rejected = False
+        self.observation_rejection_category = None
+
+    def reject_observation(self, category: str) -> None:
+        self.observation_validated = False
+        self.observation_rejected = True
+        self.observation_rejection_category = category
+        logger.info(
+            "vision_observation_rejected category=%s semantic_retry_budget_remaining=%s",
+            category,
+            self.semantic_retry_budget_remaining,
+        )
+
+    def can_replay_cached_observation(self) -> bool:
+        return (
+            self.status == ToolExecutionStatus.SUCCEEDED
+            and self.observation is not None
+            and not self.observation_rejected
+        )
+
+    def can_execute_semantic_retry(self) -> bool:
+        return (
+            self.status == ToolExecutionStatus.SUCCEEDED
+            and self.observation is not None
+            and self.observation_rejected
+            and self.semantic_retry_count < self.semantic_retry_budget
+        )
+
+    def begin_execution(self) -> None:
+        self.status = ToolExecutionStatus.RUNNING
+        self.execution_count += 1
+
+    def begin_semantic_retry(self) -> None:
+        self.semantic_retry_count += 1
+        self.begin_execution()
+        logger.info(
+            "vision_semantic_retry_started semantic_retry_count=%s "
+            "semantic_retry_budget=%s rejection_category=%s",
+            self.semantic_retry_count,
+            self.semantic_retry_budget,
+            self.observation_rejection_category,
+        )
+
+    def mark_execution_success(self, observation: str, transport_attempt_count: int) -> None:
+        replacing_rejected_observation = self.observation_rejected
+        self.transport_attempt_count = transport_attempt_count
+        self.status = ToolExecutionStatus.SUCCEEDED
+        self.success = True
+        self.successful_call_count += 1
+        self.error = None
+        self.error_snapshot = None
+        self.observation = observation
+        self.observation_validated = False
+        self.observation_rejected = False
+        self.observation_rejection_category = None
+        if replacing_rejected_observation:
+            self.observation_replaced_count += 1
+            logger.info(
+                "vision_observation_replaced observation_replaced_count=%s",
+                self.observation_replaced_count,
+            )
 
 
 class VisionInput(BaseModel):
@@ -130,16 +207,10 @@ class VisionAnalysisTool(BaseTool):
         try:
             analysis = self._analyze_images_in_batches(resolved_images)
             with self.call_state._condition:
-                self.call_state.transport_attempt_count = getattr(
-                    self.llm_client,
-                    "transport_attempt_count",
-                    0,
+                self.call_state.mark_execution_success(
+                    analysis,
+                    getattr(self.llm_client, "transport_attempt_count", 0),
                 )
-                self.call_state.status = ToolExecutionStatus.SUCCEEDED
-                self.call_state.success = True
-                self.call_state.successful_call_count += 1
-                self.call_state.error = None
-                self.call_state.observation = analysis
                 self.call_state._condition.notify_all()
             return analysis
         except Exception as exc:
@@ -163,28 +234,30 @@ class VisionAnalysisTool(BaseTool):
             ) from exc
 
     def _analyze_images_in_batches(self, resolved_images: list[str]) -> str:
-        if len(resolved_images) <= self.max_images_per_call:
+        batch_sizes = [
+            len(resolved_images[start : start + self.max_images_per_call])
+            for start in range(0, len(resolved_images), self.max_images_per_call)
+        ]
+        batch_index = 0
+
+        def analyze_batch(
+            batch_images: list[str],
+            batch_expected_question_numbers: list[str | None] | None,
+        ) -> str:
+            nonlocal batch_index
+            current_batch_index = batch_index
+            batch_index += 1
             return self._analyze_batch(
-                resolved_images,
-                self.expected_question_numbers[: len(resolved_images)] or None,
-                batch_index=0,
+                batch_images,
+                batch_expected_question_numbers,
+                batch_index=current_batch_index,
             )
 
-        batch_outputs: list[str] = []
-        batch_sizes: list[int] = []
-        batch_question_numbers = self.expected_question_numbers or []
-        for start in range(0, len(resolved_images), self.max_images_per_call):
-            end = start + self.max_images_per_call
-            batch_images = resolved_images[start:end]
-            batch_expected_question_numbers = batch_question_numbers[start:end] or None
-            batch_sizes.append(len(batch_images))
-            batch_outputs.append(
-                self._analyze_batch(
-                    batch_images,
-                    batch_expected_question_numbers,
-                    batch_index=len(batch_outputs),
-                )
-            )
+        batch_outputs = VisionDiagnosisService(analyze_batch).analyze(
+            resolved_images,
+            expected_question_numbers=self.expected_question_numbers,
+            max_images_per_call=self.max_images_per_call,
+        )
         return self._merge_batch_outputs(batch_outputs, batch_sizes, len(resolved_images))
 
     def _analyze_batch(
@@ -341,8 +414,10 @@ class VisionAnalysisTool(BaseTool):
             self.call_state.called = True
             self.call_state.call_count += 1
             if self.call_state.status == ToolExecutionStatus.NOT_STARTED:
-                self.call_state.status = ToolExecutionStatus.RUNNING
-                self.call_state.execution_count += 1
+                self.call_state.begin_execution()
+                return True
+            if self.call_state.can_execute_semantic_retry():
+                self.call_state.begin_semantic_retry()
                 return True
             return False
 
@@ -357,8 +432,26 @@ class VisionAnalysisTool(BaseTool):
             if (
                 self.call_state.status == ToolExecutionStatus.SUCCEEDED
                 and self.call_state.observation is not None
+                and self.call_state.can_replay_cached_observation()
             ):
+                self.call_state.cached_replay_count += 1
                 return self.call_state.observation
+            if (
+                self.call_state.status == ToolExecutionStatus.SUCCEEDED
+                and self.call_state.observation_rejected
+            ):
+                self.call_state.semantic_retry_exhausted_count += 1
+                logger.warning(
+                    "vision_semantic_retry_exhausted category=%s "
+                    "semantic_retry_count=%s semantic_retry_budget=%s",
+                    self.call_state.observation_rejection_category,
+                    self.call_state.semantic_retry_count,
+                    self.call_state.semantic_retry_budget,
+                )
+                raise RuntimeError(
+                    "Vision analyzer semantic retry budget exhausted for rejected "
+                    f"observation: {self.call_state.observation_rejection_category or 'unknown'}"
+                )
             if self.call_state.error_snapshot is not None:
                 raise self.call_state.error_snapshot.reconstruct()
             raise RuntimeError("Vision analyzer reached an invalid memoization state.")

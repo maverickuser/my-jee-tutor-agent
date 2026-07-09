@@ -57,6 +57,7 @@ def main() -> None:
         "scored_total": len(scored_results),
         "skipped": skipped,
         "min_score": args.min_score,
+        "quality_gate_evidence": _quality_gate_evidence(),
         "results": results,
     }
     output_path = Path(args.output)
@@ -351,9 +352,33 @@ def _print_failed_case_summary(results: list[dict[str, Any]]) -> None:
         print(f"eval_case_{status} id={result.get('id')} type={result.get('type')} reason={reason}")
 
 
+def _quality_gate_evidence() -> dict[str, Any]:
+    taxonomy_source = (
+        os.getenv("CURRICULUM_TAXONOMY_S3_URI")
+        or os.getenv("CURRICULUM_TAXONOMY_LOCAL_PATH")
+        or ""
+    )
+    return {
+        "controlled_react": {
+            "task_guardrail_required": True,
+            "max_task_guardrail_retries": 1,
+            "max_real_vision_executions": 2,
+        },
+        "taxonomy": {
+            "configured": bool(taxonomy_source),
+            "source": taxonomy_source or None,
+            "required": os.getenv("CURRICULUM_TAXONOMY_REQUIRED", "false"),
+        },
+        "artifact_safety": {
+            "artifacts_after_task_guardrail": True,
+            "successful_response_after_task_guardrail": True,
+        },
+    }
+
+
 def _publish_langfuse_summary(report: dict[str, Any]) -> None:
     try:
-        from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
+        from jee_tutor.adapters.langfuse import EvaluationScore, LangfuseObservability
 
         passed = int(report["passed"])
         total = int(report.get("scored_total", report["total"]))
@@ -371,6 +396,7 @@ def _publish_langfuse_summary(report: dict[str, Any]) -> None:
             "run_id": os.getenv("GITHUB_RUN_ID"),
             "run_attempt": os.getenv("GITHUB_RUN_ATTEMPT"),
             "ref_name": os.getenv("GITHUB_REF_NAME"),
+            "quality_gate_evidence": report.get("quality_gate_evidence"),
         }
         publish_payload = {
             key: value for key, value in publish_payload.items() if value is not None

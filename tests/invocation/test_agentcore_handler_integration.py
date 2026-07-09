@@ -266,10 +266,14 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         email_coordinator.request_delivery.assert_called_once()
 
     def test_output_validation_error_details_are_preserved(self):
+        guardrail_calls = []
+        artifact_writer = FakeArtifactWriter()
+        email_coordinator = Mock()
         service = TutorInvocationService(
-            guardrail=FakeRuntimeGuardrail(),
+            guardrail=FakeRuntimeGuardrail(calls=guardrail_calls),
             workflow=Mock(side_effect=OutputValidationError("bad table", details=["missing header"])),
-            artifact_writer=FakeArtifactWriter(),
+            artifact_writer=artifact_writer,
+            email_coordinator=email_coordinator,
         )
 
         response = service.handle(
@@ -280,6 +284,9 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
 
         self.assertEqual(response["error"], "Tutor workflow failed while analyzing images.")
         self.assertIn("missing header", response["details"])
+        self.assertEqual([call[0] for call in guardrail_calls], ["input"])
+        self.assertEqual(artifact_writer.calls, [])
+        email_coordinator.request_delivery.assert_not_called()
 
     def test_successful_span_is_updated_with_response(self):
         observability = FakeObservability()
@@ -529,11 +536,12 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             artifact_writer=artifact_writer,
         )
 
-        response = service.handle(
-            {
-                "image_data_uri": "data:image/png;base64,ZmFrZQ==",
-            }
-        )
+        with self.assertLogs("jee_tutor.invocation.service", level="INFO") as logs:
+            response = service.handle(
+                {
+                    "image_data_uri": "data:image/png;base64,ZmFrZQ==",
+                }
+            )
 
         self.assertEqual(
             response,
@@ -549,6 +557,9 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
             },
         )
         self.assertEqual(artifact_writer.calls[0]["analysis_markdown"], "analysis markdown")
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("artifact_write_after_guardrail_pass_count", joined_logs)
+        self.assertIn("response_after_guardrail_pass_count", joined_logs)
 
     def test_recipient_email_triggers_async_email_request(self):
         from jee_tutor.artifacts.writer import AnalysisArtifactResult

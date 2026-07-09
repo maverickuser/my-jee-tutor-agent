@@ -80,7 +80,46 @@ class VisionToolTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(tool.call_state.call_count, 2)
         self.assertEqual(tool.call_state.successful_call_count, 1)
+        self.assertEqual(tool.call_state.cached_replay_count, 1)
         self.assertEqual(llm_client.calls, [([image], None, None)])
+
+    def test_tool_reexecutes_once_after_rejected_observation(self):
+        class SequentialClient(FakeVisionLLMClient):
+            def analyze_vision(self, image_data_uris, user_prompt=None, *, expected_question_numbers=None):
+                self.calls.append((image_data_uris, user_prompt, expected_question_numbers))
+                return f"analysis-{len(self.calls)}"
+
+        client = SequentialClient()
+        tool = VisionAnalysisTool(
+            llm_client=client,
+            preloaded_image_data_uris=["data:image/png;base64,x"],
+        )
+
+        self.assertEqual(tool.run_preloaded(), "analysis-1")
+        tool.call_state.reject_observation("question_count_mismatch")
+        self.assertEqual(tool.run_preloaded(), "analysis-2")
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(tool.call_state.execution_count, 2)
+        self.assertEqual(tool.call_state.semantic_retry_count, 1)
+        self.assertEqual(tool.call_state.observation_replaced_count, 1)
+        self.assertFalse(tool.call_state.observation_rejected)
+
+    def test_tool_does_not_replay_rejected_observation_when_retry_exhausted(self):
+        tool = VisionAnalysisTool(
+            llm_client=FakeVisionLLMClient(),
+            preloaded_image_data_uris=["data:image/png;base64,x"],
+        )
+
+        self.assertEqual(tool.run_preloaded(), "analysis")
+        tool.call_state.reject_observation("schema_invalid")
+        tool.call_state.semantic_retry_count = tool.call_state.semantic_retry_budget
+
+        with self.assertRaisesRegex(RuntimeError, "semantic retry budget exhausted"):
+            tool.run_preloaded()
+
+        self.assertEqual(tool.call_state.execution_count, 1)
+        self.assertEqual(tool.call_state.semantic_retry_exhausted_count, 1)
 
     def test_tool_uses_preloaded_images_when_crewai_sends_placeholder_filename(self):
         llm_client = FakeVisionLLMClient()
@@ -238,6 +277,7 @@ class VisionToolTest(unittest.TestCase):
         tool.call_state.status = ToolExecutionStatus.SUCCEEDED
         tool.call_state.observation = "cached observation"
         self.assertEqual(tool._wait_for_or_replay(), "cached observation")
+        self.assertEqual(tool.call_state.cached_replay_count, 1)
 
         tool.call_state.status = ToolExecutionStatus.FAILED
         tool.call_state.error_snapshot = None

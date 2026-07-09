@@ -30,6 +30,8 @@ class InvocationStatusStore(Protocol):
 
     def append_llm_call(self, invocation_id: str, record: AgentLLMCallRecord) -> None: ...
 
+    def append_event(self, invocation_id: str, event: Mapping[str, Any]) -> None: ...
+
 
 class NullInvocationStatusStore:
     def upsert_invocation(self, record: AgentInvocationRecord) -> None:
@@ -39,6 +41,9 @@ class NullInvocationStatusStore:
         return None
 
     def append_llm_call(self, invocation_id: str, record: AgentLLMCallRecord) -> None:
+        return None
+
+    def append_event(self, invocation_id: str, event: Mapping[str, Any]) -> None:
         return None
 
 
@@ -158,6 +163,22 @@ class DynamoDbInvocationStatusStore:
             },
         )
 
+    def append_event(self, invocation_id: str, event: Mapping[str, Any]) -> None:
+        table = self._table_client()
+        safe_event = _safe_event(event)
+        table.update_item(
+            Key={"invocation_id": invocation_id},
+            UpdateExpression=(
+                "SET events = list_append(if_not_exists(events, :empty_events), :event), "
+                "updated_at = :updated_at"
+            ),
+            ExpressionAttributeValues={
+                ":empty_events": [],
+                ":event": [safe_event],
+                ":updated_at": _utc_now(),
+            },
+        )
+
     def _table_client(self):
         if self._table is None:
             self._table = boto3.resource("dynamodb", region_name=self.region).Table(
@@ -216,3 +237,25 @@ def build_agent_invocation_record(
         error_message=error_message,
         llm_calls=[AgentLLMCallRecord.model_validate(call) for call in (llm_calls or [])],
     )
+
+
+def _safe_event(event: Mapping[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {"created_at": _utc_now()}
+    forbidden_fragments = (
+        "image_data_uri",
+        "base64",
+        "recipient_email",
+        "raw_output",
+        "full_output",
+        "stack_trace",
+    )
+    for key, value in event.items():
+        key_text = str(key)
+        normalized_key = key_text.lower()
+        if any(fragment in normalized_key for fragment in forbidden_fragments):
+            continue
+        if value is None or isinstance(value, (str, int, float, bool)):
+            safe[key_text] = str(value)[:500] if isinstance(value, str) else value
+        else:
+            safe[key_text] = str(value)[:500]
+    return safe

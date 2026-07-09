@@ -6,13 +6,19 @@ import threading
 from unittest.mock import Mock
 
 from eval_runner import run_strict_cases, write_report
+from jee_tutor.adapters.crewai import VisionAnalysisTool
+from jee_tutor.adapters.litellm import VisionLLMClient
 from jee_tutor.agent.factories import MandatoryVisionToolLLM, OrchestrationCallBudgetError
-from jee_tutor.agent.llm_client import VisionLLMClient
-from jee_tutor.agent.tools import VisionAnalysisTool
 
 
 IMAGE = "data:image/png;base64,cmVkYWN0ZWQ="
-OBSERVATION = '{"questions":[{"question_number":"1"}]}'
+OBSERVATION = (
+    '{"questions":[{"question_number":"1","chapter":"Algebra","topic":"Quadratic equations",'
+    '"what_you_thought":"Factoring was enough.",'
+    '"why_that_thought_is_wrong":"The sign of the middle term was handled incorrectly.",'
+    '"exact_concept_gap":"Factorization with signed coefficients.",'
+    '"what_you_must_deep_dive":"Practice splitting the middle term with sign checks."}]}'
+)
 
 
 class FakeVisionClient(VisionLLMClient):

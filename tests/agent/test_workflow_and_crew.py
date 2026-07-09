@@ -175,6 +175,25 @@ class WorkflowAndCrewTest(unittest.TestCase):
                 with self.assertRaisesRegex(OutputValidationError, message):
                     _validate_vision_tool_call(VisionToolCallState(**values), 1)
 
+    def test_react_validation_allows_one_semantic_retry_execution(self):
+        state = VisionToolCallState(
+            called=True,
+            success=True,
+            call_count=2,
+            execution_count=2,
+            successful_call_count=2,
+            image_count=1,
+            image_source="preloaded_invocation_images",
+            semantic_retry_count=1,
+        )
+
+        _validate_vision_tool_call(
+            state,
+            1,
+            max_execution_count=2,
+            max_successful_call_count=2,
+        )
+
     def test_build_tutor_crew_wires_agent_task_and_tool(self):
         fake_tool = object()
         fake_agent = object()
@@ -204,7 +223,12 @@ class WorkflowAndCrewTest(unittest.TestCase):
             status_store=None,
         )
         build_agent.assert_called_once_with(fake_tool, prompts)
-        build_task.assert_called_once_with(fake_agent, fake_tool, prompts)
+        build_task.assert_called_once_with(
+            fake_agent,
+            fake_tool,
+            prompts,
+            invocation_id=None,
+        )
         crew_class.assert_called_once()
         _, kwargs = crew_class.call_args
         self.assertEqual(kwargs["agents"], [fake_agent])

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from scripts.run_agentcore_smoke import (  # noqa: E402
     IN_PROGRESS_ERROR,
+    _quality_gate_evidence,
     invoke_runtime,
     invoke_until_terminal,
     main,
@@ -47,6 +48,13 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             client.invoke_agent_runtime.call_args.kwargs["runtimeSessionId"],
             "session-id-that-is-longer-than-thirty-three-characters",
         )
+
+    def test_quality_gate_evidence_includes_controlled_react_and_artifact_safety(self):
+        evidence = _quality_gate_evidence()
+
+        self.assertTrue(evidence["controlled_react"]["task_guardrail_required"])
+        self.assertEqual(evidence["controlled_react"]["max_real_vision_executions"], 2)
+        self.assertTrue(evidence["artifact_safety"]["artifact_replay_checked"])
 
     @patch("scripts.run_agentcore_smoke.invoke_runtime")
     def test_in_progress_response_is_polled_until_terminal(self, invoke):

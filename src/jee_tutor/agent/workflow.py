@@ -3,7 +3,9 @@ import logging
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.crew import build_tutor_crew
 from jee_tutor.agent.diagnosis_output import (
+    DiagnosisResponse,
     parse_and_validate_diagnosis,
+    render_diagnosis_markdown,
     render_and_validate_diagnosis,
 )
 from jee_tutor.agent.llm_client import VisionLLMClient
@@ -72,7 +74,12 @@ def run_tutor_workflow(
         if hasattr(vision_tool, "expected_question_numbers"):
             vision_tool.expected_question_numbers = expected_question_numbers or []
         analysis = vision_tool.run_preloaded().strip()
-    _validate_vision_tool_call(tool_call_state, len(resolved_image_data_uris))
+    _validate_vision_tool_call(
+        tool_call_state,
+        len(resolved_image_data_uris),
+        max_execution_count=2 if use_react else 1,
+        max_successful_call_count=2 if use_react else 1,
+    )
     logger.info(
         "diagnosis_operation_counts crew_kickoff_count=%s "
         "vision_tool_request_count=%s vision_tool_execution_count=%s "
@@ -84,16 +91,21 @@ def run_tutor_workflow(
         tool_call_state.transport_attempt_count,
     )
     if analysis.lstrip().startswith("{"):
-        diagnosis = parse_and_validate_diagnosis(
-            analysis,
-            expected_image_count=len(resolved_image_data_uris),
-            expected_question_numbers=expected_question_numbers,
-        )
-        return DiagnosisMarkdown(
-            render_and_validate_diagnosis(
+        if use_react:
+            diagnosis = DiagnosisResponse.model_validate_json(analysis)
+            markdown = render_diagnosis_markdown(diagnosis)
+        else:
+            diagnosis = parse_and_validate_diagnosis(
+                analysis,
+                expected_image_count=len(resolved_image_data_uris),
+                expected_question_numbers=expected_question_numbers,
+            )
+            markdown = render_and_validate_diagnosis(
                 diagnosis,
                 expected_question_numbers=expected_question_numbers,
-            ),
+            )
+        return DiagnosisMarkdown(
+            markdown,
             diagnosis,
         )
     validate_markdown_analysis(
@@ -114,6 +126,9 @@ def _crew_output_text(result: object) -> str:
 def _validate_vision_tool_call(
     tool_call_state: VisionToolCallState,
     expected_image_count: int,
+    *,
+    max_execution_count: int = 1,
+    max_successful_call_count: int = 1,
 ) -> None:
     if not tool_call_state.called:
         raise OutputValidationError(
@@ -129,12 +144,12 @@ def _validate_vision_tool_call(
                 f"{tool_call_state.first_error or tool_call_state.error or '[unknown]'}",
             ],
         )
-    if tool_call_state.execution_count not in {0, 1}:
+    if tool_call_state.execution_count < 0 or tool_call_state.execution_count > max_execution_count:
         raise OutputValidationError(
             "Workflow executed the vision analysis tool more than once.",
             [f"Vision tool execution count: {tool_call_state.execution_count}."],
         )
-    if tool_call_state.successful_call_count != 1:
+    if not (1 <= tool_call_state.successful_call_count <= max_successful_call_count):
         raise OutputValidationError(
             "Vision analysis tool did not complete successfully exactly once.",
             [

@@ -139,3 +139,4 @@ class AgentInvocationRecord(BaseModel):
     error_type: str | None = None
     error_message: str | None = None
     llm_calls: list[AgentLLMCallRecord] = Field(default_factory=list)
+    events: list[dict[str, Any]] = Field(default_factory=list)

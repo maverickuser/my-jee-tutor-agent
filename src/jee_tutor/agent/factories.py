@@ -13,7 +13,9 @@ from jee_tutor.agent.prompts import (
     TUTOR_AGENT_GOAL,
 )
 from jee_tutor.agent.rate_limit import gemini_rate_limiter, is_gemini_model
-from jee_tutor.agent.tools import VisionAnalysisTool
+from jee_tutor.agent.task_guardrails import build_diagnosis_task_guardrail
+from jee_tutor.agent.tools import VisionAnalysisTool, VisionToolCallState
+from jee_tutor.curriculum.loader import build_curriculum_validator_from_environment
 
 
 MANDATORY_VISION_TOOL_INSTRUCTION = """
@@ -133,17 +135,30 @@ def build_diagnosis_task(
     tutor_agent: Agent,
     vision_tool: VisionAnalysisTool,
     prompt_provider: PromptProvider | None = None,
+    invocation_id: str | None = None,
 ) -> Task:
     prompts = prompt_provider or PromptProvider()
     description = (
         prompts.get(DIAGNOSIS_TASK_DESCRIPTION).text.rstrip()
         + MANDATORY_VISION_TOOL_INSTRUCTION
     )
+    expected_images = getattr(vision_tool, "preloaded_image_data_uris", []) or []
+    expected_question_numbers = getattr(vision_tool, "expected_question_numbers", []) or []
+    tool_call_state = getattr(vision_tool, "call_state", None) or VisionToolCallState()
+    guardrail = build_diagnosis_task_guardrail(
+        tool_call_state=tool_call_state,
+        expected_image_count=len(expected_images),
+        expected_question_numbers=expected_question_numbers,
+        taxonomy_validator=build_curriculum_validator_from_environment(),
+        invocation_id=invocation_id,
+    )
     return Task(
         description=description,
         expected_output=STRUCTURED_OBSERVATION_EXPECTED_OUTPUT,
         agent=tutor_agent,
         tools=[vision_tool],
+        guardrail=guardrail,
+        max_retries=1,
     )
 
 
@@ -160,7 +175,7 @@ def build_crewai_llm(model_config: CrewAIModelConfig | None = None) -> LLM | Bas
 class MandatoryVisionToolLLM(BaseLLM):
     """Force CrewAI's first ReAct step to execute the preloaded vision tool."""
 
-    def __init__(self, llm: LLM | BaseLLM, max_calls: int = 2):
+    def __init__(self, llm: LLM | BaseLLM, max_calls: int = 3):
         model = _first_string_attribute(llm, "model", "model_name", "deployment_name", "name")
         temperature = _first_numeric_attribute(llm, "temperature")
         super().__init__(model=model or str(llm), temperature=temperature)

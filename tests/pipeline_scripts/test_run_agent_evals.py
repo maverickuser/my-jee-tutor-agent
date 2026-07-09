@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 from scripts.run_agent_evals import (
     _enforce_eval_gate,
     _image_input_payload,
+    _quality_gate_evidence,
     _retryable_response_error_reason,
     _run_case,
     _run_case_with_retries,
@@ -274,6 +275,24 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertEqual(payload["task"], "diagnose wrong answers")
         self.assertFalse(payload["save_analysis_pdf"])
         self.assertNotIn("image_data_uri", payload)
+
+    def test_quality_gate_evidence_includes_controlled_react_and_taxonomy_config(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "CURRICULUM_TAXONOMY_S3_URI": "s3://bucket/taxonomy.json",
+                "CURRICULUM_TAXONOMY_REQUIRED": "true",
+            },
+            clear=True,
+        ):
+            evidence = _quality_gate_evidence()
+
+        self.assertTrue(evidence["controlled_react"]["task_guardrail_required"])
+        self.assertEqual(evidence["controlled_react"]["max_task_guardrail_retries"], 1)
+        self.assertEqual(evidence["controlled_react"]["max_real_vision_executions"], 2)
+        self.assertTrue(evidence["taxonomy"]["configured"])
+        self.assertEqual(evidence["taxonomy"]["source"], "s3://bucket/taxonomy.json")
+        self.assertEqual(evidence["taxonomy"]["required"], "true")
 
 
 if __name__ == "__main__":

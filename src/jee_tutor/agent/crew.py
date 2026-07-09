@@ -1,5 +1,6 @@
 from crewai import Crew, Process
 
+from jee_tutor.agent.crew_callbacks import CrewCallbackContext, build_crew_callbacks
 from jee_tutor.agent.factories import build_diagnosis_task, build_tutor_agent
 from jee_tutor.agent.llm_client import VisionLLMClient
 from jee_tutor.agent.prompt_provider import PromptProvider
@@ -36,11 +37,30 @@ def build_tutor_crew(
             status_store=status_store,
         )
     tutor_agent = build_tutor_agent(vision_tool, prompts)
-    diagnosis_task = build_diagnosis_task(tutor_agent, vision_tool, prompts)
+    diagnosis_task = build_diagnosis_task(
+        tutor_agent,
+        vision_tool,
+        prompts,
+        invocation_id=invocation_id,
+    )
+    callbacks = build_crew_callbacks(
+        CrewCallbackContext(
+            invocation_id=invocation_id,
+            expected_image_count=len(image_data_uris or []),
+            expected_question_numbers=expected_question_numbers or [],
+            tool_call_state=getattr(vision_tool, "call_state", None)
+            or tool_call_state
+            or VisionToolCallState(),
+            status_store=status_store,
+        )
+    )
 
     return Crew(
         agents=[tutor_agent],
         tasks=[diagnosis_task],
         process=Process.sequential,
+        before_kickoff_callbacks=callbacks.before_kickoff_callbacks,
+        after_kickoff_callbacks=callbacks.after_kickoff_callbacks,
+        task_callback=callbacks.task_callback,
         verbose=False,
     )

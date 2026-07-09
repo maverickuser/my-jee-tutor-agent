@@ -29,6 +29,7 @@ class StatusStoreTest(unittest.TestCase):
         self.assertIsNone(store.upsert_invocation(Mock()))
         self.assertIsNone(store.update_invocation("inv-1"))
         self.assertIsNone(store.append_llm_call("inv-1", Mock()))
+        self.assertIsNone(store.append_event("inv-1", {"event": "CREW_STARTED"}))
 
     def test_config_from_environment_defaults_and_disables_without_table(self):
         from jee_tutor.invocation.status_store import InvocationStatusConfig
@@ -178,6 +179,35 @@ class StatusStoreTest(unittest.TestCase):
         self.assertEqual(len(table.calls), 1)
         self.assertIn("llm_calls = list_append", table.calls[0]["UpdateExpression"])
         self.assertNotIn("ExpressionAttributeNames", table.calls[0])
+
+    def test_dynamodb_store_appends_safe_event(self):
+        table = FakeTable()
+        resource = Mock()
+        resource.Table.return_value = table
+        store = DynamoDbInvocationStatusStore(table_name="invocations", region="ap-south-1")
+
+        with patch("jee_tutor.invocation.status_store.boto3.resource", return_value=resource):
+            store.append_event(
+                "inv-1",
+                {
+                    "event": "CREW_STARTED",
+                    "image_data_uri": "data:image/png;base64,secret",
+                    "recipient_email": "student@example.com",
+                    "raw_output": "full output",
+                    "tool_execution_count": 1,
+                },
+            )
+
+        self.assertEqual(len(table.calls), 1)
+        call = table.calls[0]
+        self.assertIn("events = list_append", call["UpdateExpression"])
+        event = call["ExpressionAttributeValues"][":event"][0]
+        self.assertEqual(event["event"], "CREW_STARTED")
+        self.assertEqual(event["tool_execution_count"], 1)
+        self.assertIn("created_at", event)
+        self.assertNotIn("image_data_uri", event)
+        self.assertNotIn("recipient_email", event)
+        self.assertNotIn("raw_output", event)
 
 
 if __name__ == "__main__":

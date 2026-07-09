@@ -49,7 +49,7 @@ def write_report(report: dict[str, Any], output: str) -> None:
 
 def _publish_case(result: dict[str, Any]) -> None:
     try:
-        from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
+        from jee_tutor.adapters.langfuse import EvaluationScore, LangfuseObservability
 
         metric_names = (
             "groundedness_score",
