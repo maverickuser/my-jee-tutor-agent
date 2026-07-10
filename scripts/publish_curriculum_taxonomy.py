@@ -35,16 +35,20 @@ def publish_curriculum_taxonomy(
             "sha256": local_sha256,
         }
 
-    s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=body,
-        ContentType="application/json",
-        Metadata={
-            "taxonomy-version": taxonomy.version,
-            "sha256": local_sha256,
-        },
-    )
+    try:
+        s3.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/json",
+            Metadata={
+                "taxonomy-version": taxonomy.version,
+                "sha256": local_sha256,
+            },
+        )
+    except ClientError as exc:
+        _raise_missing_bucket_error(exc, bucket, s3_uri)
+        raise
     return {
         "uploaded": True,
         "reason": "missing" if remote is None else "changed",
@@ -63,6 +67,7 @@ def _load_remote_taxonomy(s3: Any, bucket: str, key: str) -> dict[str, str] | No
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code in {"NoSuchKey", "404", "NotFound"}:
             return None
+        _raise_missing_bucket_error(exc, bucket, f"s3://{bucket}/{key}")
         raise
 
     body = response["Body"].read()
@@ -71,6 +76,15 @@ def _load_remote_taxonomy(s3: Any, bucket: str, key: str) -> dict[str, str] | No
         "version": taxonomy.version,
         "sha256": hashlib.sha256(body).hexdigest(),
     }
+
+
+def _raise_missing_bucket_error(exc: ClientError, bucket: str, s3_uri: str) -> None:
+    error_code = exc.response.get("Error", {}).get("Code")
+    if error_code == "NoSuchBucket":
+        raise RuntimeError(
+            f"Configured curriculum taxonomy bucket does not exist: {bucket}. "
+            f"Set CURRICULUM_TAXONOMY_S3_URI to an existing bucket/key. Current URI: {s3_uri}"
+        ) from exc
 
 
 def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:

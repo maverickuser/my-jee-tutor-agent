@@ -16,11 +16,17 @@ class Body:
 
 
 class FakeS3:
-    def __init__(self, existing_body: bytes | None = None):
+    def __init__(self, existing_body: bytes | None = None, missing_bucket: bool = False):
         self.existing_body = existing_body
+        self.missing_bucket = missing_bucket
         self.put_calls = []
 
     def get_object(self, **kwargs):
+        if self.missing_bucket:
+            raise ClientError(
+                {"Error": {"Code": "NoSuchBucket", "Message": "missing bucket"}},
+                "GetObject",
+            )
         if self.existing_body is None:
             raise ClientError(
                 {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
@@ -93,10 +99,26 @@ class PublishCurriculumTaxonomyTest(unittest.TestCase):
                 s3_client=s3,
             )
 
-            self.assertTrue(result["uploaded"])
-            self.assertEqual(result["reason"], "changed")
-            self.assertEqual(result["previous_version"], "2026-01")
-            self.assertEqual(len(s3.put_calls), 1)
+        self.assertTrue(result["uploaded"])
+        self.assertEqual(result["reason"], "changed")
+        self.assertEqual(result["previous_version"], "2026-01")
+        self.assertEqual(len(s3.put_calls), 1)
+
+    def test_missing_bucket_error_is_actionable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "taxonomy.json"
+            path.write_bytes(taxonomy_json())
+            s3 = FakeS3(missing_bucket=True)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Configured curriculum taxonomy bucket does not exist: missing-bucket",
+            ):
+                publish_curriculum_taxonomy(
+                    taxonomy_file=path,
+                    s3_uri="s3://missing-bucket/curriculum/jee_curriculum_taxonomy.json",
+                    s3_client=s3,
+                )
 
 
 if __name__ == "__main__":

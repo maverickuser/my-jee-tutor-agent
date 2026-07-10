@@ -46,6 +46,11 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("curriculum-taxonomy-publish-report", workflow)
         self.assertIn("prepare_curriculum_taxonomy", workflow)
         self.assertIn(
+            "format('s3://{0}/curriculum/jee_curriculum_taxonomy.json', "
+            "vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state')",
+            workflow,
+        )
+        self.assertIn(
             "TF_VAR_curriculum_taxonomy_s3_uri: ${{ env.CURRICULUM_TAXONOMY_S3_URI }}",
             workflow,
         )
@@ -62,6 +67,10 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS", terraform)
         self.assertIn("S3CurriculumTaxonomyRead", terraform)
         self.assertIn("local.curriculum_taxonomy_object_arn", terraform)
+        self.assertIn(
+            "s3://jee-tutor-agent-terraform-state/curriculum/jee_curriculum_taxonomy.json",
+            terraform,
+        )
 
 
 if __name__ == "__main__":

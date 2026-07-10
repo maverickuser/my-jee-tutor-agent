@@ -14,7 +14,7 @@ only when the remote object is missing or the local version/checksum changed.
 The default runtime URI is:
 
 ```text
-s3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json
+s3://jee-tutor-agent-terraform-state/curriculum/jee_curriculum_taxonomy.json
 ```
 
 Override the destination with the GitHub Actions variable:
@@ -38,7 +38,7 @@ the approved local-file publisher.
 Runtime deployment should receive only:
 
 ```text
-CURRICULUM_TAXONOMY_S3_URI=s3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json
+CURRICULUM_TAXONOMY_S3_URI=s3://jee-tutor-agent-terraform-state/curriculum/jee_curriculum_taxonomy.json
 CURRICULUM_TAXONOMY_REQUIRED=true
 ```
 

@@ -17,7 +17,7 @@ env:
   GARAK_HIT_THRESHOLD: ${{ vars.GARAK_HIT_THRESHOLD || '0' }}
   CD_EVAL_MIN_SCORE: ${{ vars.CD_EVAL_MIN_SCORE || '0.75' }}
   CD_EVAL_IMAGE_S3_PREFIX: ${{ vars.CD_EVAL_IMAGE_S3_PREFIX || '' }}
-  CURRICULUM_TAXONOMY_S3_URI: ${{ vars.CURRICULUM_TAXONOMY_S3_URI || 's3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json' }}
+  CURRICULUM_TAXONOMY_S3_URI: ${{ vars.CURRICULUM_TAXONOMY_S3_URI || format('s3://{0}/curriculum/jee_curriculum_taxonomy.json', vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state') }}
   CURRICULUM_TAXONOMY_REQUIRED: ${{ vars.CURRICULUM_TAXONOMY_REQUIRED || 'true' }}
   CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS: ${{ vars.CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS || '3600' }}
   BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}

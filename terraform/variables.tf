@@ -153,7 +153,7 @@ variable "cd_eval_bucket_name" {
 variable "curriculum_taxonomy_s3_uri" {
   description = "Stable S3 URI for the approved curriculum taxonomy JSON consumed by the runtime."
   type        = string
-  default     = "s3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json"
+  default     = "s3://jee-tutor-agent-terraform-state/curriculum/jee_curriculum_taxonomy.json"
 
   validation {
     condition     = var.curriculum_taxonomy_s3_uri == "" || can(regex("^s3://[^/]+/.+", var.curriculum_taxonomy_s3_uri))
