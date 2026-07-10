@@ -22,6 +22,11 @@ TOPIC_TOKEN_STOPWORDS = {
     "with",
     "without",
 }
+CHAPTER_TOKEN_STOPWORDS = {
+    *TOPIC_TOKEN_STOPWORDS,
+    "chemistry",
+    "organic",
+}
 
 
 @dataclass(frozen=True)
@@ -101,6 +106,12 @@ def validate_diagnosis_against_taxonomy(
         if len(composite_matches) > 1:
             return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
+        partial_topic_matches = _chapter_topic_tokens_intersect_label(taxonomy, chapter_matches, topic)
+        if len(partial_topic_matches) == 1:
+            continue
+        if len(partial_topic_matches) > 1:
+            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
+
         if _topic_exists_anywhere(taxonomy, topic):
             return _failure("topic_not_in_chapter", taxonomy, question=question)
         return _failure("unknown_topic", taxonomy, question=question)
@@ -132,12 +143,45 @@ def _chapter_matches(taxonomy: CurriculumTaxonomy, chapter_label: str) -> list[_
                 continue
             for topic_name in chapter.topics:
                 paths.append(_TopicPath(subject_name, chapter_name, topic_name))
+    if paths:
+        return paths
+
+    for subject_name, subject in taxonomy.subjects.items():
+        for chapter_name, chapter in subject.chapters.items():
+            chapter_labels = [chapter_name, *chapter.aliases]
+            if not any(
+                _labels_partially_contain_each_other(label, normalize_label(candidate))
+                for candidate in chapter_labels
+            ):
+                continue
+            for topic_name in chapter.topics:
+                paths.append(_TopicPath(subject_name, chapter_name, topic_name))
+    if paths:
+        return paths
+
+    requested_tokens = _significant_label_tokens(chapter_label, CHAPTER_TOKEN_STOPWORDS)
+    if not requested_tokens:
+        return []
+
+    for subject_name, subject in taxonomy.subjects.items():
+        for chapter_name, chapter in subject.chapters.items():
+            chapter_tokens: set[str] = set()
+            for candidate in [chapter_name, *chapter.aliases]:
+                chapter_tokens.update(_significant_label_tokens(candidate, CHAPTER_TOKEN_STOPWORDS))
+            if requested_tokens.isdisjoint(chapter_tokens):
+                continue
+            for topic_name in chapter.topics:
+                paths.append(_TopicPath(subject_name, chapter_name, topic_name))
     return paths
 
 
 def _label_matches_topic(topic_model: Any, topic_name: str, topic_label: str) -> bool:
     label = normalize_label(topic_label)
     return label in {normalize_label(candidate) for candidate in [topic_name, *topic_model.aliases]}
+
+
+def _labels_partially_contain_each_other(left: str, right: str) -> bool:
+    return bool(left and right and (left in right or right in left))
 
 
 def _topic_exists_anywhere(taxonomy: CurriculumTaxonomy, topic_label: str) -> bool:
@@ -172,12 +216,38 @@ def _chapter_topic_tokens_cover_label(
     return matches
 
 
+def _chapter_topic_tokens_intersect_label(
+    taxonomy: CurriculumTaxonomy,
+    chapter_matches: list[_TopicPath],
+    topic_label: str,
+) -> set[tuple[str, str]]:
+    requested_tokens = _significant_topic_tokens(topic_label)
+    if not requested_tokens:
+        return set()
+
+    matches: set[tuple[str, str]] = set()
+    for subject_name, chapter_name in {(path.subject, path.chapter) for path in chapter_matches}:
+        chapter = taxonomy.subjects[subject_name].chapters[chapter_name]
+        chapter_tokens: set[str] = set()
+        for topic_name, topic in chapter.topics.items():
+            chapter_tokens.update(_significant_topic_tokens(topic_name))
+            for alias in topic.aliases:
+                chapter_tokens.update(_significant_topic_tokens(alias))
+        if not requested_tokens.isdisjoint(chapter_tokens):
+            matches.add((subject_name, chapter_name))
+    return matches
+
+
 def _significant_topic_tokens(label: str) -> set[str]:
+    return _significant_label_tokens(label, TOPIC_TOKEN_STOPWORDS)
+
+
+def _significant_label_tokens(label: str, stopwords: set[str]) -> set[str]:
     tokens = normalize_label(label).split()
     return {
         _topic_token_root(token)
         for token in tokens
-        if token and token not in TOPIC_TOKEN_STOPWORDS and not token.isdigit()
+        if token and token not in stopwords and not token.isdigit()
     }
 
 

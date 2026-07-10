@@ -32,7 +32,24 @@ def taxonomy_payload():
                         },
                     },
                 }
-            }
+            },
+            "Chemistry": {
+                "chapters": {
+                    "Some Basic Principles of Organic Chemistry": {
+                        "aliases": ["General Organic Chemistry", "GOC"],
+                        "topics": {
+                            "Free radicals, carbocations and carbanions": {"aliases": []},
+                        },
+                    },
+                    "Organic Compounds Containing Oxygen": {
+                        "aliases": ["Alcohols Phenols and Ethers"],
+                        "topics": {
+                            "Structure of ethers": {"aliases": []},
+                            "C-O bond cleavage reactions of ethers": {"aliases": []},
+                        },
+                    },
+                }
+            },
         },
     }
 
@@ -97,9 +114,26 @@ class CurriculumTaxonomyTest(unittest.TestCase):
         )
         self.assertEqual(
             validator.validate(
-                diagnosis(chapter="Electrostatics", topic="Capacitors and Newton Laws")
+                diagnosis(chapter="Electrostatics", topic="Thermodynamic Entropy")
             ).category,
             "unknown_topic",
+        )
+
+    def test_validator_accepts_partial_chapter_and_topic_words(self):
+        validator = CurriculumValidator(CurriculumTaxonomy.model_validate(taxonomy_payload()))
+
+        self.assertTrue(
+            validator.validate(
+                diagnosis(chapter="Organic Chemistry", topic="Carbocations")
+            ).valid
+        )
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Organic Chemistry - Ethers",
+                    topic="Acid-Catalyzed Ether Cleavage and Carbocation Reactions",
+                )
+            ).valid
         )
 
     def test_validator_rejects_unknown_and_wrong_pairs(self):
