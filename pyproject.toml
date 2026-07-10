@@ -9,12 +9,12 @@ package-mode = false
 python = ">=3.11,<3.14"
 boto3 = ">=1.42.86,<2.0.0"
 bedrock-agentcore = "^1.6.2"
-crewai = "0.150.0"
+crewai = "1.15.1"
 langfuse = "^3.0.0"
-litellm = "1.74.3"
+litellm = ">=1.84.0,<2"
 awslambdaric = "^2.1.0"
 pypandoc = "^1.15"
-pydantic = "2.11.4"
+pydantic = ">=2.11.9,<2.13"
 
 [tool.poetry.group.dev.dependencies]
 coverage = {extras = ["toml"], version = "^7.6.0"}
