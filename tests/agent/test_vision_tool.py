@@ -4,6 +4,7 @@ import time
 import json
 
 from jee_tutor.agent.llm_client import VisionLLMClient
+from jee_tutor.agent.diagnosis_output import DiagnosisResponse
 from jee_tutor.agent.tools import (
     OutputValidationError,
     ToolExecutionStatus,
@@ -30,6 +31,11 @@ class VisionToolTest(unittest.TestCase):
         tool = build_vision_tool(llm_client=FakeVisionLLMClient())
 
         self.assertTrue(tool.result_as_answer)
+
+    def test_tool_declares_typed_diagnosis_result_schema(self):
+        tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
+
+        self.assertIs(tool.result_schema, DiagnosisResponse)
 
     def test_tool_description_instructs_empty_json_input_for_preloaded_images(self):
         tool = VisionAnalysisTool(llm_client=FakeVisionLLMClient())
