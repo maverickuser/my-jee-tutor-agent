@@ -116,6 +116,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
 
         llm_class.assert_called_once_with(
             model="gemini/gemini-3-flash-preview",
+            provider="litellm",
+            is_litellm=True,
             api_key="google-key",
             temperature=0.2,
             timeout=180,
@@ -138,6 +140,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
 
         llm_class.assert_called_once_with(
             model="bedrock/anthropic.claude-3-5-sonnet",
+            provider="litellm",
+            is_litellm=True,
             aws_region_name="ap-south-1",
             temperature=0.2,
             timeout=180,

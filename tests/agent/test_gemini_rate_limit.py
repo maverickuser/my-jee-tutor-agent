@@ -195,6 +195,8 @@ class GeminiRateLimitTest(unittest.TestCase):
         self.assertIsInstance(llm, RateLimitedLLM)
         llm_class.assert_called_once_with(
             model="gemini/gemini-3-flash-preview",
+            provider="litellm",
+            is_litellm=True,
             timeout=180,
             api_key="google-key",
         )

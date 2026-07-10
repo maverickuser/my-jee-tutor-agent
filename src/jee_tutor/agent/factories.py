@@ -166,7 +166,7 @@ def build_crewai_llm(model_config: CrewAIModelConfig | None = None) -> LLM | Bas
     settings = (model_config or CrewAIModelConfig()).resolve()
     kwargs = settings.to_litellm_kwargs()
     model = kwargs.pop("model")
-    llm = LLM(model=model, **kwargs)
+    llm = LLM(model=model, provider="litellm", is_litellm=True, **kwargs)
     if is_gemini_model(model):
         return RateLimitedLLM(llm)
     return llm
