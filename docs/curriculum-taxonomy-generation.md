@@ -3,31 +3,42 @@
 The runtime curriculum validator consumes an approved JSON taxonomy artifact. It
 must not parse syllabus PDFs during normal tutor invocations.
 
-Use `scripts/build_curriculum_taxonomy.py` as the explicit generation entry
-point. The job requires:
+The approved taxonomy is maintained locally at:
 
 ```text
-CURRICULUM_SOURCE_PDF_S3_URIS=s3://bucket/path/math.pdf,s3://bucket/path/physics.pdf,s3://bucket/path/chemistry.pdf
-CURRICULUM_TAXONOMY_OUTPUT_S3_URI=s3://agent-bucket/curriculum/jee_curriculum_taxonomy.json
-CURRICULUM_TAXONOMY_VERSION=2026-01
-PUBLISH_TAXONOMY=false
+knowledge/jee_curriculum_taxonomy.json
 ```
 
-Default behavior writes a pipeline artifact only. It does not publish to the
-approved runtime S3 URI unless `PUBLISH_TAXONOMY=true`.
+The CD workflow validates that file and uploads it to the stable runtime S3 URI
+only when the remote object is missing or the local version/checksum changed.
+The default runtime URI is:
 
-Before approving publish:
+```text
+s3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json
+```
 
-1. Confirm all source PDFs are explicit and readable.
-2. Review the generated JSON artifact.
-3. Confirm schema validation and deterministic sanity checks passed.
-4. Review the diff against the current approved taxonomy when one exists.
-5. Re-run with `PUBLISH_TAXONOMY=true` only after approval.
+Override the destination with the GitHub Actions variable:
+
+```text
+CURRICULUM_TAXONOMY_S3_URI=s3://bucket/curriculum/jee_curriculum_taxonomy.json
+```
+
+Before changing the local taxonomy:
+
+1. Extract or review the source syllabus PDFs locally.
+2. Update `knowledge/jee_curriculum_taxonomy.json`.
+3. Increment the JSON `version` when the approved taxonomy meaning changes.
+4. Run schema validation and tests.
+5. Let CD upload the stable runtime object if the version/checksum changed.
+
+The older `scripts/build_curriculum_taxonomy.py` helper remains available for
+controlled experiments, but CD uses `scripts/publish_curriculum_taxonomy.py` as
+the approved local-file publisher.
 
 Runtime deployment should receive only:
 
 ```text
-CURRICULUM_TAXONOMY_S3_URI=s3://agent-bucket/curriculum/jee_curriculum_taxonomy.json
+CURRICULUM_TAXONOMY_S3_URI=s3://web-scraper-dev-055173110395-ap-south-1-screenshots/curriculum/jee_curriculum_taxonomy.json
 CURRICULUM_TAXONOMY_REQUIRED=true
 ```
 

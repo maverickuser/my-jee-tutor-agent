@@ -191,6 +191,14 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           }
         }
       ] : [],
+      local.curriculum_taxonomy_object_arn != "" ? [
+        {
+          Sid      = "S3CurriculumTaxonomyRead"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = local.curriculum_taxonomy_object_arn
+        }
+      ] : [],
       var.newrelic_log_forwarding_enabled && var.newrelic_license_key_secret_arn != "" ? [
         {
           Sid      = "ReadNewRelicLicenseKey"

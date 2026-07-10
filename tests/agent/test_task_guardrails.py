@@ -1,10 +1,13 @@
 import json
+import inspect
+from typing import Any, Tuple, get_type_hints
 import unittest
 from unittest.mock import Mock
 
 from jee_tutor.agent.task_guardrails import (
     GuardrailFailureCategory,
     GuardrailRetryCategory,
+    build_diagnosis_task_guardrail,
     canonical_json,
     evaluate_diagnosis_task_output,
     extract_task_output_text,
@@ -37,6 +40,15 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
         self.assertEqual(extract_task_output_text(" text "), "text")
         self.assertEqual(extract_task_output_text(None), "")
 
+    def test_crewai_guardrail_callback_uses_required_return_annotation(self):
+        guardrail = build_diagnosis_task_guardrail(
+            tool_call_state=successful_state(),
+            expected_image_count=1,
+        )
+
+        self.assertEqual(get_type_hints(guardrail)["return"], Tuple[bool, Any])
+        self.assertEqual(inspect.signature(guardrail).return_annotation, Tuple[bool, Any])
+
     def test_canonical_json_ignores_object_key_order(self):
         self.assertEqual(canonical_json('{"b":2,"a":1}'), canonical_json('{"a":1,"b":2}'))
 
@@ -51,6 +63,32 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
         self.assertEqual(result.message, "Diagnosis task returned empty output.")
         self.assertEqual(result.failure_category, GuardrailFailureCategory.EMPTY_OUTPUT)
         self.assertEqual(result.retry_category, GuardrailRetryCategory.NON_RETRYABLE)
+
+    def test_failed_guardrail_emits_error_log(self):
+        with self.assertLogs("jee_tutor.agent.task_guardrails", level="ERROR") as logs:
+            result = evaluate_diagnosis_task_output(
+                "",
+                tool_call_state=successful_state(),
+                expected_image_count=1,
+                invocation_id="inv-123",
+            )
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("crewai_task_guardrail_failed" in line for line in logs.output))
+        self.assertTrue(any("invocation_id=inv-123" in line for line in logs.output))
+        self.assertTrue(any("failure_category=empty_output" in line for line in logs.output))
+
+    def test_successful_guardrail_does_not_emit_error_log(self):
+        observation = diagnosis_json()
+        with self.assertNoLogs("jee_tutor.agent.task_guardrails", level="ERROR"):
+            result = evaluate_diagnosis_task_output(
+                observation,
+                tool_call_state=successful_state(observation),
+                expected_image_count=1,
+                expected_question_numbers=["6"],
+            )
+
+        self.assertTrue(result.passed)
 
     def test_missing_tool_observation_is_non_retryable(self):
         result = evaluate_diagnosis_task_output(

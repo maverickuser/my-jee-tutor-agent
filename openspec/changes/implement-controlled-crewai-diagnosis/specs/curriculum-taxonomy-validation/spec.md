@@ -112,23 +112,29 @@ The task guardrail SHALL include curriculum validation after structured diagnosi
 - **THEN** Markdown SHALL be parsed into the same diagnosis model before curriculum validation
 - **AND** SHALL NOT bypass deterministic curriculum validation
 
-### Requirement: Taxonomy Generation Job
-The system SHALL provide a separate explicitly triggered job to generate taxonomy JSON from source PDFs.
+### Requirement: Taxonomy Publish Job
+The system SHALL provide a separate CD job to publish the approved local taxonomy JSON to the stable runtime S3 URI.
 
-#### Scenario: Generation job runs
-- **WHEN** source PDF S3 URIs, output S3 URI, taxonomy version, and publish flag are provided
-- **THEN** the job SHALL download the explicitly supplied PDFs, extract candidate labels, validate the draft taxonomy schema, run deterministic sanity checks, produce a diff against the current approved taxonomy when available, and store generated JSON as a pipeline artifact
+#### Scenario: Publish job runs
+- **WHEN** `knowledge/jee_curriculum_taxonomy.json` is present
+- **AND** `CURRICULUM_TAXONOMY_S3_URI` is configured
+- **THEN** the job SHALL validate the local JSON against the taxonomy schema
+- **AND** compare its version and SHA-256 checksum with the existing stable S3 object when present
+- **AND** upload the local JSON to `CURRICULUM_TAXONOMY_S3_URI` only when the remote object is missing or different
+- **AND** store a publish report as a pipeline artifact
 
-#### Scenario: Publish is not approved
-- **WHEN** `PUBLISH_TAXONOMY` is false
-- **THEN** the job SHALL NOT write the approved taxonomy output S3 URI
+#### Scenario: Taxonomy is unchanged
+- **WHEN** the local taxonomy version and checksum match the existing S3 object
+- **THEN** the job SHALL skip upload
+- **AND** still report the stable runtime taxonomy URI
 
-#### Scenario: Publish is approved
-- **WHEN** `PUBLISH_TAXONOMY` is true
-- **AND** schema validation and sanity checks pass
-- **THEN** the job MAY publish the approved taxonomy JSON to `CURRICULUM_TAXONOMY_OUTPUT_S3_URI`
+#### Scenario: Runtime consumes published taxonomy
+- **WHEN** deployment applies the AgentCore runtime
+- **THEN** the runtime SHALL receive `CURRICULUM_TAXONOMY_S3_URI`
+- **AND** SHALL receive `CURRICULUM_TAXONOMY_REQUIRED=true`
+- **AND** the runtime role SHALL have read access to the stable taxonomy S3 object
 
-#### Scenario: Generation inputs are invalid
-- **WHEN** source PDFs are missing, malformed, unreadable, empty, or produce an invalid taxonomy
+#### Scenario: Local taxonomy is invalid
+- **WHEN** the local taxonomy file is missing, malformed, semantically empty, or fails schema validation
 - **THEN** the job SHALL fail
 - **AND** SHALL NOT publish an approved taxonomy

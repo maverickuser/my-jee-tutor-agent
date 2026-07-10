@@ -32,6 +32,9 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     NEW_RELIC_REGION                 = var.newrelic_region
     INVOCATION_STATUS_ENABLED        = tostring(var.invocation_status_enabled)
     INVOCATION_STATUS_TABLE_NAME     = local.invocation_status_table_name
+    CURRICULUM_TAXONOMY_S3_URI       = var.curriculum_taxonomy_s3_uri
+    CURRICULUM_TAXONOMY_REQUIRED     = tostring(var.curriculum_taxonomy_required)
+    CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS = tostring(var.curriculum_taxonomy_cache_ttl_seconds)
 
     EMAIL_DELIVERY_PROVIDER     = "lambda"
     EMAIL_DELIVERY_FUNCTION_ARN = aws_lambda_function.email_delivery.arn

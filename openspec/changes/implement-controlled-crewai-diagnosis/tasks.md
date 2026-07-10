@@ -41,12 +41,13 @@
 - [x] 5.5 Map taxonomy mismatches to semantic vision retry with rejected-observation cache invalidation.
 - [x] 5.6 Add tests for taxonomy schema parsing, canonical matches, aliases, unknown labels, wrong chapter/topic pairings, ambiguity, sentinel behavior, missing taxonomy fail-closed, disabled taxonomy fail-open, cache TTL, ETag reload, and reload failure with valid cache.
 
-## 6. Taxonomy Generation Job
+## 6. Taxonomy Publish Job
 
-- [x] 6.1 Add `scripts/build_curriculum_taxonomy.py` with inputs for source PDF S3 URIs, output S3 URI, taxonomy version, and publish flag.
-- [x] 6.2 Implement draft taxonomy creation flow with explicit PDF download, candidate label extraction hook, schema validation, deterministic sanity checks, and optional diff against current approved taxonomy.
-- [x] 6.3 Ensure generated JSON is stored as a pipeline artifact and approved S3 publish only occurs when `PUBLISH_TAXONOMY=true`.
-- [x] 6.4 Add tests proving missing/unreadable PDFs fail, invalid taxonomy fails before publish, and publish is skipped unless explicitly approved.
+- [x] 6.1 Add approved local `knowledge/jee_curriculum_taxonomy.json` with versioned Physics, Chemistry, and Mathematics taxonomy.
+- [x] 6.2 Add `scripts/publish_curriculum_taxonomy.py` to validate the local JSON and upload the stable S3 object only when version or checksum changes.
+- [x] 6.3 Add a separate CD job that publishes the taxonomy before AgentCore runtime deployment and stores a publish report as an artifact.
+- [x] 6.4 Wire AgentCore runtime configuration and IAM so the deployed agent loads the same stable taxonomy S3 URI with fail-closed validation.
+- [x] 6.5 Add tests proving missing remote upload, unchanged remote skip, changed remote upload, CD wiring, runtime env injection, and S3 read access.
 
 ## 7. Status, Metrics, and Privacy
 
@@ -59,6 +60,6 @@
 
 - [x] 8.1 Update CI test grouping or coverage to include controlled ReAct, task guardrail, hooks, taxonomy runtime, and taxonomy generation tests.
 - [x] 8.2 Update eval or smoke reporting to include aggregate controlled ReAct, guardrail pass/fail, retry category, vision execution cap, taxonomy validation, and artifact safety evidence.
-- [x] 8.3 Update CD taxonomy generation workflow or documented manual job to publish approved taxonomy only after explicit approval.
+- [x] 8.3 Update CD taxonomy publish workflow to upload the approved local taxonomy JSON only when changed and inject the same stable S3 URI into runtime.
 - [x] 8.4 Update Langfuse aggregate publishing to include safe guardrail/retry/taxonomy metrics when credentials are configured.
 - [x] 8.5 Run `openspec validate implement-controlled-crewai-diagnosis`, unit tests, Ruff, and coverage before marking implementation complete.

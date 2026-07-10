@@ -63,37 +63,43 @@ However, PDFs should be treated as upstream source material. The runtime
 validator should consume the derived JSON taxonomy, not parse PDFs during every
 agent invocation.
 
-## Taxonomy Generation CD Job
+## Taxonomy Publish CD Job
 
-Taxonomy JSON creation should be a separate, explicitly triggered CD job. It
-must not run as part of every application deployment.
+Taxonomy JSON approval should be maintained as a local, versioned repository
+artifact:
 
-The job consumes syllabus PDFs and writes an approved taxonomy JSON artifact to
-the agent bucket. The application then uses that S3 JSON path for guardrail
-validation.
+```text
+knowledge/jee_curriculum_taxonomy.json
+```
+
+Syllabus PDFs are upstream source material for human-reviewed taxonomy updates.
+The CD workflow should not parse PDFs during normal application deployment. It
+should validate the approved local JSON and publish that stable artifact to S3
+before runtime deployment.
 
 Inputs:
 
 ```text
-CURRICULUM_SOURCE_PDF_S3_URIS=s3://bucket/path/math.pdf,s3://bucket/path/physics.pdf,s3://bucket/path/chemistry.pdf
-CURRICULUM_TAXONOMY_OUTPUT_S3_URI=s3://agent-bucket/curriculum/jee_curriculum_taxonomy.json
-CURRICULUM_TAXONOMY_VERSION=2026-01
-PUBLISH_TAXONOMY=false
+CURRICULUM_TAXONOMY_S3_URI=s3://agent-bucket/curriculum/jee_curriculum_taxonomy.json
+CURRICULUM_TAXONOMY_REQUIRED=true
+CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS=3600
 ```
 
 Required job behavior:
 
-1. Download the explicitly supplied source PDFs.
-2. Extract candidate subject/chapter/topic labels into a draft taxonomy JSON.
-3. Validate the draft against the taxonomy schema.
-4. Run deterministic taxonomy sanity checks.
-5. Produce a diff against the currently approved taxonomy, if one exists.
-6. Store the generated JSON as a pipeline artifact.
-7. Publish to `CURRICULUM_TAXONOMY_OUTPUT_S3_URI` only when explicitly approved.
+1. Read `knowledge/jee_curriculum_taxonomy.json`.
+2. Validate it against the taxonomy schema.
+3. Run deterministic taxonomy sanity checks.
+4. Read the existing object at `CURRICULUM_TAXONOMY_S3_URI`, if present.
+5. Compare local version and SHA-256 checksum with the remote object.
+6. Upload to `CURRICULUM_TAXONOMY_S3_URI` only when the remote object is missing
+   or different.
+7. Store the local JSON and publish report as pipeline artifacts.
 
-The job may use document parsing and LLM-assisted extraction to create a draft,
-but the generated artifact is not approved until it passes schema validation and
-review. Runtime validation must only consume the approved JSON artifact.
+Draft taxonomy creation may use document parsing and LLM-assisted extraction
+outside the publish job, but the generated draft is not approved until it is
+reviewed, committed as the local JSON artifact, and passes validation. Runtime
+validation must only consume the approved JSON artifact.
 
 The published artifact should include provenance metadata:
 
@@ -103,8 +109,8 @@ The published artifact should include provenance metadata:
   "source_documents": [
     {
       "subject": "Mathematics",
-      "uri": "s3://bucket/path/math.pdf",
-      "etag": "..."
+      "uri": "local:JEE-Main-Maths-Syllabus-PDF.pdf",
+      "etag": null
     }
   ],
   "generated_at": "2026-07-09T00:00:00Z",
@@ -117,6 +123,7 @@ Application deployment should receive only the approved taxonomy JSON path:
 
 ```text
 CURRICULUM_TAXONOMY_S3_URI=s3://agent-bucket/curriculum/jee_curriculum_taxonomy.json
+CURRICULUM_TAXONOMY_REQUIRED=true
 ```
 
 ## Why Not Direct PDF Validation
@@ -383,15 +390,15 @@ taxonomy-retry path that:
 
 ## Failure Scenarios and Edge Cases
 
-Taxonomy generation job failures:
+Taxonomy publish job failures:
 
-- source PDF URI is missing, malformed, or not readable,
-- one or more expected subjects are absent from the generated draft,
-- PDF extraction produces empty chapters or topics,
-- generated JSON fails schema validation,
-- generated taxonomy removes many existing labels unexpectedly,
+- local taxonomy file is missing, malformed, or not readable,
+- one or more expected subjects are absent from the local taxonomy,
+- local taxonomy has empty chapters or topics,
+- local JSON fails schema validation,
+- local taxonomy removes many existing labels unexpectedly,
 - output S3 write fails,
-- publish is attempted without explicit approval.
+- remote taxonomy comparison fails.
 
 Runtime loader failures:
 
@@ -452,9 +459,11 @@ Add:
 
 ```text
 scripts/build_curriculum_taxonomy.py
+scripts/publish_curriculum_taxonomy.py
 src/jee_tutor/curriculum/taxonomy.py
 src/jee_tutor/curriculum/loader.py
 src/jee_tutor/curriculum/validator.py
+knowledge/jee_curriculum_taxonomy.json
 ```
 
 Responsibilities:
@@ -464,8 +473,12 @@ taxonomy.py
   Pydantic models for taxonomy artifact
 
 build_curriculum_taxonomy.py
-  explicit CD/manual job entry point for generating draft taxonomy JSON from
-  supplied PDF locations
+  manual helper for controlled draft taxonomy experiments from supplied PDF
+  locations
+
+publish_curriculum_taxonomy.py
+  CD job entry point for validating the approved local taxonomy JSON and
+  uploading the stable S3 object only when version or checksum changes
 
 loader.py
   local/S3 taxonomy loading, caching, ETag/version handling
@@ -487,9 +500,10 @@ curriculum_taxonomy_validation_pass_count
 curriculum_taxonomy_validation_fail_count
 curriculum_taxonomy_failure_category_count
 curriculum_taxonomy_semantic_retry_count
-curriculum_taxonomy_generation_started_count
-curriculum_taxonomy_generation_failed_count
-curriculum_taxonomy_generation_published_count
+curriculum_taxonomy_publish_started_count
+curriculum_taxonomy_publish_failed_count
+curriculum_taxonomy_publish_uploaded_count
+curriculum_taxonomy_publish_skipped_count
 ```
 
 Do not log full taxonomy content.
@@ -512,9 +526,9 @@ Required tests:
 11. S3 taxonomy loader reloads when ETag changes.
 12. Taxonomy mismatch maps to semantic vision retry.
 13. Second taxonomy mismatch fails workflow.
-14. Taxonomy generation job fails when source PDFs are missing.
-15. Taxonomy generation job validates output schema before publish.
-16. Taxonomy generation job does not publish unless explicitly approved.
+14. Taxonomy publish job fails when local JSON is missing or invalid.
+15. Taxonomy publish job validates output schema before upload.
+16. Taxonomy publish job skips upload when remote version and checksum match.
 17. Markdown output cannot bypass curriculum validation.
 18. Cached taxonomy remains in use when reload fails after a prior valid load.
 
@@ -528,10 +542,9 @@ Implementation is complete when:
 4. Taxonomy mismatch triggers semantic vision retry with cache invalidation.
 5. A second taxonomy mismatch fails the workflow.
 6. CrewAI Knowledge PDFs, if used, are optional context and not the validator.
-7. Separate CD job can generate a draft taxonomy from explicitly supplied PDF
-   S3 locations.
-8. CD job publishes taxonomy JSON to the agent bucket only when explicitly
-   approved.
+7. Separate CD job validates the approved local taxonomy JSON.
+8. CD job publishes taxonomy JSON to the agent bucket only when the remote
+   object is missing or the local version/checksum changed.
 9. Application runtime consumes only the approved taxonomy JSON S3 path.
 10. Metrics prove taxonomy generation, validation pass/failure, cache, and retry
     behavior.

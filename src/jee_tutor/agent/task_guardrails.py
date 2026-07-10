@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 import json
 import logging
-from typing import Any, Protocol, TYPE_CHECKING
+from typing import Any, Protocol, TYPE_CHECKING, Tuple
 
 from jee_tutor.agent.diagnosis_output import parse_and_validate_diagnosis
 from jee_tutor.agent.output_validation import OutputValidationError
@@ -46,7 +46,7 @@ class DiagnosisTaskGuardrailResult:
     schema_valid: bool | None = None
     actual_question_count: int | None = None
 
-    def as_crewai_result(self) -> tuple[bool, str]:
+    def as_crewai_result(self) -> Tuple[bool, Any]:
         return self.passed, self.message
 
 
@@ -61,8 +61,8 @@ def build_diagnosis_task_guardrail(
     expected_question_numbers: list[str | None] | None = None,
     taxonomy_validator: CurriculumValidator | Callable[[Any], Any] | None = None,
     invocation_id: str | None = None,
-) -> Callable[[object], tuple[bool, str]]:
-    def diagnosis_task_guardrail(output: object) -> tuple[bool, str]:
+) -> Callable[[object], Tuple[bool, Any]]:
+    def diagnosis_task_guardrail(output: object) -> Tuple[bool, Any]:
         result = evaluate_diagnosis_task_output(
             output,
             tool_call_state=tool_call_state,
@@ -73,6 +73,9 @@ def build_diagnosis_task_guardrail(
         )
         return result.as_crewai_result()
 
+    # CrewAI validates guardrail callbacks with inspect.signature() and does not
+    # resolve postponed annotations from `from __future__ import annotations`.
+    diagnosis_task_guardrail.__annotations__["return"] = Tuple[bool, Any]
     return diagnosis_task_guardrail
 
 
@@ -316,6 +319,14 @@ def _log_guardrail_check(
     expected_image_count: int,
     invocation_id: str | None,
 ) -> None:
+    invocation_id_value = invocation_id or "unknown"
+    task_name = "diagnosis_task"
+    guardrail_name = "diagnosis_task_output_contract"
+    tool_call_count = getattr(tool_call_state, "request_count", getattr(tool_call_state, "call_count", 0))
+    tool_execution_count = getattr(tool_call_state, "execution_count", 0)
+    tool_success = getattr(tool_call_state, "success", False)
+    tool_observation_present = bool(getattr(tool_call_state, "observation", None))
+
     logger.info(
         "crewai_task_guardrail_check event=%s invocation_id=%s task_name=%s "
         "guardrail_name=%s result=%s failure_category=%s retry_category=%s "
@@ -323,19 +334,42 @@ def _log_guardrail_check(
         "expected_question_number_count=%s tool_call_count=%s tool_execution_count=%s "
         "tool_success=%s tool_observation_present=%s canonical_match=%s schema_valid=%s",
         "crewai_task_guardrail_check",
-        invocation_id or "unknown",
-        "diagnosis_task",
-        "diagnosis_task_output_contract",
+        invocation_id_value,
+        task_name,
+        guardrail_name,
         "passed" if result.passed else "failed",
         result.failure_category,
         result.retry_category,
         expected_image_count,
         result.actual_question_count,
         expected_image_count,
-        getattr(tool_call_state, "request_count", getattr(tool_call_state, "call_count", 0)),
-        getattr(tool_call_state, "execution_count", 0),
-        getattr(tool_call_state, "success", False),
-        bool(getattr(tool_call_state, "observation", None)),
+        tool_call_count,
+        tool_execution_count,
+        tool_success,
+        tool_observation_present,
         result.canonical_match,
         result.schema_valid,
     )
+    if not result.passed:
+        logger.error(
+            "crewai_task_guardrail_failed event=%s invocation_id=%s task_name=%s "
+            "guardrail_name=%s failure_category=%s retry_category=%s "
+            "expected_image_count=%s actual_question_count=%s "
+            "expected_question_number_count=%s tool_call_count=%s tool_execution_count=%s "
+            "tool_success=%s tool_observation_present=%s canonical_match=%s schema_valid=%s",
+            "crewai_task_guardrail_failed",
+            invocation_id_value,
+            task_name,
+            guardrail_name,
+            result.failure_category,
+            result.retry_category,
+            expected_image_count,
+            result.actual_question_count,
+            expected_image_count,
+            tool_call_count,
+            tool_execution_count,
+            tool_success,
+            tool_observation_present,
+            result.canonical_match,
+            result.schema_valid,
+        )

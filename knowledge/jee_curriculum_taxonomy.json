@@ -1,0 +1,2484 @@
+{
+  "version": "2026-02",
+  "source_documents": [
+    {
+      "subject": "Mathematics",
+      "uri": "local:JEE-Main-Maths-Syllabus-PDF.pdf",
+      "etag": null
+    },
+    {
+      "subject": "Physics",
+      "uri": "local:JEE-Main-Physics-Syllabus-PDF.pdf",
+      "etag": null
+    },
+    {
+      "subject": "Chemistry",
+      "uri": "local:JEE-Main-Chemistry-Syllabus-PDF.pdf",
+      "etag": null
+    },
+    {
+      "subject": "All",
+      "uri": "local:jee-advanced-2026-syllabus.pdf",
+      "etag": null
+    }
+  ],
+  "generated_at": "2026-07-10T00:00:00Z",
+  "approved_at": null,
+  "subjects": {
+    "Mathematics": {
+      "chapters": {
+        "Sets, Relations and Functions": {
+          "aliases": [
+            "Sets Relations and Functions",
+            "Sets and Relations",
+            "Relations and Functions"
+          ],
+          "topics": {
+            "Sets and their representation": {
+              "aliases": [
+                "Set representation",
+                "Representation of sets"
+              ]
+            },
+            "Union, intersection and complement of sets": {
+              "aliases": [
+                "Set operations",
+                "Union intersection complement"
+              ]
+            },
+            "Algebraic properties of sets": {
+              "aliases": [
+                "Set algebra"
+              ]
+            },
+            "Power set": {
+              "aliases": []
+            },
+            "Relations and types of relations": {
+              "aliases": [
+                "Types of relations"
+              ]
+            },
+            "Equivalence relations": {
+              "aliases": []
+            },
+            "Functions": {
+              "aliases": []
+            },
+            "One-one, into and onto functions": {
+              "aliases": [
+                "Injective and surjective functions",
+                "One one onto functions"
+              ]
+            },
+            "Composition of functions": {
+              "aliases": [
+                "Function composition"
+              ]
+            },
+            "Difference and symmetric difference of sets": {
+              "aliases": [
+                "Set difference",
+                "Symmetric difference"
+              ]
+            },
+            "De Morgan's laws": {
+              "aliases": [
+                "De-Morgan's laws",
+                "De Morgan laws"
+              ]
+            },
+            "Cartesian product, domain, codomain and range": {
+              "aliases": [
+                "Cartesian product of finite sets",
+                "Domain codomain range"
+              ]
+            },
+            "Invertible, even and odd functions": {
+              "aliases": [
+                "Invertible functions",
+                "Even and odd functions"
+              ]
+            }
+          }
+        },
+        "Complex Numbers and Quadratic Equations": {
+          "aliases": [
+            "Complex Numbers",
+            "Quadratic Equations"
+          ],
+          "topics": {
+            "Complex numbers as ordered pairs of reals": {
+              "aliases": []
+            },
+            "Representation of complex numbers in a plane": {
+              "aliases": [
+                "Argand plane"
+              ]
+            },
+            "Argand diagram": {
+              "aliases": []
+            },
+            "Algebra of complex numbers": {
+              "aliases": []
+            },
+            "Modulus and argument of a complex number": {
+              "aliases": [
+                "Amplitude of a complex number"
+              ]
+            },
+            "Quadratic equations in real and complex number systems": {
+              "aliases": []
+            },
+            "Relations between roots and coefficients": {
+              "aliases": []
+            },
+            "Nature of roots": {
+              "aliases": []
+            },
+            "Formation of quadratic equations with given roots": {
+              "aliases": []
+            },
+            "Polar representation of complex numbers": {
+              "aliases": [
+                "Complex numbers in polar form"
+              ]
+            },
+            "Triangle inequality for complex numbers": {
+              "aliases": []
+            },
+            "Cube roots of unity": {
+              "aliases": []
+            },
+            "Geometric interpretation of complex numbers": {
+              "aliases": [
+                "Geometrical interpretation of complex numbers"
+              ]
+            },
+            "Fundamental theorem of algebra": {
+              "aliases": []
+            },
+            "Symmetric functions of roots": {
+              "aliases": []
+            }
+          }
+        },
+        "Matrices and Determinants": {
+          "aliases": [
+            "Matrices",
+            "Determinants"
+          ],
+          "topics": {
+            "Matrices and algebra of matrices": {
+              "aliases": [
+                "Matrix algebra"
+              ]
+            },
+            "Types of matrices": {
+              "aliases": []
+            },
+            "Determinants of order two and three": {
+              "aliases": []
+            },
+            "Evaluation of determinants": {
+              "aliases": []
+            },
+            "Area of triangles using determinants": {
+              "aliases": []
+            },
+            "Adjoint and inverse of a square matrix": {
+              "aliases": [
+                "Adjugate and inverse"
+              ]
+            },
+            "Consistency of simultaneous linear equations": {
+              "aliases": [
+                "Test of consistency"
+              ]
+            },
+            "Solution of simultaneous linear equations using matrices": {
+              "aliases": [
+                "Matrix method for linear equations"
+              ]
+            }
+          }
+        },
+        "Permutations and Combinations": {
+          "aliases": [
+            "Permutation and Combination"
+          ],
+          "topics": {
+            "Fundamental principle of counting": {
+              "aliases": [
+                "Counting principle"
+              ]
+            },
+            "Permutations": {
+              "aliases": []
+            },
+            "Combinations": {
+              "aliases": []
+            },
+            "Meaning of P(n, r) and C(n, r)": {
+              "aliases": [
+                "nPr and nCr"
+              ]
+            },
+            "Simple applications of permutations and combinations": {
+              "aliases": []
+            }
+          }
+        },
+        "Binomial Theorem and Its Simple Applications": {
+          "aliases": [
+            "Binomial Theorem"
+          ],
+          "topics": {
+            "Binomial theorem for a positive integral index": {
+              "aliases": []
+            },
+            "General term and middle term": {
+              "aliases": []
+            },
+            "Simple applications of binomial theorem": {
+              "aliases": []
+            }
+          }
+        },
+        "Sequence and Series": {
+          "aliases": [
+            "Sequences and Series"
+          ],
+          "topics": {
+            "Arithmetic progression": {
+              "aliases": [
+                "AP"
+              ]
+            },
+            "Geometric progression": {
+              "aliases": [
+                "GP"
+              ]
+            },
+            "Insertion of arithmetic means": {
+              "aliases": []
+            },
+            "Insertion of geometric means": {
+              "aliases": []
+            },
+            "Relation between arithmetic mean and geometric mean": {
+              "aliases": [
+                "Relation between AM and GM",
+                "AM-GM relation"
+              ]
+            }
+          }
+        },
+        "Limit, Continuity and Differentiability": {
+          "aliases": [
+            "Limits Continuity and Differentiability",
+            "Differential Calculus"
+          ],
+          "topics": {
+            "Real-valued functions and algebra of functions": {
+              "aliases": []
+            },
+            "Polynomial, rational, trigonometric, logarithmic and exponential functions": {
+              "aliases": []
+            },
+            "Inverse functions": {
+              "aliases": []
+            },
+            "Graphs of simple functions": {
+              "aliases": []
+            },
+            "Limits": {
+              "aliases": []
+            },
+            "Continuity": {
+              "aliases": []
+            },
+            "Differentiability": {
+              "aliases": []
+            },
+            "Differentiation rules for sum, difference, product and quotient": {
+              "aliases": []
+            },
+            "Differentiation of trigonometric functions": {
+              "aliases": []
+            },
+            "Differentiation of inverse trigonometric functions": {
+              "aliases": []
+            },
+            "Differentiation of logarithmic and exponential functions": {
+              "aliases": []
+            },
+            "Differentiation of composite and implicit functions": {
+              "aliases": []
+            },
+            "Derivatives up to order two": {
+              "aliases": [
+                "Second order derivatives"
+              ]
+            },
+            "Rate of change of quantities": {
+              "aliases": []
+            },
+            "Increasing and decreasing functions": {
+              "aliases": [
+                "Monotonic functions"
+              ]
+            },
+            "Maxima and minima of functions of one variable": {
+              "aliases": [
+                "Maxima and minima"
+              ]
+            }
+          }
+        },
+        "Integral Calculus": {
+          "aliases": [
+            "Integral Calculas",
+            "Integration"
+          ],
+          "topics": {
+            "Integral as an anti-derivative": {
+              "aliases": []
+            },
+            "Fundamental integrals involving algebraic functions": {
+              "aliases": []
+            },
+            "Fundamental integrals involving trigonometric functions": {
+              "aliases": []
+            },
+            "Fundamental integrals involving exponential and logarithmic functions": {
+              "aliases": []
+            },
+            "Integration by substitution": {
+              "aliases": []
+            },
+            "Integration by parts": {
+              "aliases": []
+            },
+            "Integration by partial fractions": {
+              "aliases": []
+            },
+            "Integration using trigonometric identities": {
+              "aliases": []
+            },
+            "Fundamental theorem of calculus": {
+              "aliases": []
+            },
+            "Properties of definite integrals": {
+              "aliases": []
+            },
+            "Evaluation of definite integrals": {
+              "aliases": []
+            },
+            "Area bounded by simple curves": {
+              "aliases": [
+                "Area under curves"
+              ]
+            }
+          }
+        },
+        "Differential Equations": {
+          "aliases": [
+            "Ordinary Differential Equations"
+          ],
+          "topics": {
+            "Order and degree of ordinary differential equations": {
+              "aliases": [
+                "Order and degree"
+              ]
+            },
+            "Solution by separation of variables": {
+              "aliases": [
+                "Separation of variables"
+              ]
+            },
+            "Homogeneous differential equations": {
+              "aliases": []
+            },
+            "Linear differential equations": {
+              "aliases": []
+            }
+          }
+        },
+        "Coordinate Geometry": {
+          "aliases": [
+            "Co-ordinate Geometry",
+            "Analytical Geometry"
+          ],
+          "topics": {
+            "Cartesian coordinates in a plane": {
+              "aliases": []
+            },
+            "Distance formula": {
+              "aliases": []
+            },
+            "Section formula": {
+              "aliases": []
+            },
+            "Locus and its equation": {
+              "aliases": []
+            },
+            "Slope of a line": {
+              "aliases": []
+            },
+            "Parallel and perpendicular lines": {
+              "aliases": []
+            },
+            "Intercepts of a line on coordinate axes": {
+              "aliases": []
+            },
+            "Equations of a straight line": {
+              "aliases": [
+                "Straight line"
+              ]
+            },
+            "Intersection and angle between two lines": {
+              "aliases": []
+            },
+            "Concurrence of three lines": {
+              "aliases": []
+            },
+            "Distance of a point from a line": {
+              "aliases": []
+            },
+            "Centroid, orthocentre and circumcentre of a triangle": {
+              "aliases": []
+            },
+            "Circle equations and properties": {
+              "aliases": [
+                "Circle"
+              ]
+            },
+            "Point of intersection of a line and a circle": {
+              "aliases": []
+            },
+            "Conic sections in standard forms": {
+              "aliases": [
+                "Parabola ellipse hyperbola",
+                "Conics"
+              ]
+            },
+            "Tangents and normals to conic sections": {
+              "aliases": [
+                "Tangents and normals to parabola ellipse hyperbola"
+              ]
+            },
+            "Parametric equations of conic sections": {
+              "aliases": [
+                "Parametric equations of circle parabola ellipse hyperbola"
+              ]
+            }
+          }
+        },
+        "Three Dimensional Geometry": {
+          "aliases": [
+            "3D Geometry",
+            "Three-Dimensional Geometry"
+          ],
+          "topics": {
+            "Coordinates of a point in space": {
+              "aliases": []
+            },
+            "Distance between two points in space": {
+              "aliases": []
+            },
+            "Section formula in three dimensions": {
+              "aliases": []
+            },
+            "Direction ratios and direction cosines": {
+              "aliases": []
+            },
+            "Angle between two intersecting lines": {
+              "aliases": []
+            },
+            "Equation of a line in space": {
+              "aliases": []
+            },
+            "Skew lines and shortest distance": {
+              "aliases": []
+            },
+            "Equation of a plane": {
+              "aliases": []
+            },
+            "Distance of a point from a plane": {
+              "aliases": []
+            },
+            "Angle between two planes": {
+              "aliases": []
+            },
+            "Angle between a line and a plane": {
+              "aliases": []
+            },
+            "Coplanar lines": {
+              "aliases": []
+            }
+          }
+        },
+        "Vector Algebra": {
+          "aliases": [
+            "Vectors"
+          ],
+          "topics": {
+            "Vectors and scalars": {
+              "aliases": []
+            },
+            "Addition of vectors": {
+              "aliases": []
+            },
+            "Components of a vector in two and three dimensions": {
+              "aliases": []
+            },
+            "Scalar product": {
+              "aliases": [
+                "Dot product"
+              ]
+            },
+            "Vector product": {
+              "aliases": [
+                "Cross product"
+              ]
+            },
+            "Scalar triple product": {
+              "aliases": []
+            },
+            "Vector triple product": {
+              "aliases": []
+            }
+          }
+        },
+        "Statistics and Probability": {
+          "aliases": [
+            "Statistics",
+            "Probability"
+          ],
+          "topics": {
+            "Measures of dispersion": {
+              "aliases": []
+            },
+            "Mean, median and mode of grouped and ungrouped data": {
+              "aliases": [
+                "Mean median mode"
+              ]
+            },
+            "Standard deviation, variance and mean deviation": {
+              "aliases": []
+            },
+            "Probability of an event": {
+              "aliases": []
+            },
+            "Addition and multiplication theorems of probability": {
+              "aliases": []
+            },
+            "Bayes theorem": {
+              "aliases": [
+                "Bayes' theorem"
+              ]
+            },
+            "Probability distribution of a random variable": {
+              "aliases": []
+            }
+          }
+        },
+        "Trigonometry": {
+          "aliases": [],
+          "topics": {
+            "Trigonometrical identities": {
+              "aliases": [
+                "Trigonometric identities"
+              ]
+            },
+            "Trigonometrical functions": {
+              "aliases": [
+                "Trigonometric functions"
+              ]
+            },
+            "Inverse trigonometrical functions and their properties": {
+              "aliases": [
+                "Inverse trigonometric functions"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Physics": {
+      "chapters": {
+        "Units and Measurements": {
+          "aliases": [
+            "Units",
+            "Measurements"
+          ],
+          "topics": {
+            "Units of measurements and systems of units": {
+              "aliases": [
+                "System of units"
+              ]
+            },
+            "SI units, fundamental units and derived units": {
+              "aliases": [
+                "SI units"
+              ]
+            },
+            "Least count and significant figures": {
+              "aliases": []
+            },
+            "Errors in measurements": {
+              "aliases": [
+                "Measurement errors"
+              ]
+            },
+            "Dimensions of physical quantities": {
+              "aliases": [
+                "Dimensional formula"
+              ]
+            },
+            "Dimensional analysis and applications": {
+              "aliases": []
+            }
+          }
+        },
+        "Kinematics": {
+          "aliases": [],
+          "topics": {
+            "Frame of reference": {
+              "aliases": []
+            },
+            "Motion in a straight line": {
+              "aliases": [
+                "Rectilinear motion"
+              ]
+            },
+            "Speed and velocity": {
+              "aliases": []
+            },
+            "Uniform and non-uniform motion": {
+              "aliases": []
+            },
+            "Average speed and instantaneous velocity": {
+              "aliases": []
+            },
+            "Uniformly accelerated motion": {
+              "aliases": []
+            },
+            "Velocity-time and position-time graphs": {
+              "aliases": []
+            },
+            "Relative velocity": {
+              "aliases": []
+            },
+            "Motion in a plane": {
+              "aliases": [
+                "Two dimensional motion"
+              ]
+            },
+            "Projectile motion": {
+              "aliases": []
+            },
+            "Uniform circular motion": {
+              "aliases": []
+            }
+          }
+        },
+        "Laws of Motion": {
+          "aliases": [
+            "Newton's Laws of Motion"
+          ],
+          "topics": {
+            "Force and inertia": {
+              "aliases": []
+            },
+            "Newton's laws of motion": {
+              "aliases": [
+                "Newton first second third law"
+              ]
+            },
+            "Momentum and impulse": {
+              "aliases": []
+            },
+            "Conservation of linear momentum": {
+              "aliases": []
+            },
+            "Equilibrium of concurrent forces": {
+              "aliases": []
+            },
+            "Static and kinetic friction": {
+              "aliases": []
+            },
+            "Laws of friction and rolling friction": {
+              "aliases": []
+            },
+            "Dynamics of uniform circular motion": {
+              "aliases": []
+            },
+            "Centripetal force and applications": {
+              "aliases": [
+                "Banked road",
+                "Level circular road"
+              ]
+            }
+          }
+        },
+        "Work, Energy and Power": {
+          "aliases": [],
+          "topics": {
+            "Work done by constant and variable forces": {
+              "aliases": []
+            },
+            "Kinetic and potential energy": {
+              "aliases": []
+            },
+            "Work-energy theorem": {
+              "aliases": []
+            },
+            "Power": {
+              "aliases": []
+            },
+            "Potential energy of a spring": {
+              "aliases": []
+            },
+            "Conservation of mechanical energy": {
+              "aliases": []
+            },
+            "Conservative and non-conservative forces": {
+              "aliases": []
+            },
+            "Motion in a vertical circle": {
+              "aliases": []
+            },
+            "Elastic and inelastic collisions": {
+              "aliases": [
+                "Collisions in one and two dimensions"
+              ]
+            },
+            "Systems of particles and centre of mass motion": {
+              "aliases": [
+                "System of particles",
+                "Motion of centre of mass"
+              ]
+            }
+          }
+        },
+        "Rotational Motion": {
+          "aliases": [
+            "Rotation"
+          ],
+          "topics": {
+            "Centre of mass": {
+              "aliases": [
+                "Center of mass"
+              ]
+            },
+            "Moment of force and torque": {
+              "aliases": [
+                "Torque"
+              ]
+            },
+            "Angular momentum and conservation": {
+              "aliases": [
+                "Conservation of angular momentum"
+              ]
+            },
+            "Moment of inertia and radius of gyration": {
+              "aliases": []
+            },
+            "Parallel and perpendicular axes theorems": {
+              "aliases": []
+            },
+            "Equilibrium of rigid bodies": {
+              "aliases": []
+            },
+            "Rigid body rotation equations": {
+              "aliases": []
+            },
+            "Comparison of linear and rotational motion": {
+              "aliases": []
+            },
+            "Moment of inertia of uniform bodies": {
+              "aliases": [
+                "Moment of inertia of simple geometrical bodies"
+              ]
+            },
+            "Rolling without slipping": {
+              "aliases": [
+                "Rolling motion of rings cylinders and spheres"
+              ]
+            },
+            "Collision of point masses with rigid bodies": {
+              "aliases": []
+            }
+          }
+        },
+        "Gravitation": {
+          "aliases": [],
+          "topics": {
+            "Universal law of gravitation": {
+              "aliases": []
+            },
+            "Acceleration due to gravity and variation with altitude and depth": {
+              "aliases": [
+                "Variation of g"
+              ]
+            },
+            "Kepler's laws of planetary motion": {
+              "aliases": [
+                "Kepler laws"
+              ]
+            },
+            "Gravitational potential energy and potential": {
+              "aliases": []
+            },
+            "Escape velocity": {
+              "aliases": []
+            },
+            "Satellite motion, orbital velocity, time period and energy": {
+              "aliases": [
+                "Orbital velocity",
+                "Satellite energy"
+              ]
+            },
+            "Geostationary orbits": {
+              "aliases": [
+                "Geostationary satellites"
+              ]
+            }
+          }
+        },
+        "Properties of Solids and Liquids": {
+          "aliases": [
+            "Mechanical Properties of Solids and Fluids",
+            "Solids and Liquids"
+          ],
+          "topics": {
+            "Elastic behaviour and stress-strain relationship": {
+              "aliases": [
+                "Elasticity"
+              ]
+            },
+            "Hooke's law, Young's modulus, bulk modulus and modulus of rigidity": {
+              "aliases": [
+                "Elastic moduli"
+              ]
+            },
+            "Fluid pressure and Pascal's law": {
+              "aliases": []
+            },
+            "Viscosity, Stoke's law and terminal velocity": {
+              "aliases": []
+            },
+            "Streamline and turbulent flow": {
+              "aliases": []
+            },
+            "Bernoulli's principle and applications": {
+              "aliases": [
+                "Bernoulli theorem"
+              ]
+            },
+            "Surface energy, surface tension and angle of contact": {
+              "aliases": [
+                "Surface tension"
+              ]
+            },
+            "Excess pressure across curved surfaces": {
+              "aliases": []
+            },
+            "Capillary rise, drops and bubbles": {
+              "aliases": [
+                "Capillarity"
+              ]
+            },
+            "Heat, temperature and thermal expansion": {
+              "aliases": []
+            },
+            "Specific heat capacity and calorimetry": {
+              "aliases": []
+            },
+            "Change of state and latent heat": {
+              "aliases": []
+            },
+            "Heat transfer by conduction, convection and radiation": {
+              "aliases": [
+                "Heat transfer"
+              ]
+            },
+            "Poiseuille's equation excluded from viscosity": {
+              "aliases": [
+                "Poiseuille equation excluded"
+              ]
+            }
+          }
+        },
+        "Thermodynamics": {
+          "aliases": [],
+          "topics": {
+            "Thermal equilibrium and temperature": {
+              "aliases": []
+            },
+            "Zeroth law of thermodynamics": {
+              "aliases": []
+            },
+            "Heat, work and internal energy": {
+              "aliases": []
+            },
+            "First law of thermodynamics": {
+              "aliases": []
+            },
+            "Isothermal and adiabatic processes": {
+              "aliases": []
+            },
+            "Second law of thermodynamics": {
+              "aliases": []
+            },
+            "Reversible and irreversible processes": {
+              "aliases": []
+            },
+            "Carnot engine and efficiency": {
+              "aliases": [
+                "Carnot cycle efficiency"
+              ]
+            },
+            "Blackbody radiation laws": {
+              "aliases": [
+                "Kirchhoff law",
+                "Wien displacement law",
+                "Stefan law"
+              ]
+            }
+          }
+        },
+        "Kinetic Theory of Gases": {
+          "aliases": [
+            "Kinetic Theory"
+          ],
+          "topics": {
+            "Equation of state of a perfect gas": {
+              "aliases": [
+                "Ideal gas equation"
+              ]
+            },
+            "Work done on compressing a gas": {
+              "aliases": []
+            },
+            "Kinetic theory assumptions and pressure": {
+              "aliases": []
+            },
+            "Kinetic interpretation of temperature": {
+              "aliases": []
+            },
+            "RMS speed of gas molecules": {
+              "aliases": [
+                "Root mean square speed"
+              ]
+            },
+            "Degrees of freedom and equipartition of energy": {
+              "aliases": [
+                "Law of equipartition"
+              ]
+            },
+            "Specific heat capacities of gases": {
+              "aliases": []
+            },
+            "Mean free path and Avogadro's number": {
+              "aliases": []
+            }
+          }
+        },
+        "Oscillations and Waves": {
+          "aliases": [
+            "Oscillations",
+            "Waves"
+          ],
+          "topics": {
+            "Oscillations and periodic motion": {
+              "aliases": []
+            },
+            "Simple harmonic motion and equation": {
+              "aliases": [
+                "SHM"
+              ]
+            },
+            "Phase and energy in simple harmonic motion": {
+              "aliases": []
+            },
+            "Oscillations of a spring": {
+              "aliases": []
+            },
+            "Simple pendulum and time period": {
+              "aliases": []
+            },
+            "Wave motion and types of waves": {
+              "aliases": [
+                "Longitudinal and transverse waves"
+              ]
+            },
+            "Speed of travelling wave and displacement relation": {
+              "aliases": []
+            },
+            "Superposition, reflection and standing waves": {
+              "aliases": []
+            },
+            "Strings, organ pipes, harmonics and beats": {
+              "aliases": []
+            },
+            "Forced and damped oscillations": {
+              "aliases": [
+                "Damped oscillation",
+                "Forced oscillation"
+              ]
+            },
+            "Resonance in oscillations and waves": {
+              "aliases": [
+                "Resonance"
+              ]
+            },
+            "Doppler effect in sound": {
+              "aliases": [
+                "Doppler effect"
+              ]
+            }
+          }
+        },
+        "Electrostatics": {
+          "aliases": [
+            "Electric Charges and Fields",
+            "Electrostatic Potential and Capacitance"
+          ],
+          "topics": {
+            "Electric charge and conservation of charge": {
+              "aliases": []
+            },
+            "Coulomb's law and superposition": {
+              "aliases": []
+            },
+            "Electric field and field lines": {
+              "aliases": []
+            },
+            "Electric dipole and torque in a uniform electric field": {
+              "aliases": []
+            },
+            "Electric flux and Gauss's law": {
+              "aliases": []
+            },
+            "Applications of Gauss's law": {
+              "aliases": [
+                "Field due to wire sheet and shell"
+              ]
+            },
+            "Electric potential and potential difference": {
+              "aliases": []
+            },
+            "Equipotential surfaces": {
+              "aliases": []
+            },
+            "Electrostatic potential energy": {
+              "aliases": []
+            },
+            "Conductors, insulators, dielectrics and polarization": {
+              "aliases": []
+            },
+            "Capacitors and capacitance": {
+              "aliases": []
+            },
+            "Capacitors in series and parallel": {
+              "aliases": []
+            },
+            "Parallel plate capacitor with and without dielectric": {
+              "aliases": []
+            },
+            "Energy stored in a capacitor": {
+              "aliases": []
+            }
+          }
+        },
+        "Current Electricity": {
+          "aliases": [],
+          "topics": {
+            "Electric current, drift velocity and mobility": {
+              "aliases": []
+            },
+            "Ohm's law and electrical resistance": {
+              "aliases": []
+            },
+            "Ohmic and non-ohmic I-V characteristics": {
+              "aliases": []
+            },
+            "Electrical energy and power": {
+              "aliases": []
+            },
+            "Resistivity and conductivity": {
+              "aliases": []
+            },
+            "Series and parallel combinations of resistors": {
+              "aliases": []
+            },
+            "Temperature dependence of resistance": {
+              "aliases": []
+            },
+            "Internal resistance, terminal potential difference and emf of a cell": {
+              "aliases": [
+                "Internal resistance and emf"
+              ]
+            },
+            "Cells in series and parallel": {
+              "aliases": []
+            },
+            "Kirchhoff's laws": {
+              "aliases": [
+                "Kirchhoff laws"
+              ]
+            },
+            "Wheatstone bridge and metre bridge": {
+              "aliases": [
+                "Meter bridge"
+              ]
+            }
+          }
+        },
+        "Magnetic Effects of Current and Magnetism": {
+          "aliases": [
+            "Magnetism",
+            "Moving Charges and Magnetism"
+          ],
+          "topics": {
+            "Biot-Savart law and circular loop": {
+              "aliases": [
+                "Biot Savart law"
+              ]
+            },
+            "Ampere's law and applications": {
+              "aliases": []
+            },
+            "Force on a moving charge in magnetic and electric fields": {
+              "aliases": [
+                "Lorentz force"
+              ]
+            },
+            "Force on a current-carrying conductor": {
+              "aliases": []
+            },
+            "Force between parallel current-carrying conductors": {
+              "aliases": []
+            },
+            "Torque on a current loop": {
+              "aliases": []
+            },
+            "Moving coil galvanometer and conversion to ammeter and voltmeter": {
+              "aliases": [
+                "Galvanometer"
+              ]
+            },
+            "Current loop and bar magnet as magnetic dipoles": {
+              "aliases": []
+            },
+            "Magnetic field lines and field due to a magnetic dipole": {
+              "aliases": []
+            },
+            "Para-, dia- and ferromagnetic substances": {
+              "aliases": [
+                "Magnetic materials"
+              ]
+            }
+          }
+        },
+        "Electromagnetic Induction and Alternating Currents": {
+          "aliases": [
+            "EMI and AC"
+          ],
+          "topics": {
+            "Faraday's law, induced emf and induced current": {
+              "aliases": [
+                "Electromagnetic induction"
+              ]
+            },
+            "Lenz's law and eddy currents": {
+              "aliases": []
+            },
+            "Self and mutual inductance": {
+              "aliases": []
+            },
+            "Alternating current and RMS values": {
+              "aliases": [
+                "AC current"
+              ]
+            },
+            "Reactance, impedance and LCR series circuit": {
+              "aliases": [
+                "LCR circuit"
+              ]
+            },
+            "Resonance and power in AC circuits": {
+              "aliases": []
+            },
+            "Wattless current, AC generator and transformer": {
+              "aliases": [
+                "Transformer",
+                "AC generator"
+              ]
+            }
+          }
+        },
+        "Electromagnetic Waves": {
+          "aliases": [
+            "EM Waves"
+          ],
+          "topics": {
+            "Displacement current": {
+              "aliases": []
+            },
+            "Electromagnetic waves and characteristics": {
+              "aliases": []
+            },
+            "Transverse nature of electromagnetic waves": {
+              "aliases": []
+            },
+            "Electromagnetic spectrum and applications": {
+              "aliases": [
+                "EM spectrum"
+              ]
+            }
+          }
+        },
+        "Optics": {
+          "aliases": [
+            "Ray Optics",
+            "Wave Optics"
+          ],
+          "topics": {
+            "Reflection of light and spherical mirrors": {
+              "aliases": [
+                "Mirror formula"
+              ]
+            },
+            "Refraction at plane and spherical surfaces": {
+              "aliases": []
+            },
+            "Thin lens formula and lens maker formula": {
+              "aliases": []
+            },
+            "Total internal reflection and applications": {
+              "aliases": [
+                "TIR"
+              ]
+            },
+            "Magnification, power of a lens and lens combinations": {
+              "aliases": []
+            },
+            "Refraction through a prism": {
+              "aliases": []
+            },
+            "Microscope and astronomical telescope": {
+              "aliases": []
+            },
+            "Wavefront and Huygens principle": {
+              "aliases": []
+            },
+            "Interference and Young's double-slit experiment": {
+              "aliases": [
+                "YDSE"
+              ]
+            },
+            "Diffraction due to a single slit": {
+              "aliases": []
+            },
+            "Polarization and Brewster's law": {
+              "aliases": [
+                "Polarisation"
+              ]
+            }
+          }
+        },
+        "Dual Nature of Matter and Radiation": {
+          "aliases": [
+            "Dual Nature"
+          ],
+          "topics": {
+            "Dual nature of radiation": {
+              "aliases": []
+            },
+            "Photoelectric effect and Einstein's equation": {
+              "aliases": []
+            },
+            "Particle nature of light": {
+              "aliases": []
+            },
+            "Matter waves and de Broglie relation": {
+              "aliases": [
+                "de-Broglie relation"
+              ]
+            }
+          }
+        },
+        "Atoms and Nuclei": {
+          "aliases": [
+            "Modern Physics"
+          ],
+          "topics": {
+            "Alpha-particle scattering and Rutherford model": {
+              "aliases": []
+            },
+            "Bohr model, energy levels and hydrogen spectrum": {
+              "aliases": []
+            },
+            "Composition and size of nucleus": {
+              "aliases": []
+            },
+            "Atomic masses and mass-energy relation": {
+              "aliases": []
+            },
+            "Mass defect and binding energy per nucleon": {
+              "aliases": []
+            },
+            "Nuclear fission and fusion": {
+              "aliases": []
+            },
+            "Alpha, beta and gamma radiations": {
+              "aliases": [
+                "Radioactive radiations"
+              ]
+            },
+            "Radioactive decay law, half-life and mean life": {
+              "aliases": [
+                "Law of radioactive decay",
+                "Decay constant"
+              ]
+            },
+            "Characteristic and continuous X-rays": {
+              "aliases": [
+                "X rays",
+                "X-rays"
+              ]
+            },
+            "Moseley's law": {
+              "aliases": [
+                "Moseley law"
+              ]
+            }
+          }
+        },
+        "Electronic Devices": {
+          "aliases": [
+            "Semiconductors"
+          ],
+          "topics": {
+            "Semiconductors and semiconductor diode": {
+              "aliases": []
+            },
+            "Diode I-V characteristics and rectifier": {
+              "aliases": []
+            },
+            "LED, photodiode and solar cell": {
+              "aliases": []
+            },
+            "Zener diode and voltage regulation": {
+              "aliases": [
+                "Zener diode as voltage regulator"
+              ]
+            },
+            "Logic gates OR, AND, NOT, NAND and NOR": {
+              "aliases": [
+                "Logic gates"
+              ]
+            }
+          }
+        },
+        "Experimental Skills": {
+          "aliases": [
+            "Practical Physics"
+          ],
+          "topics": {
+            "Vernier calipers": {
+              "aliases": []
+            },
+            "Screw gauge": {
+              "aliases": []
+            },
+            "Simple pendulum energy dissipation": {
+              "aliases": []
+            },
+            "Principle of moments using metre scale": {
+              "aliases": [
+                "Meter scale"
+              ]
+            },
+            "Young's modulus of a metallic wire": {
+              "aliases": []
+            },
+            "Surface tension by capillary rise": {
+              "aliases": []
+            },
+            "Viscosity by terminal velocity": {
+              "aliases": []
+            },
+            "Speed of sound using resonance tube": {
+              "aliases": []
+            },
+            "Specific heat capacity by method of mixtures": {
+              "aliases": []
+            },
+            "Resistivity using metre bridge": {
+              "aliases": [
+                "Meter bridge experiment"
+              ]
+            },
+            "Resistance using Ohm's law": {
+              "aliases": []
+            },
+            "Galvanometer resistance and figure of merit": {
+              "aliases": []
+            },
+            "Focal length by parallax method": {
+              "aliases": []
+            },
+            "Angle of deviation for a prism": {
+              "aliases": []
+            },
+            "Refractive index using travelling microscope": {
+              "aliases": []
+            },
+            "P-N junction diode characteristics": {
+              "aliases": [
+                "PN junction diode"
+              ]
+            },
+            "Zener diode characteristic curve": {
+              "aliases": []
+            },
+            "Identification of diode, LED, resistor and capacitor": {
+              "aliases": []
+            },
+            "Determination of g using simple pendulum": {
+              "aliases": [
+                "g by simple pendulum"
+              ]
+            },
+            "Focal length using u-v method": {
+              "aliases": [
+                "Focal length of concave mirror and convex lens by u-v method"
+              ]
+            },
+            "Specific resistance using post office box": {
+              "aliases": [
+                "Post office box experiment"
+              ]
+            },
+            "Effect of detergents on surface tension": {
+              "aliases": [
+                "Surface tension of water with detergents"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "Chemistry": {
+      "chapters": {
+        "Some Basic Concepts in Chemistry": {
+          "aliases": [
+            "Basic Concepts of Chemistry",
+            "Mole Concept"
+          ],
+          "topics": {
+            "Matter and its nature": {
+              "aliases": []
+            },
+            "Dalton's atomic theory": {
+              "aliases": []
+            },
+            "Atoms, molecules, elements and compounds": {
+              "aliases": []
+            },
+            "Laws of chemical combination": {
+              "aliases": []
+            },
+            "Atomic and molecular masses": {
+              "aliases": []
+            },
+            "Mole concept and molar mass": {
+              "aliases": [
+                "Mole concept"
+              ]
+            },
+            "Percentage composition and empirical and molecular formulae": {
+              "aliases": []
+            },
+            "Chemical equations and stoichiometry": {
+              "aliases": [
+                "Stoichiometry"
+              ]
+            }
+          }
+        },
+        "Atomic Structure": {
+          "aliases": [],
+          "topics": {
+            "Electromagnetic radiation and photoelectric effect": {
+              "aliases": []
+            },
+            "Hydrogen spectrum and Bohr model": {
+              "aliases": [
+                "Bohr model of hydrogen atom"
+              ]
+            },
+            "Dual nature of matter and de Broglie relationship": {
+              "aliases": [
+                "de Broglie relationship"
+              ]
+            },
+            "Heisenberg uncertainty principle": {
+              "aliases": []
+            },
+            "Quantum mechanical model of atom": {
+              "aliases": []
+            },
+            "Atomic orbitals and radial probability": {
+              "aliases": [
+                "Atomic orbitals"
+              ]
+            },
+            "Quantum numbers": {
+              "aliases": []
+            },
+            "Shapes of s, p and d orbitals": {
+              "aliases": []
+            },
+            "Electron spin and spin quantum number": {
+              "aliases": []
+            },
+            "Aufbau principle, Pauli exclusion principle and Hund's rule": {
+              "aliases": [
+                "Rules for filling electrons"
+              ]
+            },
+            "Electronic configuration and stability of half-filled and fully-filled orbitals": {
+              "aliases": [
+                "Electronic configuration"
+              ]
+            }
+          }
+        },
+        "Chemical Bonding and Molecular Structure": {
+          "aliases": [
+            "Chemical Bonding"
+          ],
+          "topics": {
+            "Kossel-Lewis approach and ionic and covalent bonds": {
+              "aliases": []
+            },
+            "Formation of ionic bonds and lattice enthalpy": {
+              "aliases": [
+                "Ionic bonding"
+              ]
+            },
+            "Electronegativity, Fajan's rule and dipole moment": {
+              "aliases": []
+            },
+            "VSEPR theory and shapes of molecules": {
+              "aliases": [
+                "Valence shell electron pair repulsion"
+              ]
+            },
+            "Valence bond theory and hybridization": {
+              "aliases": [
+                "VBT"
+              ]
+            },
+            "Resonance": {
+              "aliases": []
+            },
+            "Molecular orbital theory": {
+              "aliases": [
+                "MOT"
+              ]
+            },
+            "Bonding and antibonding orbitals, sigma and pi bonds": {
+              "aliases": []
+            },
+            "Bond order, bond length and bond energy": {
+              "aliases": []
+            },
+            "Metallic bonding and hydrogen bonding": {
+              "aliases": [
+                "Hydrogen bonding"
+              ]
+            }
+          }
+        },
+        "Chemical Thermodynamics": {
+          "aliases": [
+            "Thermodynamics"
+          ],
+          "topics": {
+            "System, surroundings and thermodynamic properties": {
+              "aliases": []
+            },
+            "State functions, entropy and types of processes": {
+              "aliases": []
+            },
+            "First law of thermodynamics": {
+              "aliases": []
+            },
+            "Work, heat, internal energy and enthalpy": {
+              "aliases": []
+            },
+            "Heat capacity and molar heat capacity": {
+              "aliases": []
+            },
+            "Hess's law and enthalpy changes": {
+              "aliases": [
+                "Hess law"
+              ]
+            },
+            "Second law of thermodynamics": {
+              "aliases": []
+            },
+            "Entropy and Gibbs energy criteria for spontaneity": {
+              "aliases": [
+                "Gibbs free energy"
+              ]
+            },
+            "Standard Gibbs energy change and equilibrium constant": {
+              "aliases": []
+            }
+          }
+        },
+        "Solutions": {
+          "aliases": [],
+          "topics": {
+            "Concentration terms molality, molarity, mole fraction and percentage": {
+              "aliases": [
+                "Concentration of solutions"
+              ]
+            },
+            "Vapour pressure and Raoult's law": {
+              "aliases": [
+                "Raoult law"
+              ]
+            },
+            "Ideal and non-ideal solutions": {
+              "aliases": []
+            },
+            "Colligative properties": {
+              "aliases": []
+            },
+            "Relative lowering of vapour pressure": {
+              "aliases": []
+            },
+            "Depression of freezing point": {
+              "aliases": []
+            },
+            "Elevation of boiling point": {
+              "aliases": []
+            },
+            "Osmotic pressure": {
+              "aliases": []
+            },
+            "Molecular mass using colligative properties": {
+              "aliases": []
+            },
+            "Abnormal molar mass and van't Hoff factor": {
+              "aliases": [
+                "van't Hoff factor"
+              ]
+            }
+          }
+        },
+        "Equilibrium": {
+          "aliases": [
+            "Chemical Equilibrium",
+            "Ionic Equilibrium"
+          ],
+          "topics": {
+            "Dynamic equilibrium": {
+              "aliases": []
+            },
+            "Physical equilibria and Henry's law": {
+              "aliases": [
+                "Henry law"
+              ]
+            },
+            "Law of chemical equilibrium and equilibrium constants": {
+              "aliases": [
+                "Kp and Kc"
+              ]
+            },
+            "Gibbs energy in chemical equilibrium": {
+              "aliases": []
+            },
+            "Le Chatelier's principle": {
+              "aliases": [
+                "Le Chatelier principle"
+              ]
+            },
+            "Weak and strong electrolytes": {
+              "aliases": []
+            },
+            "Acids and bases concepts": {
+              "aliases": [
+                "Arrhenius Bronsted Lowry Lewis acids bases"
+              ]
+            },
+            "Acid-base equilibria and ionization constants": {
+              "aliases": []
+            },
+            "Ionization of water and pH scale": {
+              "aliases": [
+                "pH"
+              ]
+            },
+            "Common ion effect and hydrolysis of salts": {
+              "aliases": []
+            },
+            "Solubility product and buffer solutions": {
+              "aliases": [
+                "Ksp",
+                "Buffers"
+              ]
+            }
+          }
+        },
+        "Redox Reactions and Electrochemistry": {
+          "aliases": [
+            "Redox Reactions",
+            "Electrochemistry"
+          ],
+          "topics": {
+            "Oxidation, reduction and oxidation number": {
+              "aliases": []
+            },
+            "Balancing redox reactions": {
+              "aliases": []
+            },
+            "Electrolytic and metallic conduction": {
+              "aliases": []
+            },
+            "Conductance, molar conductivity and Kohlrausch's law": {
+              "aliases": [
+                "Kohlrausch law"
+              ]
+            },
+            "Electrolytic and galvanic cells": {
+              "aliases": []
+            },
+            "Electrode potentials and standard electrode potential": {
+              "aliases": []
+            },
+            "Half-cell and cell reactions": {
+              "aliases": []
+            },
+            "Nernst equation": {
+              "aliases": []
+            },
+            "Cell potential and Gibbs energy change": {
+              "aliases": []
+            },
+            "Dry cell, lead accumulator and fuel cells": {
+              "aliases": []
+            }
+          }
+        },
+        "Chemical Kinetics": {
+          "aliases": [
+            "Kinetics"
+          ],
+          "topics": {
+            "Rate of a chemical reaction": {
+              "aliases": []
+            },
+            "Factors affecting reaction rate": {
+              "aliases": []
+            },
+            "Elementary and complex reactions": {
+              "aliases": []
+            },
+            "Order and molecularity of reactions": {
+              "aliases": []
+            },
+            "Rate law and rate constant": {
+              "aliases": []
+            },
+            "Zero and first-order reactions": {
+              "aliases": []
+            },
+            "Half-life of reactions": {
+              "aliases": []
+            },
+            "Arrhenius theory and activation energy": {
+              "aliases": [
+                "Arrhenius equation"
+              ]
+            },
+            "Collision theory of bimolecular gaseous reactions": {
+              "aliases": [
+                "Collision theory"
+              ]
+            }
+          }
+        },
+        "Classification of Elements and Periodicity in Properties": {
+          "aliases": [
+            "Periodic Classification",
+            "Periodicity"
+          ],
+          "topics": {
+            "Modern periodic law and periodic table": {
+              "aliases": []
+            },
+            "s, p, d and f block elements": {
+              "aliases": [
+                "Blocks of elements"
+              ]
+            },
+            "Periodic trends in atomic and ionic radii": {
+              "aliases": []
+            },
+            "Ionization enthalpy and electron gain enthalpy": {
+              "aliases": []
+            },
+            "Valence, oxidation states and chemical reactivity": {
+              "aliases": []
+            }
+          }
+        },
+        "p-Block Elements": {
+          "aliases": [
+            "p Block Elements",
+            "Group 13 to Group 18 Elements"
+          ],
+          "topics": {
+            "Electronic configuration of p-block elements": {
+              "aliases": []
+            },
+            "Physical and chemical trends across periods and groups": {
+              "aliases": []
+            },
+            "Unique behaviour of the first element in each group": {
+              "aliases": []
+            },
+            "Group 13 boron and aluminium compounds": {
+              "aliases": [
+                "Borax orthoboric acid diborane boron trifluoride aluminium chloride alums"
+              ]
+            },
+            "Group 14 carbon and silicon compounds": {
+              "aliases": [
+                "Carbon monoxide carbon dioxide silicon dioxide silicones silicates zeolites"
+              ]
+            },
+            "Group 15 nitrogen and phosphorus compounds": {
+              "aliases": [
+                "Dinitrogen ammonia nitric acid phosphine phosphorus chlorides oxoacids"
+              ]
+            },
+            "Group 16 oxygen and sulphur compounds": {
+              "aliases": [
+                "Dioxygen ozone sulphur dioxide sulfuric acid oxoacids of sulphur"
+              ]
+            },
+            "Group 17 halogens and interhalogen compounds": {
+              "aliases": [
+                "Chlorine hydrogen chloride interhalogens oxoacids of halogens bleaching powder"
+              ]
+            },
+            "Group 18 noble gas compounds": {
+              "aliases": [
+                "Xenon fluorides and oxides"
+              ]
+            }
+          }
+        },
+        "d- and f-Block Elements": {
+          "aliases": [
+            "d and f Block Elements",
+            "Transition and Inner Transition Elements"
+          ],
+          "topics": {
+            "Transition elements electronic configuration and occurrence": {
+              "aliases": [
+                "Transition elements"
+              ]
+            },
+            "First-row transition element properties": {
+              "aliases": []
+            },
+            "Oxidation states, colour, catalytic and magnetic properties": {
+              "aliases": []
+            },
+            "Complex formation, interstitial compounds and alloys": {
+              "aliases": []
+            },
+            "Preparation, properties and uses of potassium dichromate and potassium permanganate": {
+              "aliases": [
+                "K2Cr2O7 and KMnO4"
+              ]
+            },
+            "Lanthanoids electronic configuration, oxidation states and contraction": {
+              "aliases": [
+                "Lanthanoid contraction"
+              ]
+            },
+            "Actinoids electronic configuration and oxidation states": {
+              "aliases": []
+            },
+            "Standard electrode potentials of transition elements": {
+              "aliases": []
+            },
+            "Oxoanions of chromium and manganese": {
+              "aliases": [
+                "Chromate dichromate manganate permanganate"
+              ]
+            }
+          }
+        },
+        "Coordination Compounds": {
+          "aliases": [
+            "Coordination Chemistry"
+          ],
+          "topics": {
+            "Werner's theory": {
+              "aliases": []
+            },
+            "Ligands, coordination number, denticity and chelation": {
+              "aliases": []
+            },
+            "IUPAC nomenclature of mononuclear coordination compounds": {
+              "aliases": []
+            },
+            "Isomerism in coordination compounds": {
+              "aliases": []
+            },
+            "Valence bond approach": {
+              "aliases": []
+            },
+            "Crystal field theory basics": {
+              "aliases": [
+                "CFT"
+              ]
+            },
+            "Colour and magnetic properties": {
+              "aliases": []
+            },
+            "Importance of coordination compounds": {
+              "aliases": [
+                "Coordination compounds in qualitative analysis extraction and biological systems"
+              ]
+            },
+            "Spectrochemical series and ligand field strength": {
+              "aliases": [
+                "Spectrochemical series"
+              ]
+            },
+            "Metal carbonyls": {
+              "aliases": []
+            }
+          }
+        },
+        "Isolation of Metals": {
+          "aliases": [
+            "Metallurgy",
+            "General Principles and Processes of Isolation of Elements"
+          ],
+          "topics": {
+            "Metal ores and concentration": {
+              "aliases": [
+                "Concentration of ores"
+              ]
+            },
+            "Thermodynamic principles of metallurgy": {
+              "aliases": [
+                "Extraction of iron copper and zinc"
+              ]
+            },
+            "Electrochemical principles of metallurgy": {
+              "aliases": [
+                "Extraction of aluminium"
+              ]
+            },
+            "Cyanide process for silver and gold": {
+              "aliases": [
+                "Cyanide process"
+              ]
+            },
+            "Refining of metals": {
+              "aliases": []
+            }
+          }
+        },
+        "Principles of Qualitative Analysis": {
+          "aliases": [
+            "Qualitative Analysis",
+            "Salt Analysis"
+          ],
+          "topics": {
+            "Qualitative analysis of Group I to V cations": {
+              "aliases": [
+                "Ag Hg Cu Pb Fe Cr Al Ca Ba Zn Mn Mg cations"
+              ]
+            },
+            "Detection of nitrate and halides": {
+              "aliases": [
+                "Nitrate chloride bromide iodide tests"
+              ]
+            },
+            "Detection of carbonate, bicarbonate, sulphate and sulphide": {
+              "aliases": [
+                "Anion analysis"
+              ]
+            }
+          }
+        },
+        "Purification and Characterisation of Organic Compounds": {
+          "aliases": [
+            "Purification and Characterization of Organic Compounds"
+          ],
+          "topics": {
+            "Crystallization, sublimation, distillation and differential extraction": {
+              "aliases": [
+                "Purification methods"
+              ]
+            },
+            "Chromatography principles and applications": {
+              "aliases": []
+            },
+            "Qualitative detection of nitrogen, sulphur, phosphorus and halogens": {
+              "aliases": [
+                "Lassaigne test"
+              ]
+            },
+            "Quantitative estimation of carbon, hydrogen, nitrogen, halogens, sulphur and phosphorus": {
+              "aliases": []
+            },
+            "Empirical and molecular formula calculations": {
+              "aliases": []
+            }
+          }
+        },
+        "Some Basic Principles of Organic Chemistry": {
+          "aliases": [
+            "General Organic Chemistry",
+            "GOC"
+          ],
+          "topics": {
+            "Tetravalency of carbon and hybridization": {
+              "aliases": []
+            },
+            "Classification of organic compounds by functional groups": {
+              "aliases": []
+            },
+            "Homologous series": {
+              "aliases": []
+            },
+            "Structural and stereoisomerism": {
+              "aliases": [
+                "Isomerism"
+              ]
+            },
+            "Enantiomers, diastereomers and meso compounds": {
+              "aliases": [
+                "Stereochemical relationship"
+              ]
+            },
+            "Trivial and IUPAC nomenclature": {
+              "aliases": [
+                "IUPAC nomenclature"
+              ]
+            },
+            "Homolytic and heterolytic bond fission": {
+              "aliases": []
+            },
+            "Free radicals, carbocations and carbanions": {
+              "aliases": []
+            },
+            "Electrophiles and nucleophiles": {
+              "aliases": []
+            },
+            "Inductive effect, electromeric effect, resonance and hyperconjugation": {
+              "aliases": [
+                "Electronic effects"
+              ]
+            },
+            "Substitution, addition, elimination and rearrangement reactions": {
+              "aliases": [
+                "Organic reaction types"
+              ]
+            }
+          }
+        },
+        "Hydrocarbons": {
+          "aliases": [],
+          "topics": {
+            "Hydrocarbon classification, isomerism and IUPAC nomenclature": {
+              "aliases": []
+            },
+            "General methods of preparation, properties and reactions": {
+              "aliases": []
+            },
+            "Alkanes and conformations": {
+              "aliases": [
+                "Sawhorse and Newman projections"
+              ]
+            },
+            "Halogenation of alkanes": {
+              "aliases": []
+            },
+            "Allylic and benzylic halogenation": {
+              "aliases": []
+            },
+            "Alkenes and geometrical isomerism": {
+              "aliases": []
+            },
+            "Electrophilic addition to alkenes": {
+              "aliases": []
+            },
+            "Markovnikov rule and peroxide effect": {
+              "aliases": [
+                "Markownikoff rule"
+              ]
+            },
+            "Ozonolysis and polymerization of alkenes": {
+              "aliases": []
+            },
+            "Cyclic polymerization of alkynes": {
+              "aliases": []
+            },
+            "Alkynes acidic character and addition reactions": {
+              "aliases": []
+            },
+            "Aromatic hydrocarbons and benzene aromaticity": {
+              "aliases": [
+                "Benzene"
+              ]
+            },
+            "Electrophilic substitution in benzene": {
+              "aliases": []
+            },
+            "Friedel-Crafts alkylation and acylation": {
+              "aliases": [
+                "Friedel Crafts reaction"
+              ]
+            },
+            "Directive influence in monosubstituted benzene": {
+              "aliases": []
+            },
+            "Aspirin synthesis from phenol": {
+              "aliases": [
+                "Aspirin synthesis"
+              ]
+            }
+          }
+        },
+        "Organic Compounds Containing Halogens": {
+          "aliases": [
+            "Haloalkanes and Haloarenes"
+          ],
+          "topics": {
+            "General preparation, properties and reactions of halogen compounds": {
+              "aliases": []
+            },
+            "Nature of carbon-halogen bond": {
+              "aliases": [
+                "C-X bond"
+              ]
+            },
+            "Mechanisms of substitution reactions": {
+              "aliases": []
+            },
+            "Nucleophilic aromatic substitution in haloarenes": {
+              "aliases": [
+                "NAS in haloarenes"
+              ]
+            },
+            "Fittig and Wurtz-Fittig reactions": {
+              "aliases": [
+                "Fittig reaction",
+                "Wurtz Fittig reaction"
+              ]
+            },
+            "Uses and environmental effects of chloroform, iodoform, freons and DDT": {
+              "aliases": [
+                "Environmental effects of halo compounds"
+              ]
+            }
+          }
+        },
+        "Organic Compounds Containing Oxygen": {
+          "aliases": [
+            "Alcohols Phenols and Ethers",
+            "Aldehydes Ketones and Carboxylic Acids"
+          ],
+          "topics": {
+            "Alcohols, phenols and ethers preparation, properties and uses": {
+              "aliases": []
+            },
+            "Identification of primary, secondary and tertiary alcohols": {
+              "aliases": []
+            },
+            "Dehydration of alcohols": {
+              "aliases": []
+            },
+            "Acidic nature and electrophilic substitution of phenols": {
+              "aliases": []
+            },
+            "Reimer-Tiemann reaction": {
+              "aliases": []
+            },
+            "Kolbe reaction of phenols": {
+              "aliases": [
+                "Kolbe-Schmitt reaction",
+                "Kolbe reaction"
+              ]
+            },
+            "Esterification and etherification of phenols": {
+              "aliases": []
+            },
+            "Structure of ethers": {
+              "aliases": []
+            },
+            "Carbonyl group and nucleophilic addition": {
+              "aliases": [
+                "Aldehydes and ketones"
+              ]
+            },
+            "Grignard reagent reactions": {
+              "aliases": []
+            },
+            "Oxidation and reduction of aldehydes and ketones": {
+              "aliases": [
+                "Wolf Kishner and Clemmensen reduction"
+              ]
+            },
+            "Aldol condensation, Cannizzaro reaction and Haloform reaction": {
+              "aliases": []
+            },
+            "Oxime and hydrazone formation": {
+              "aliases": []
+            },
+            "Preparation of aldehydes and ketones from acid chlorides and nitriles": {
+              "aliases": []
+            },
+            "Preparation of carboxylic acids from nitriles, Grignard reagents, esters and amides": {
+              "aliases": [
+                "Preparation of carboxylic acids"
+              ]
+            },
+            "Reduction, halogenation and derivative formation of carboxylic acids": {
+              "aliases": [
+                "Reactions of carboxylic acids"
+              ]
+            },
+            "Tests for aldehydes and ketones": {
+              "aliases": []
+            },
+            "Carboxylic acids acidic strength": {
+              "aliases": []
+            }
+          }
+        },
+        "Organic Compounds Containing Nitrogen": {
+          "aliases": [
+            "Amines",
+            "Diazonium Salts"
+          ],
+          "topics": {
+            "Amines nomenclature, classification and structure": {
+              "aliases": []
+            },
+            "Basic character of amines": {
+              "aliases": []
+            },
+            "Identification of primary, secondary and tertiary amines": {
+              "aliases": []
+            },
+            "Diazonium salts and importance in synthesis": {
+              "aliases": []
+            },
+            "Hoffmann bromamide degradation": {
+              "aliases": [
+                "Hofmann bromamide reaction"
+              ]
+            },
+            "Gabriel phthalimide synthesis": {
+              "aliases": [
+                "Gabriel synthesis"
+              ]
+            },
+            "Carbylamine reaction and Hinsberg test": {
+              "aliases": [
+                "Carbylamine test",
+                "Hinsberg test"
+              ]
+            },
+            "Sandmeyer and related diazonium reactions": {
+              "aliases": [
+                "Sandmeyer reaction"
+              ]
+            },
+            "Azo coupling reactions": {
+              "aliases": [
+                "Azo coupling"
+              ]
+            }
+          }
+        },
+        "Biomolecules": {
+          "aliases": [],
+          "topics": {
+            "Introduction and importance of biomolecules": {
+              "aliases": []
+            },
+            "Carbohydrates, aldoses, ketoses and monosaccharides": {
+              "aliases": [
+                "Carbohydrates"
+              ]
+            },
+            "Oligosaccharides sucrose, lactose and maltose": {
+              "aliases": []
+            },
+            "Proteins and amino acids": {
+              "aliases": [
+                "Alpha amino acids"
+              ]
+            },
+            "Peptide bond, polypeptides and protein structure": {
+              "aliases": []
+            },
+            "Denaturation of proteins and enzymes": {
+              "aliases": []
+            },
+            "Vitamins classification and functions": {
+              "aliases": [
+                "Vitamins"
+              ]
+            },
+            "Nucleic acids DNA and RNA": {
+              "aliases": [
+                "DNA and RNA"
+              ]
+            },
+            "Anomers and glycoside formation": {
+              "aliases": [
+                "Anomers",
+                "Glycosides"
+              ]
+            },
+            "Primary and secondary structure of peptides": {
+              "aliases": [
+                "Peptide structure"
+              ]
+            },
+            "Hormones": {
+              "aliases": []
+            }
+          }
+        },
+        "Polymers": {
+          "aliases": [
+            "Polymer Chemistry"
+          ],
+          "topics": {
+            "Addition and condensation polymerization": {
+              "aliases": [
+                "Types of polymerization"
+              ]
+            },
+            "Homopolymers and copolymers": {
+              "aliases": []
+            },
+            "Natural rubber, cellulose and synthetic polymers": {
+              "aliases": [
+                "Natural rubber cellulose nylon teflon bakelite PVC"
+              ]
+            },
+            "Biodegradable polymers and applications": {
+              "aliases": [
+                "Bio-degradable polymers"
+              ]
+            }
+          }
+        },
+        "Chemistry in Everyday Life": {
+          "aliases": [
+            "Everyday Chemistry"
+          ],
+          "topics": {
+            "Drug-target interaction and therapeutic action": {
+              "aliases": [
+                "Drug target interaction"
+              ]
+            },
+            "Antacids, antihistamines, tranquilizers and analgesics": {
+              "aliases": []
+            },
+            "Antimicrobials and antifertility drugs": {
+              "aliases": []
+            },
+            "Artificial sweeteners": {
+              "aliases": []
+            },
+            "Soaps, detergents and cleansing action": {
+              "aliases": [
+                "Cleansing action of soaps and detergents"
+              ]
+            }
+          }
+        },
+        "Principles Related to Practical Chemistry": {
+          "aliases": [
+            "Practical Chemistry"
+          ],
+          "topics": {
+            "Detection of extra elements in organic compounds": {
+              "aliases": [
+                "Detection of nitrogen sulphur halogens"
+              ]
+            },
+            "Detection of hydroxyl, carbonyl, carboxyl and amino groups": {
+              "aliases": [
+                "Functional group detection"
+              ]
+            },
+            "Detection of nitro group": {
+              "aliases": [
+                "Nitro functional group detection"
+              ]
+            },
+            "Preparation of Mohr's salt and potash alum": {
+              "aliases": []
+            },
+            "Preparation of acetanilide, p-nitro acetanilide, aniline yellow and iodoform": {
+              "aliases": []
+            },
+            "Titrimetric exercises with acids, bases and indicators": {
+              "aliases": [
+                "Titration"
+              ]
+            },
+            "Oxalic acid versus KMnO4 and Mohr's salt versus KMnO4": {
+              "aliases": []
+            },
+            "Qualitative salt analysis of cations and anions": {
+              "aliases": [
+                "Salt analysis"
+              ]
+            },
+            "Enthalpy of solution of CuSO4": {
+              "aliases": []
+            },
+            "Enthalpy of neutralization": {
+              "aliases": []
+            },
+            "Preparation of lyophilic and lyophobic sols": {
+              "aliases": []
+            },
+            "Kinetic study of iodide ions with hydrogen peroxide": {
+              "aliases": []
+            }
+          }
+        }
+      }
+    }
+  }
+}
