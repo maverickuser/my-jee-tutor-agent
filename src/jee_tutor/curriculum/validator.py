@@ -8,6 +8,20 @@ from jee_tutor.curriculum.taxonomy import CurriculumTaxonomy
 
 
 UNABLE_TO_DETERMINE_SENTINEL = "Unable to determine from image"
+TOPIC_TOKEN_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "by",
+    "for",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+    "with",
+    "without",
+}
 
 
 @dataclass(frozen=True)
@@ -81,6 +95,12 @@ def validate_diagnosis_against_taxonomy(
         if len(topic_paths) > 1:
             return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
+        composite_matches = _chapter_topic_tokens_cover_label(taxonomy, chapter_matches, topic)
+        if len(composite_matches) == 1:
+            continue
+        if len(composite_matches) > 1:
+            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
+
         if _topic_exists_anywhere(taxonomy, topic):
             return _failure("topic_not_in_chapter", taxonomy, question=question)
         return _failure("unknown_topic", taxonomy, question=question)
@@ -128,6 +148,45 @@ def _topic_exists_anywhere(taxonomy: CurriculumTaxonomy, topic_label: str) -> bo
                 if label in {normalize_label(candidate) for candidate in [topic_name, *topic.aliases]}:
                     return True
     return False
+
+
+def _chapter_topic_tokens_cover_label(
+    taxonomy: CurriculumTaxonomy,
+    chapter_matches: list[_TopicPath],
+    topic_label: str,
+) -> set[tuple[str, str]]:
+    requested_tokens = _significant_topic_tokens(topic_label)
+    if len(requested_tokens) < 2:
+        return set()
+
+    matches: set[tuple[str, str]] = set()
+    for subject_name, chapter_name in {(path.subject, path.chapter) for path in chapter_matches}:
+        chapter = taxonomy.subjects[subject_name].chapters[chapter_name]
+        chapter_tokens: set[str] = set()
+        for topic_name, topic in chapter.topics.items():
+            chapter_tokens.update(_significant_topic_tokens(topic_name))
+            for alias in topic.aliases:
+                chapter_tokens.update(_significant_topic_tokens(alias))
+        if requested_tokens.issubset(chapter_tokens):
+            matches.add((subject_name, chapter_name))
+    return matches
+
+
+def _significant_topic_tokens(label: str) -> set[str]:
+    tokens = normalize_label(label).split()
+    return {
+        _topic_token_root(token)
+        for token in tokens
+        if token and token not in TOPIC_TOKEN_STOPWORDS and not token.isdigit()
+    }
+
+
+def _topic_token_root(token: str) -> str:
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
 
 
 def _failure(

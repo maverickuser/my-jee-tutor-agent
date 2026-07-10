@@ -22,6 +22,7 @@ def taxonomy_payload():
                         "topics": {
                             "Capacitance": {"aliases": ["Capacitors"]},
                             "Electric Field": {"aliases": []},
+                            "Dielectrics and polarization": {"aliases": []},
                         },
                     },
                     "Mechanics": {
@@ -84,6 +85,21 @@ class CurriculumTaxonomyTest(unittest.TestCase):
             validator.validate(
                 diagnosis(chapter=" electric charges ", topic="capacitors")
             ).valid
+        )
+
+    def test_validator_accepts_composite_topic_words_within_same_chapter(self):
+        validator = CurriculumValidator(CurriculumTaxonomy.model_validate(taxonomy_payload()))
+
+        self.assertTrue(
+            validator.validate(
+                diagnosis(chapter="Electrostatics", topic="Capacitors and Dielectrics")
+            ).valid
+        )
+        self.assertEqual(
+            validator.validate(
+                diagnosis(chapter="Electrostatics", topic="Capacitors and Newton Laws")
+            ).category,
+            "unknown_topic",
         )
 
     def test_validator_rejects_unknown_and_wrong_pairs(self):
