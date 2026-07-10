@@ -45,6 +45,7 @@ class DiagnosisTaskGuardrailResult:
     canonical_match: bool | None = None
     schema_valid: bool | None = None
     actual_question_count: int | None = None
+    details: dict[str, Any] | None = None
 
     def as_crewai_result(self) -> Tuple[bool, Any]:
         return self.passed, self.message
@@ -276,6 +277,7 @@ def _validate_taxonomy(
             retry_category=GuardrailRetryCategory.SEMANTIC_VISION_RETRY,
             schema_valid=True,
             actual_question_count=len(diagnosis.questions),
+            details=getattr(exc, "details", None),
         )
     valid = bool(getattr(result, "valid", result is None or result is True))
     if valid:
@@ -292,6 +294,7 @@ def _validate_taxonomy(
         retry_category=GuardrailRetryCategory.SEMANTIC_VISION_RETRY,
         schema_valid=True,
         actual_question_count=len(diagnosis.questions),
+        details=getattr(result, "details", None),
     )
 
 
@@ -326,6 +329,12 @@ def _log_guardrail_check(
     tool_execution_count = getattr(tool_call_state, "execution_count", 0)
     tool_success = getattr(tool_call_state, "success", False)
     tool_observation_present = bool(getattr(tool_call_state, "observation", None))
+    detail_question_number = _detail(result, "question_number")
+    detail_chapter = _detail(result, "chapter")
+    detail_topic = _detail(result, "topic")
+    detail_normalized_chapter = _detail(result, "normalized_chapter")
+    detail_normalized_topic = _detail(result, "normalized_topic")
+    detail_taxonomy_version = _detail(result, "taxonomy_version")
 
     logger.info(
         "crewai_task_guardrail_check event=%s invocation_id=%s task_name=%s "
@@ -356,7 +365,9 @@ def _log_guardrail_check(
             "guardrail_name=%s failure_category=%s retry_category=%s "
             "expected_image_count=%s actual_question_count=%s "
             "expected_question_number_count=%s tool_call_count=%s tool_execution_count=%s "
-            "tool_success=%s tool_observation_present=%s canonical_match=%s schema_valid=%s",
+            "tool_success=%s tool_observation_present=%s canonical_match=%s schema_valid=%s "
+            "detail_question_number=%s detail_chapter=%s detail_topic=%s "
+            "detail_normalized_chapter=%s detail_normalized_topic=%s detail_taxonomy_version=%s",
             "crewai_task_guardrail_failed",
             invocation_id_value,
             task_name,
@@ -372,4 +383,14 @@ def _log_guardrail_check(
             tool_observation_present,
             result.canonical_match,
             result.schema_valid,
+            detail_question_number,
+            detail_chapter,
+            detail_topic,
+            detail_normalized_chapter,
+            detail_normalized_topic,
+            detail_taxonomy_version,
         )
+
+
+def _detail(result: DiagnosisTaskGuardrailResult, key: str) -> Any:
+    return result.details.get(key) if isinstance(result.details, dict) else None

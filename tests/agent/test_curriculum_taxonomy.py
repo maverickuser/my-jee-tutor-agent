@@ -97,6 +97,18 @@ class CurriculumTaxonomyTest(unittest.TestCase):
             validator.validate(diagnosis(chapter="Electrostatics", topic="Unknown")).category,
             "unknown_topic",
         )
+        unknown_topic = validator.validate(diagnosis(chapter="Electrostatics", topic="Unknown"))
+        self.assertEqual(
+            unknown_topic.details,
+            {
+                "question_number": "6",
+                "chapter": "Electrostatics",
+                "topic": "Unknown",
+                "normalized_chapter": "electrostatics",
+                "normalized_topic": "unknown",
+                "taxonomy_version": "2026-01",
+            },
+        )
         self.assertEqual(
             validator.validate(diagnosis(chapter="Electrostatics", topic="Newton Laws")).category,
             "topic_not_in_chapter",

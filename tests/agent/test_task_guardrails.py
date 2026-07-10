@@ -217,18 +217,34 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
         class Result:
             valid = False
             category = "unknown_topic"
+            details = {
+                "question_number": "36",
+                "chapter": "Coordinate Geometry",
+                "topic": "Unknown topic",
+                "normalized_chapter": "coordinate geometry",
+                "normalized_topic": "unknown topic",
+                "taxonomy_version": "2026-02",
+            }
 
-        result = evaluate_diagnosis_task_output(
-            diagnosis_json(),
-            tool_call_state=successful_state(),
-            expected_image_count=1,
-            taxonomy_validator=lambda diagnosis: Result(),
-        )
+        with self.assertLogs("jee_tutor.agent.task_guardrails", level="ERROR") as logs:
+            result = evaluate_diagnosis_task_output(
+                diagnosis_json(),
+                tool_call_state=successful_state(),
+                expected_image_count=1,
+                taxonomy_validator=lambda diagnosis: Result(),
+            )
 
         self.assertFalse(result.passed)
         self.assertEqual(result.failure_category, "unknown_topic")
+        self.assertEqual(result.details, Result.details)
         self.assertEqual(result.retry_category, GuardrailRetryCategory.SEMANTIC_VISION_RETRY)
         self.assertNotIn("subjects", result.message)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("detail_question_number=36", joined_logs)
+        self.assertIn("detail_chapter=Coordinate Geometry", joined_logs)
+        self.assertIn("detail_topic=Unknown topic", joined_logs)
+        self.assertIn("detail_normalized_topic=unknown topic", joined_logs)
+        self.assertIn("detail_taxonomy_version=2026-02", joined_logs)
 
 
 if __name__ == "__main__":

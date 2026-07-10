@@ -17,6 +17,7 @@ class CurriculumValidationResult:
     message: str | None = None
     taxonomy_version: str | None = None
     low_confidence_count: int = 0
+    details: dict[str, str | int | None] | None = None
 
 
 class CurriculumValidationError(ValueError):
@@ -60,11 +61,11 @@ def validate_diagnosis_against_taxonomy(
             low_confidence_count += 1
             continue
         if chapter_unknown or topic_unknown:
-            return _failure("partial_curriculum_label", taxonomy)
+            return _failure("partial_curriculum_label", taxonomy, question=question)
 
         chapter_matches = _chapter_matches(taxonomy, chapter)
         if not chapter_matches:
-            return _failure("unknown_chapter", taxonomy)
+            return _failure("unknown_chapter", taxonomy, question=question)
 
         topic_paths = [
             path
@@ -78,11 +79,11 @@ def validate_diagnosis_against_taxonomy(
         if len(topic_paths) == 1:
             continue
         if len(topic_paths) > 1:
-            return _failure("ambiguous_chapter_topic", taxonomy)
+            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
         if _topic_exists_anywhere(taxonomy, topic):
-            return _failure("topic_not_in_chapter", taxonomy)
-        return _failure("unknown_topic", taxonomy)
+            return _failure("topic_not_in_chapter", taxonomy, question=question)
+        return _failure("unknown_topic", taxonomy, question=question)
 
     return CurriculumValidationResult(
         valid=True,
@@ -129,10 +130,36 @@ def _topic_exists_anywhere(taxonomy: CurriculumTaxonomy, topic_label: str) -> bo
     return False
 
 
-def _failure(category: str, taxonomy: CurriculumTaxonomy) -> CurriculumValidationResult:
+def _failure(
+    category: str,
+    taxonomy: CurriculumTaxonomy,
+    *,
+    question: Any | None = None,
+) -> CurriculumValidationResult:
     return CurriculumValidationResult(
         valid=False,
         category=category,
         message=f"Curriculum taxonomy validation failed: {category}.",
         taxonomy_version=taxonomy.version,
+        details=_failure_details(question, taxonomy),
     )
+
+
+def _failure_details(question: Any | None, taxonomy: CurriculumTaxonomy) -> dict[str, str | int | None] | None:
+    if question is None:
+        return None
+    question_number = getattr(question, "question_number", None)
+    chapter = str(getattr(question, "chapter", "") or "")
+    topic = str(getattr(question, "topic", "") or "")
+    return {
+        "question_number": question_number,
+        "chapter": _safe_log_label(chapter),
+        "topic": _safe_log_label(topic),
+        "normalized_chapter": normalize_label(chapter),
+        "normalized_topic": normalize_label(topic),
+        "taxonomy_version": taxonomy.version,
+    }
+
+
+def _safe_log_label(value: str, limit: int = 120) -> str:
+    return re.sub(r"\s+", " ", value.strip())[:limit]
