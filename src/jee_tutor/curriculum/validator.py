@@ -84,6 +84,8 @@ def validate_diagnosis_against_taxonomy(
 
         chapter_matches = _chapter_matches(taxonomy, chapter)
         if not chapter_matches:
+            chapter_matches = _chapter_matches_from_topic_label(taxonomy, chapter)
+        if not chapter_matches:
             return _failure("unknown_chapter", taxonomy, question=question)
 
         topic_paths = [
@@ -171,6 +173,25 @@ def _chapter_matches(taxonomy: CurriculumTaxonomy, chapter_label: str) -> list[_
                 continue
             for topic_name in chapter.topics:
                 paths.append(_TopicPath(subject_name, chapter_name, topic_name))
+    return paths
+
+
+def _chapter_matches_from_topic_label(
+    taxonomy: CurriculumTaxonomy,
+    chapter_label: str,
+) -> list[_TopicPath]:
+    """Handle common exam section labels that are modeled as taxonomy topics."""
+    topic_paths = _topic_tokens_strongly_match_anywhere(taxonomy, chapter_label)
+    if not topic_paths:
+        return []
+
+    paths: list[_TopicPath] = []
+    for subject_name, chapter_name in {
+        (subject_name, chapter_name)
+        for subject_name, chapter_name, _topic_name in topic_paths
+    }:
+        for topic_name in taxonomy.subjects[subject_name].chapters[chapter_name].topics:
+            paths.append(_TopicPath(subject_name, chapter_name, topic_name))
     return paths
 
 

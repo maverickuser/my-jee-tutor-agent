@@ -52,6 +52,20 @@ def taxonomy_payload():
             },
             "Mathematics": {
                 "chapters": {
+                    "Coordinate Geometry": {
+                        "aliases": [],
+                        "topics": {
+                            "Equations of a straight line": {
+                                "aliases": ["Straight line"]
+                            },
+                            "Intersection and angle between two lines": {
+                                "aliases": []
+                            },
+                            "Conic sections in standard forms": {
+                                "aliases": ["Conics"]
+                            },
+                        },
+                    },
                     "Limit, Continuity and Differentiability": {
                         "aliases": ["Application of Derivatives"],
                         "topics": {
@@ -149,6 +163,21 @@ class CurriculumTaxonomyTest(unittest.TestCase):
                     topic="Acid-Catalyzed Ether Cleavage and Carbocation Reactions",
                 )
             ).valid
+        )
+
+    def test_validator_accepts_chapter_label_that_is_a_taxonomy_topic_cluster(self):
+        validator = CurriculumValidator(CurriculumTaxonomy.model_validate(taxonomy_payload()))
+
+        self.assertTrue(
+            validator.validate(
+                diagnosis(chapter="Conic Sections", topic="Pair of Straight Lines")
+            ).valid
+        )
+        self.assertEqual(
+            validator.validate(
+                diagnosis(chapter="Unknown", topic="Straight Lines")
+            ).category,
+            "unknown_chapter",
         )
 
     def test_validator_accepts_strong_partial_topic_match_across_syllabus(self):
