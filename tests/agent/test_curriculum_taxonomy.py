@@ -50,6 +50,21 @@ def taxonomy_payload():
                     },
                 }
             },
+            "Mathematics": {
+                "chapters": {
+                    "Limit, Continuity and Differentiability": {
+                        "aliases": ["Application of Derivatives"],
+                        "topics": {
+                            "Polynomial, rational, trigonometric, logarithmic and exponential functions": {
+                                "aliases": []
+                            },
+                            "Increasing and decreasing functions": {
+                                "aliases": ["Monotonic functions"]
+                            },
+                        },
+                    },
+                }
+            },
         },
     }
 
@@ -136,6 +151,45 @@ class CurriculumTaxonomyTest(unittest.TestCase):
             ).valid
         )
 
+    def test_validator_accepts_strong_partial_topic_match_across_syllabus(self):
+        validator = CurriculumValidator(CurriculumTaxonomy.model_validate(taxonomy_payload()))
+
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Application of Derivatives",
+                    topic="Properties of Polynomial Functions",
+                )
+            ).valid
+        )
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Application of Derivatives",
+                    topic="Monotonicity of Functions",
+                )
+            ).valid
+        )
+
+    def test_validator_accepts_ambiguous_partial_topic_match_across_syllabus(self):
+        payload = taxonomy_payload()
+        payload["subjects"]["Mathematics"]["chapters"]["Functions"] = {
+            "aliases": [],
+            "topics": {
+                "Polynomial functions and equations": {"aliases": []},
+            },
+        }
+        validator = CurriculumValidator(CurriculumTaxonomy.model_validate(payload))
+
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Electrostatics",
+                    topic="Properties of Polynomial Functions",
+                )
+            ).valid
+        )
+
     def test_validator_rejects_unknown_and_wrong_pairs(self):
         validator = CurriculumValidator(CurriculumTaxonomy.model_validate(taxonomy_payload()))
 
@@ -159,9 +213,8 @@ class CurriculumTaxonomyTest(unittest.TestCase):
                 "taxonomy_version": "2026-01",
             },
         )
-        self.assertEqual(
-            validator.validate(diagnosis(chapter="Electrostatics", topic="Newton Laws")).category,
-            "topic_not_in_chapter",
+        self.assertTrue(
+            validator.validate(diagnosis(chapter="Electrostatics", topic="Newton Laws")).valid
         )
 
     def test_validator_handles_unable_to_determine_sentinel(self):

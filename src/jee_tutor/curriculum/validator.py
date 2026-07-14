@@ -113,7 +113,12 @@ def validate_diagnosis_against_taxonomy(
             return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
         if _topic_exists_anywhere(taxonomy, topic):
-            return _failure("topic_not_in_chapter", taxonomy, question=question)
+            continue
+
+        syllabus_topic_matches = _topic_tokens_strongly_match_anywhere(taxonomy, topic)
+        if syllabus_topic_matches:
+            continue
+
         return _failure("unknown_topic", taxonomy, question=question)
 
     return CurriculumValidationResult(
@@ -194,6 +199,26 @@ def _topic_exists_anywhere(taxonomy: CurriculumTaxonomy, topic_label: str) -> bo
     return False
 
 
+def _topic_tokens_strongly_match_anywhere(
+    taxonomy: CurriculumTaxonomy,
+    topic_label: str,
+) -> set[tuple[str, str, str]]:
+    requested_tokens = _significant_topic_tokens(topic_label)
+    if len(requested_tokens) < 2:
+        return set()
+
+    matches: set[tuple[str, str, str]] = set()
+    for subject_name, subject in taxonomy.subjects.items():
+        for chapter_name, chapter in subject.chapters.items():
+            for topic_name, topic in chapter.topics.items():
+                candidate_tokens = _significant_topic_tokens(topic_name)
+                for alias in topic.aliases:
+                    candidate_tokens.update(_significant_topic_tokens(alias))
+                if len(requested_tokens & candidate_tokens) >= 2:
+                    matches.add((subject_name, chapter_name, topic_name))
+    return matches
+
+
 def _chapter_topic_tokens_cover_label(
     taxonomy: CurriculumTaxonomy,
     chapter_matches: list[_TopicPath],
@@ -252,6 +277,8 @@ def _significant_label_tokens(label: str, stopwords: set[str]) -> set[str]:
 
 
 def _topic_token_root(token: str) -> str:
+    if len(token) > 6 and token.endswith("icity"):
+        return token[:-3]
     if len(token) > 4 and token.endswith("ies"):
         return token[:-3] + "y"
     if len(token) > 3 and token.endswith("s"):
