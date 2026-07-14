@@ -95,22 +95,16 @@ def validate_diagnosis_against_taxonomy(
                 topic,
             )
         ]
-        if len(topic_paths) == 1:
+        if topic_paths:
             continue
-        if len(topic_paths) > 1:
-            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
         composite_matches = _chapter_topic_tokens_cover_label(taxonomy, chapter_matches, topic)
-        if len(composite_matches) == 1:
+        if composite_matches:
             continue
-        if len(composite_matches) > 1:
-            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
         partial_topic_matches = _chapter_topic_tokens_intersect_label(taxonomy, chapter_matches, topic)
-        if len(partial_topic_matches) == 1:
+        if partial_topic_matches:
             continue
-        if len(partial_topic_matches) > 1:
-            return _failure("ambiguous_chapter_topic", taxonomy, question=question)
 
         if _topic_exists_anywhere(taxonomy, topic):
             continue
@@ -191,10 +185,19 @@ def _labels_partially_contain_each_other(left: str, right: str) -> bool:
 
 def _topic_exists_anywhere(taxonomy: CurriculumTaxonomy, topic_label: str) -> bool:
     label = normalize_label(topic_label)
+    requested_tokens = _significant_topic_tokens(topic_label)
     for subject in taxonomy.subjects.values():
         for chapter in subject.chapters.values():
             for topic_name, topic in chapter.topics.items():
-                if label in {normalize_label(candidate) for candidate in [topic_name, *topic.aliases]}:
+                candidate_labels = {normalize_label(candidate) for candidate in [topic_name, *topic.aliases]}
+                if label in candidate_labels:
+                    return True
+                if any(_labels_partially_contain_each_other(label, candidate) for candidate in candidate_labels):
+                    return True
+                candidate_tokens = _significant_topic_tokens(topic_name)
+                for alias in topic.aliases:
+                    candidate_tokens.update(_significant_topic_tokens(alias))
+                if requested_tokens and not requested_tokens.isdisjoint(candidate_tokens):
                     return True
     return False
 

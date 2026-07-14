@@ -50,10 +50,21 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         )
 
     def test_quality_gate_evidence_includes_controlled_react_and_artifact_safety(self):
-        evidence = _quality_gate_evidence()
+        with patch.dict(
+            "os.environ",
+            {
+                "CURRICULUM_TAXONOMY_S3_URI": "s3://bucket/taxonomy.json",
+                "CURRICULUM_TAXONOMY_REQUIRED": "true",
+            },
+            clear=True,
+        ):
+            evidence = _quality_gate_evidence()
 
         self.assertTrue(evidence["controlled_react"]["task_guardrail_required"])
         self.assertEqual(evidence["controlled_react"]["max_real_vision_executions"], 2)
+        self.assertTrue(evidence["taxonomy"]["configured"])
+        self.assertEqual(evidence["taxonomy"]["source"], "s3://bucket/taxonomy.json")
+        self.assertEqual(evidence["taxonomy"]["required"], "true")
         self.assertTrue(evidence["artifact_safety"]["artifact_replay_checked"])
 
     @patch("scripts.run_agentcore_smoke.invoke_runtime")

@@ -170,6 +170,22 @@ class CurriculumTaxonomyTest(unittest.TestCase):
                 )
             ).valid
         )
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Electrostatics",
+                    topic="Polynomial",
+                )
+            ).valid
+        )
+        self.assertTrue(
+            validator.validate(
+                diagnosis(
+                    chapter="Electrostatics",
+                    topic="Logarithmic functions",
+                )
+            ).valid
+        )
 
     def test_validator_accepts_ambiguous_partial_topic_match_across_syllabus(self):
         payload = taxonomy_payload()
@@ -235,7 +251,7 @@ class CurriculumTaxonomyTest(unittest.TestCase):
             "partial_curriculum_label",
         )
 
-    def test_validator_rejects_ambiguous_chapter_topic(self):
+    def test_validator_accepts_ambiguous_topic_matches_as_syllabus_grounded(self):
         payload = taxonomy_payload()
         payload["subjects"]["Mathematics"] = {
             "chapters": {
@@ -247,7 +263,7 @@ class CurriculumTaxonomyTest(unittest.TestCase):
         }
         validator = CurriculumValidator(CurriculumTaxonomy.model_validate(payload))
 
-        self.assertEqual(validator.validate(diagnosis()).category, "ambiguous_chapter_topic")
+        self.assertTrue(validator.validate(diagnosis()).valid)
 
     def test_local_loader_uses_cache_before_ttl_and_reloads_after_change(self):
         with tempfile.TemporaryDirectory() as tmpdir:

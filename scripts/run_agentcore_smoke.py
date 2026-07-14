@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import uuid
 from urllib.parse import urlparse
@@ -206,6 +207,11 @@ def main() -> int:
 
 
 def _quality_gate_evidence() -> dict:
+    taxonomy_source = (
+        os.getenv("CURRICULUM_TAXONOMY_S3_URI")
+        or os.getenv("CURRICULUM_TAXONOMY_LOCAL_PATH")
+        or ""
+    )
     return {
         "controlled_react": {
             "task_guardrail_required": True,
@@ -213,7 +219,9 @@ def _quality_gate_evidence() -> dict:
             "max_real_vision_executions": 2,
         },
         "taxonomy": {
-            "configured": False,
+            "configured": bool(taxonomy_source),
+            "source": taxonomy_source or None,
+            "required": os.getenv("CURRICULUM_TAXONOMY_REQUIRED", "false"),
             "runtime_source_verified_by_env": "CURRICULUM_TAXONOMY_S3_URI",
         },
         "artifact_safety": {
