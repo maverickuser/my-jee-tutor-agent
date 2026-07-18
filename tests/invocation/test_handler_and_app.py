@@ -34,6 +34,30 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertEqual(payload.image_s3_prefix, "s3://attempt-bucket/maths/attempt-123/")
         self.assertEqual(payload.subject, "maths")
 
+    def test_validate_tutor_invocation_accepts_profile_without_image_source(self):
+        payload = validate_tutor_invocation(
+            {
+                "task": "profile",
+                "recipient_email": "student@example.com",
+                "subject": "Physics",
+            }
+        )
+
+        self.assertEqual(payload.task, "profile")
+        self.assertEqual(payload.recipient_email, "student@example.com")
+        self.assertIsNone(payload.image_s3_prefix)
+        self.assertIsNone(payload.image_data_uri)
+
+    def test_validate_tutor_invocation_still_rejects_diagnosis_without_image_source(self):
+        with self.assertRaises(Exception):
+            validate_tutor_invocation(
+                {
+                    "task": "diagnose this attempt",
+                    "recipient_email": "student@example.com",
+                    "subject": "Physics",
+                }
+            )
+
     def test_safe_trace_input_redacts_student_metadata_in_s3_prefix(self):
         payload = validate_tutor_invocation(
             {

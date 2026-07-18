@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from jee_tutor.privacy import redact_student_metadata
 
+PROFILE_REPORT_TASK = "profile"
+
 
 class TutorInvocationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -35,6 +37,9 @@ class TutorInvocationPayload(BaseModel):
 
     @model_validator(mode="after")
     def require_exactly_one_image_payload(self) -> "TutorInvocationPayload":
+        if self.task == PROFILE_REPORT_TASK:
+            return self
+
         image_source_count = sum(
             bool(value) for value in [self.image_s3_prefix, self.image_data_uri]
         )
