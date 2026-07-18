@@ -48,6 +48,21 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertIsNone(payload.image_s3_prefix)
         self.assertIsNone(payload.image_data_uri)
 
+    def test_validate_tutor_invocation_accepts_profile_task_aliases_without_image_source(self):
+        for task in ["Profile", "profile ", "profile-report", "student_profile", "task profile"]:
+            with self.subTest(task=task):
+                payload = validate_tutor_invocation(
+                    {
+                        "task": task,
+                        "recipient_email": "student@example.com",
+                        "subject": "Physics",
+                    }
+                )
+
+                self.assertEqual(payload.task, task)
+                self.assertIsNone(payload.image_s3_prefix)
+                self.assertIsNone(payload.image_data_uri)
+
     def test_validate_tutor_invocation_still_rejects_diagnosis_without_image_source(self):
         with self.assertRaises(Exception):
             validate_tutor_invocation(
@@ -110,6 +125,21 @@ class HandlerAndAppTest(unittest.TestCase):
             response = handle_agentcore_request(
                 {
                     "task": "profile",
+                    "recipient_email": "student@example.com",
+                    "subject": "Physics",
+                }
+            )
+
+        self.assertEqual(response, {"profile_status": "no_history"})
+
+    def test_legacy_tutor_invocation_dispatches_profile_report_task(self):
+        with patch("jee_tutor.infrastructure.composition.build_student_profile_service") as build_profile:
+            build_profile.return_value.handle.return_value = {"profile_status": "no_history"}
+            from jee_tutor.handler import handle_tutor_invocation
+
+            response = handle_tutor_invocation(
+                {
+                    "task": "Profile",
                     "recipient_email": "student@example.com",
                     "subject": "Physics",
                 }

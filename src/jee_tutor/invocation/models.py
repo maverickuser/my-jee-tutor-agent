@@ -4,8 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from jee_tutor.privacy import redact_student_metadata
-
-PROFILE_REPORT_TASK = "profile"
+from jee_tutor.tasks.student_profile import is_profile_task
 
 
 class TutorInvocationPayload(BaseModel):
@@ -37,7 +36,7 @@ class TutorInvocationPayload(BaseModel):
 
     @model_validator(mode="after")
     def require_exactly_one_image_payload(self) -> "TutorInvocationPayload":
-        if self.task == PROFILE_REPORT_TASK:
+        if is_profile_task(self.task):
             return self
 
         image_source_count = sum(

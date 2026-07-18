@@ -18,7 +18,7 @@ The system SHALL validate tutor invocations with a strict payload schema.
 
 #### Scenario: Profile task does not require image source
 
-- **WHEN** the caller sends `task` equal to `profile`
+- **WHEN** the caller sends `task` equal to `profile` or a supported profile-task alias after normalization
 - **THEN** payload validation SHALL NOT require `image_data_uri` or `image_s3_prefix`
 - **AND** the request SHALL be routed to the student profile task handler
 - **AND** diagnosis image-source validation SHALL remain unchanged for non-profile tasks
