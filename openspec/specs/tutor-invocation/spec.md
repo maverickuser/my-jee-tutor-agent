@@ -143,6 +143,12 @@ The invocation layer SHALL only produce successful analysis responses after the 
 - **WHEN** the CrewAI task guardrail passes
 - **THEN** the invocation MAY continue to Bedrock output guardrail checks, artifact writing, email delivery, status completion, and success response formatting
 
+#### Scenario: Guardrail softens unknown taxonomy label
+- **WHEN** the CrewAI task guardrail passes by marking an `unknown_chapter` or `unknown_topic` label with `[Needs human validation]`
+- **THEN** the invocation SHALL treat the workflow as successful
+- **AND** SHALL continue to Bedrock output guardrail checks, artifact writing, email delivery, status completion, and success response formatting
+- **AND** downstream analysis artifacts SHALL preserve the marker and human-validation disclaimer
+
 #### Scenario: Guardrail rejected output
 - **WHEN** the CrewAI task guardrail fails after allowed retry handling
 - **THEN** the invocation SHALL return a handled workflow error

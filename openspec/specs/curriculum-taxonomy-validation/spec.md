@@ -98,15 +98,23 @@ The system SHALL deterministically validate diagnosis chapter/topic labels again
 ### Requirement: Task Guardrail Integration
 The task guardrail SHALL include curriculum validation after structured diagnosis and invocation-shape checks.
 
-#### Scenario: Taxonomy mismatch occurs
+#### Scenario: Unknown taxonomy label is softened
 - **WHEN** diagnosis output passes JSON, schema, image count, and question-number checks
-- **AND** chapter/topic taxonomy validation fails
+- **AND** chapter/topic taxonomy validation fails with `unknown_chapter` or `unknown_topic`
+- **THEN** the task guardrail SHALL suffix the failed chapter or topic label with `[Needs human validation]`
+- **AND** SHALL pass the guardrail using the marked diagnosis observation
+- **AND** SHALL NOT reject the observation or fail the workflow only because of the unknown taxonomy label
+- **AND** SHALL emit safe warning telemetry without including the full taxonomy
+
+#### Scenario: Non-softened taxonomy mismatch occurs
+- **WHEN** diagnosis output passes JSON, schema, image count, and question-number checks
+- **AND** chapter/topic taxonomy validation fails for a category other than `unknown_chapter` or `unknown_topic`
 - **THEN** the task guardrail SHALL classify the failure as semantic vision retry
 - **AND** mark the current observation rejected
 - **AND** return safe feedback that does not include the full taxonomy
 
 #### Scenario: Second taxonomy mismatch occurs
-- **WHEN** a semantic retry observation also fails taxonomy validation
+- **WHEN** a semantic retry observation also fails non-softened taxonomy validation
 - **THEN** the workflow SHALL fail
 - **AND** rendering, Bedrock output guardrail, artifacts, email, and successful response SHALL NOT run
 

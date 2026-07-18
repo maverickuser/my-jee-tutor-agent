@@ -17,7 +17,7 @@ The system SHALL attach a deterministic Python guardrail to the CrewAI diagnosis
 - **AND** SHALL NOT call an LLM, S3, SES, DynamoDB, Bedrock Guardrails, artifact writers, or email delivery
 
 ### Requirement: Task Output Contract
-The task guardrail SHALL validate that CrewAI final output exactly represents the approved vision tool observation.
+The task guardrail SHALL validate that CrewAI final output exactly represents the approved vision tool observation, except when a taxonomy label miss is softened into a marked observation.
 
 #### Scenario: Output is empty
 - **WHEN** task output is missing or empty
@@ -36,6 +36,13 @@ The task guardrail SHALL validate that CrewAI final output exactly represents th
 - **WHEN** task output and tool observation are both parseable JSON
 - **AND** their canonical JSON forms differ
 - **THEN** the guardrail SHALL fail with `VALIDATION_ERROR: canonical_mismatch`
+
+#### Scenario: Taxonomy label miss is marked
+- **WHEN** task output and tool observation canonically match
+- **AND** the observation only fails taxonomy validation with `unknown_chapter` or `unknown_topic`
+- **THEN** the guardrail SHALL pass with a deterministic observation whose failed chapter or topic label is suffixed with `[Needs human validation]`
+- **AND** mark the observation validated for downstream rendering
+- **AND** emit safe warning telemetry that the guardrail softened the taxonomy label miss
 
 ### Requirement: Structured Diagnosis Validation
 The task guardrail SHALL validate the structured diagnosis schema and invocation shape.
@@ -67,7 +74,7 @@ The task guardrail SHALL classify failures into retry categories.
 - **THEN** the guardrail SHALL classify the failure as `cached_finalization_retry`
 
 #### Scenario: Semantic observation failure
-- **WHEN** the tool observation itself is invalid for schema, count, question-number, duplicate, or taxonomy reasons
+- **WHEN** the tool observation itself is invalid for schema, count, question-number, duplicate, or non-softened taxonomy reasons
 - **THEN** the guardrail SHALL classify the failure as `semantic_vision_retry`
 - **AND** mark the observation rejected when retry budget remains
 

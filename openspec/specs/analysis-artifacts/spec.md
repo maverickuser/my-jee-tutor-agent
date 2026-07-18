@@ -63,6 +63,12 @@ The system SHALL render analysis Markdown into a PDF and upload it to S3.
 - **AND** the response SHALL include an artifact error describing the PDF failure
 - **AND** the system SHALL attempt to write a Markdown fallback artifact
 
+#### Scenario: Analysis contains taxonomy review markers
+
+- **WHEN** analysis Markdown contains chapter or topic labels marked with `[Needs human validation]`
+- **THEN** the PDF and Markdown artifacts SHALL preserve those markers in the relevant table cells
+- **AND** the artifacts SHALL include a disclaimer stating that marked chapter/topic labels were not found in the approved curriculum taxonomy and should be validated by a human
+
 ### Requirement: Markdown Fallback Artifact
 
 The system SHALL persist a Markdown fallback when PDF artifact creation fails.
