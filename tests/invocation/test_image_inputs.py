@@ -58,6 +58,7 @@ class ImageInputResolverTest(unittest.TestCase):
                         {"Key": "attempts/Question_19.jpg"},
                         {"Key": "attempts/notes.txt"},
                         {"Key": "attempts/Question_6.png"},
+                        {"Key": "attempts/profile-smoke/run-1/Question_6.png"},
                         {"Key": "attempts/subfolder/"},
                     ]
                 }
@@ -77,6 +78,13 @@ class ImageInputResolverTest(unittest.TestCase):
         self.assertEqual(
             client.paginator.calls,
             [{"Bucket": "attempt-bucket", "Prefix": "attempts/"}],
+        )
+        self.assertEqual(
+            client.get_object_calls,
+            [
+                {"Bucket": "attempt-bucket", "Key": "attempts/Question_6.png"},
+                {"Bucket": "attempt-bucket", "Key": "attempts/Question_19.jpg"},
+            ],
         )
 
     def test_s3_prefix_resolves_image_metadata(self):
@@ -142,6 +150,49 @@ class ImageInputResolverTest(unittest.TestCase):
             [{"Bucket": "attempt-bucket", "Key": "attempts/page-1.png"}],
         )
 
+    def test_s3_prefix_ignores_nested_image_objects(self):
+        client = FakeS3Client(
+            {
+                ("eval-bucket", "cd-evals-images/Physics_Q13.png"): b"physics",
+                ("eval-bucket", "cd-evals-images/Chemistry_Q34.png"): b"chemistry",
+                ("eval-bucket", "cd-evals-images/Maths_Q36.png"): b"maths",
+            },
+            pages=[
+                {
+                    "Contents": [
+                        {"Key": "cd-evals-images/Physics_Q13.png"},
+                        {
+                            "Key": (
+                                "cd-evals-images/profile-smoke/run-1/users/student/"
+                                "Mock/tests/CD/subjects/Physics/questions/Physics_Q13.png"
+                            )
+                        },
+                        {"Key": "cd-evals-images/Chemistry_Q34.png"},
+                        {
+                            "Key": (
+                                "cd-evals-images/profile-smoke/run-1/users/student/"
+                                "Mock/tests/CD/subjects/Physics/questions/Chemistry_Q34.png"
+                            )
+                        },
+                        {"Key": "cd-evals-images/Maths_Q36.png"},
+                    ]
+                }
+            ],
+        )
+
+        images = ImageInputResolver(s3_client=client).resolve_images(
+            image_s3_prefix="s3://eval-bucket/cd-evals-images/"
+        )
+
+        self.assertEqual(
+            [image.object_key for image in images],
+            [
+                "cd-evals-images/Physics_Q13.png",
+                "cd-evals-images/Chemistry_Q34.png",
+                "cd-evals-images/Maths_Q36.png",
+            ],
+        )
+
     def test_s3_prefix_without_supported_images_is_rejected(self):
         client = FakeS3Client({}, pages=[{"Contents": [{"Key": "attempts/notes.txt"}]}])
 
@@ -152,8 +203,8 @@ class ImageInputResolverTest(unittest.TestCase):
 
     def test_lazy_s3_client_is_created_once(self):
         fake_client = FakeS3Client(
-            {("bucket", "image.png"): b"image"},
-            pages=[{"Contents": [{"Key": "image.png"}]}],
+            {("bucket", "images/image.png"): b"image"},
+            pages=[{"Contents": [{"Key": "images/image.png"}]}],
         )
 
         with unittest.mock.patch(

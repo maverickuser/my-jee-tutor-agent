@@ -65,7 +65,8 @@ class ImageInputResolver:
         keys = [
             key
             for key in self._list_s3_keys(bucket, prefix)
-            if Path(key).suffix.lower() in SUPPORTED_IMAGE_FORMATS
+            if _is_direct_child_key(key, prefix)
+            and Path(key).suffix.lower() in SUPPORTED_IMAGE_FORMATS
         ]
         if not keys:
             supported = ", ".join(sorted(SUPPORTED_IMAGE_FORMATS))
@@ -131,6 +132,14 @@ def _question_number_from_file_name(file_name: str) -> str | None:
     if not matches:
         return None
     return str(int(matches[-1]))
+
+
+def _is_direct_child_key(key: str, prefix: str) -> bool:
+    normalized_prefix = prefix if prefix.endswith("/") else f"{prefix}/"
+    if not key.startswith(normalized_prefix):
+        return False
+    relative_key = key[len(normalized_prefix) :]
+    return bool(relative_key) and "/" not in relative_key
 
 
 def _s3_image_sort_key(key: str) -> tuple[int, int, str]:
