@@ -22,10 +22,6 @@ from jee_tutor.profile.storage import (
     build_student_diagnosis_metadata_store,
 )
 
-
-PROFILE_REPORT_TASK = "profile"
-
-
 class StudentProfileApplicationService:
     def __init__(
         self,
@@ -82,4 +78,4 @@ class StudentProfileApplicationService:
         }
 
 
-__all__ = ["PROFILE_REPORT_TASK", "StudentProfileApplicationService"]
+__all__ = ["StudentProfileApplicationService"]

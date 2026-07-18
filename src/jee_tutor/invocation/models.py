@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from jee_tutor.profile.privacy import redact_student_metadata
+from jee_tutor.privacy import redact_student_metadata
 
 
 class TutorInvocationPayload(BaseModel):

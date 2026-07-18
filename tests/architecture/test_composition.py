@@ -20,7 +20,7 @@ class CompositionTest(unittest.TestCase):
         self.assertIsInstance(service, TutorInvocationApplicationService)
 
     def test_handler_delegates_to_composition_root(self):
-        with patch("jee_tutor.handler.build_tutor_invocation_service") as build:
+        with patch("jee_tutor.infrastructure.composition.build_tutor_invocation_service") as build:
             build.return_value.handle.return_value = {"analysis": "ok"}
 
             from jee_tutor.handler import handle_tutor_invocation

@@ -1,4 +1,5 @@
 import unittest
+import sys
 from unittest.mock import patch
 
 from jee_tutor.handler import validate_tutor_invocation
@@ -9,6 +10,16 @@ class HandlerAndAppTest(unittest.TestCase):
         payload = validate_tutor_invocation({"image_data_uri": "data:image/png;base64,ZmFrZQ=="})
 
         self.assertEqual(payload.image_data_uri, "data:image/png;base64,ZmFrZQ==")
+
+    def test_invocation_models_do_not_import_profile_report_stack(self):
+        sys.modules.pop("jee_tutor.profile.reporting", None)
+        sys.modules.pop("jee_tutor.application.profile", None)
+
+        from jee_tutor.invocation.models import AgentLLMCallRecord
+
+        self.assertEqual(AgentLLMCallRecord.__name__, "AgentLLMCallRecord")
+        self.assertNotIn("jee_tutor.profile.reporting", sys.modules)
+        self.assertNotIn("jee_tutor.application.profile", sys.modules)
 
     def test_validate_tutor_invocation_accepts_agentcore_json_contract(self):
         payload = validate_tutor_invocation(
@@ -68,7 +79,7 @@ class HandlerAndAppTest(unittest.TestCase):
             self.assertEqual(invoke_tutor({"image_data_uri": "x"}, None), {"analysis": "ok"})
 
     def test_agentcore_handler_dispatches_profile_report_task(self):
-        with patch("jee_tutor.handler.build_student_profile_service") as build_profile:
+        with patch("jee_tutor.infrastructure.composition.build_student_profile_service") as build_profile:
             build_profile.return_value.handle.return_value = {"profile_status": "no_history"}
             from jee_tutor.handler import handle_agentcore_request
 
@@ -81,6 +92,15 @@ class HandlerAndAppTest(unittest.TestCase):
             )
 
         self.assertEqual(response, {"profile_status": "no_history"})
+
+    def test_agentcore_handler_dispatches_default_diagnosis_task(self):
+        with patch("jee_tutor.infrastructure.composition.build_tutor_invocation_service") as build_tutor:
+            build_tutor.return_value.handle.return_value = {"analysis": "ok"}
+            from jee_tutor.handler import handle_agentcore_request
+
+            response = handle_agentcore_request({"image_data_uri": "x"})
+
+        self.assertEqual(response, {"analysis": "ok"})
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@ from jee_tutor.agent.config_loader import LLMConfig
 DEFAULT_LLM_TIMEOUT_SECONDS = 180
 DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
 CREWAI_MODEL = "gemini/gemini-3-flash-preview"
-PROFILE_REPORT_MODEL = "gemini/gemini-2.5-pro"
 
 
 @dataclass(frozen=True)
@@ -127,15 +126,4 @@ class CrewAIModelConfig(VisionModelConfig):
             config_key="model",
             default_model=CREWAI_MODEL,
             error_label="CREWAI_MODEL",
-        )
-
-
-class ProfileReportModelConfig(VisionModelConfig):
-    def resolve(self) -> ModelSettings:
-        return self._resolve_model(
-            env_key="PROFILE_REPORT_MODEL",
-            config_section="profile_report",
-            config_key="model",
-            default_model=PROFILE_REPORT_MODEL,
-            error_label="PROFILE_REPORT_MODEL",
         )

@@ -1,22 +1,92 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from copy import deepcopy
+from dataclasses import dataclass
 import json
 import logging
 import os
+from pathlib import Path
+import tomllib
 from typing import Any, Protocol
 
 from litellm import completion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from jee_tutor.agent.llm_client import CompletionFunction
-from jee_tutor.agent.model_config import ProfileReportModelConfig
 from jee_tutor.profile.semantic import LongitudinalEvidencePack
 
 
 logger = logging.getLogger(__name__)
 PROFILE_REPORT_SCHEMA_NAME = "student_longitudinal_profile_report"
 PROFILE_REPORT_SCHEMA_VERSION = "1.0"
+PROFILE_REPORT_MODEL = "gemini/gemini-2.5-pro"
+DEFAULT_LLM_TIMEOUT_SECONDS = 180
+DEFAULT_CONFIG_PATHS = (
+    Path("config/llm.toml"),
+    Path("src/config/llm.toml"),
+)
+CompletionFunction = Callable[..., dict]
+
+
+@dataclass(frozen=True)
+class ProfileReportModelSettings:
+    model: str
+    api_key: str | None = None
+    api_base: str | None = None
+    aws_region_name: str | None = None
+    completion_options: dict[str, Any] | None = None
+
+    def to_litellm_kwargs(self) -> dict[str, Any]:
+        kwargs = deepcopy(self.completion_options) if self.completion_options else {}
+        kwargs["model"] = self.model
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.aws_region_name:
+            kwargs["aws_region_name"] = self.aws_region_name
+        return kwargs
+
+
+class ProfileReportModelConfig:
+    def __init__(
+        self,
+        environ: Mapping[str, str] | None = None,
+        config: Mapping[str, Any] | None = None,
+    ):
+        self.environ = environ if environ is not None else os.environ
+        self.config = dict(config) if config is not None else _load_llm_config(
+            self.environ.get("LLM_CONFIG_FILE")
+        )
+
+    def resolve(self) -> ProfileReportModelSettings:
+        model = (
+            self.environ.get("PROFILE_REPORT_MODEL")
+            or _config_get(self.config, "profile_report", "model", PROFILE_REPORT_MODEL)
+        )
+        completion_options = _config_section(self.config, "completion")
+        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
+        if model.startswith("bedrock/") or model.startswith("amazon/"):
+            return ProfileReportModelSettings(
+                model=model,
+                aws_region_name=self.environ.get("AWS_REGION")
+                or self.environ.get("AWS_DEFAULT_REGION")
+                or _config_get(self.config, "aws", "region"),
+                completion_options=completion_options,
+            )
+        api_key = _resolve_api_key(model, self.environ)
+        if not api_key:
+            raise ValueError(
+                "No API key configured for the selected PROFILE_REPORT_MODEL. Set OPENAI_API_KEY, "
+                "GOOGLE_API_KEY, or LITELLM_API_KEY."
+            )
+        return ProfileReportModelSettings(
+            model=model,
+            api_key=api_key,
+            api_base=self.environ.get("LITELLM_BASE_URL")
+            or _config_get(self.config, "litellm", "api_base"),
+            completion_options=completion_options,
+        )
 
 
 class ProfileReportOutput(BaseModel):
@@ -207,6 +277,49 @@ def _profile_report_llm_enabled(environ: Mapping[str, str]) -> bool:
     if value is None:
         return True
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_llm_config(path: str | None = None) -> dict[str, Any]:
+    config_path = _resolve_config_path(path)
+    if not config_path:
+        return {}
+    with config_path.open("rb") as config_file:
+        return tomllib.load(config_file)
+
+
+def _resolve_config_path(path: str | None) -> Path | None:
+    candidates = (Path(path),) if path else DEFAULT_CONFIG_PATHS
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _config_get(
+    config: Mapping[str, Any],
+    section: str,
+    key: str,
+    default: Any = None,
+) -> Any:
+    value = _config_section(config, section).get(key)
+    return value if value not in (None, "") else default
+
+
+def _config_section(config: Mapping[str, Any], section: str) -> dict[str, Any]:
+    current: Any = config
+    for part in section.split("."):
+        if not isinstance(current, Mapping):
+            return {}
+        current = current.get(part, {})
+    return deepcopy(current) if isinstance(current, Mapping) else {}
+
+
+def _resolve_api_key(model: str, environ: Mapping[str, str]) -> str | None:
+    if model.startswith("openai/"):
+        return environ.get("OPENAI_API_KEY") or environ.get("LITELLM_API_KEY")
+    if model.startswith("gemini/") or model.startswith("google/"):
+        return environ.get("GOOGLE_API_KEY") or environ.get("LITELLM_API_KEY")
+    return environ.get("LITELLM_API_KEY")
 
 
 def _profile_report_system_prompt() -> str:

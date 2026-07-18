@@ -1,6 +1,6 @@
 import unittest
 
-from jee_tutor.application.profile import PROFILE_REPORT_TASK, StudentProfileApplicationService
+from jee_tutor.application.profile import StudentProfileApplicationService
 from jee_tutor.profile.models import (
     StudentDiagnosisMetadata,
     StructuredDiagnosisQuestionEvidence,
@@ -10,6 +10,7 @@ from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,
 )
+from jee_tutor.tasks.student_profile import PROFILE_REPORT_TASK
 
 
 def report(report_id: str) -> StructuredDiagnosisReport:

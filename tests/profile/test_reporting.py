@@ -1,4 +1,6 @@
 import unittest
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from jee_tutor.profile.semantic import (
     SemanticGapCluster,
@@ -7,6 +9,7 @@ from jee_tutor.profile.semantic import (
 from jee_tutor.profile.reporting import (
     LiteLLMProfileReportWriter,
     ProfileAnalysisService,
+    ProfileReportModelConfig,
     validate_profile_report,
 )
 from tests.profile.test_semantic_evidence_pack import evidence
@@ -166,6 +169,64 @@ class ProfileReportingTest(unittest.TestCase):
 
         validate_profile_report(report, pack)
         self.assertIn("Analyzed 1 diagnosed questions", report.overall_summary)
+
+    def test_profile_report_model_config_resolves_gemini_api_key(self):
+        config = ProfileReportModelConfig(
+            environ={
+                "PROFILE_REPORT_MODEL": "gemini/gemini-2.5-pro",
+                "GOOGLE_API_KEY": "google-key",
+                "LITELLM_BASE_URL": "https://litellm.example",
+            },
+            config={"completion": {"timeout": 12}},
+        )
+
+        settings = config.resolve()
+
+        self.assertEqual(
+            settings.to_litellm_kwargs(),
+            {
+                "model": "gemini/gemini-2.5-pro",
+                "api_key": "google-key",
+                "api_base": "https://litellm.example",
+                "timeout": 12,
+            },
+        )
+
+    def test_profile_report_model_config_resolves_bedrock_region(self):
+        config = ProfileReportModelConfig(
+            environ={
+                "PROFILE_REPORT_MODEL": "bedrock/anthropic.claude-3-5-sonnet",
+                "AWS_REGION": "ap-south-1",
+            },
+            config={},
+        )
+
+        settings = config.resolve()
+
+        self.assertEqual(settings.model, "bedrock/anthropic.claude-3-5-sonnet")
+        self.assertEqual(settings.aws_region_name, "ap-south-1")
+        self.assertEqual(settings.to_litellm_kwargs()["timeout"], 180)
+
+    def test_profile_report_model_config_loads_toml_file(self):
+        with TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "llm.toml"
+            config_path.write_text(
+                "[profile_report]\nmodel = \"openai/gpt-4o\"\n\n"
+                "[completion]\ntimeout = 9\n",
+                encoding="utf-8",
+            )
+            config = ProfileReportModelConfig(
+                environ={
+                    "LLM_CONFIG_FILE": str(config_path),
+                    "OPENAI_API_KEY": "openai-key",
+                }
+            )
+
+            settings = config.resolve()
+
+        self.assertEqual(settings.model, "openai/gpt-4o")
+        self.assertEqual(settings.api_key, "openai-key")
+        self.assertEqual(settings.to_litellm_kwargs()["timeout"], 9)
 
 
 class FakeModelSettings:
