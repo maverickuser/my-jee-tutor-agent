@@ -79,12 +79,12 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-	          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
-	          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-	          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
-	          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
-	          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
-	          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
+          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
+          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
+          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
+          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
+          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
+          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
           TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
@@ -308,12 +308,12 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-	          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
-	          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-	          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
-	          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
-	          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
-	          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
+          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
+          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
+          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
+          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
+          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
+          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
           TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
