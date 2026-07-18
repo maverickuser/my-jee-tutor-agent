@@ -63,6 +63,7 @@ def metadata(report_id: str) -> StudentDiagnosisMetadata:
 
 
 class StudentProfileApplicationServiceTest(unittest.TestCase):
+    @patch.dict("os.environ", {"JEE_TUTOR_GIT_SHA": "profile-sha"}, clear=True)
     def test_profile_request_returns_no_history_without_metadata(self):
         service = StudentProfileApplicationService(
             metadata_store=InMemoryStudentDiagnosisMetadataStore(),
@@ -78,7 +79,9 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(response["profile_status"], "no_history")
+        self.assertEqual(response["runtime_commit_sha"], "profile-sha")
 
+    @patch.dict("os.environ", {"JEE_TUTOR_GIT_SHA": "profile-sha"}, clear=True)
     def test_profile_request_rejects_missing_email_or_subject(self):
         service = StudentProfileApplicationService(
             metadata_store=InMemoryStudentDiagnosisMetadataStore(),
@@ -89,7 +92,9 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
 
         self.assertEqual(response["profile_status"], "invalid_request")
         self.assertIn("Invalid student profile request", response["error"])
+        self.assertEqual(response["runtime_commit_sha"], "profile-sha")
 
+    @patch.dict("os.environ", {"JEE_TUTOR_GIT_SHA": "profile-sha"}, clear=True)
     def test_profile_request_generates_written_profile_from_history(self):
         metadata_store = InMemoryStudentDiagnosisMetadataStore()
         artifact_store = InMemoryStructuredDiagnosisArtifactStore()
@@ -112,6 +117,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(response["profile_status"], "succeeded")
+        self.assertEqual(response["runtime_commit_sha"], "profile-sha")
         self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
         self.assertIn("Projectile components", response["profile_markdown"])
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pydantic import ValidationError
@@ -37,6 +38,7 @@ class StudentProfileApplicationService:
         self.report_service = report_service or build_profile_analysis_service_from_environment()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        runtime_commit_sha = _runtime_commit_sha()
         try:
             request = ProfileReportRequest.model_validate(
                 {
@@ -49,6 +51,7 @@ class StudentProfileApplicationService:
                 "profile_status": "invalid_request",
                 "error": "Invalid student profile request.",
                 "details": [error["msg"] for error in exc.errors()],
+                "runtime_commit_sha": runtime_commit_sha,
             }
 
         evidence_result = ProfileEvidenceLoader(
@@ -60,6 +63,7 @@ class StudentProfileApplicationService:
                 "profile_status": "no_history",
                 "message": evidence_result.message,
                 "subject": request.subject,
+                "runtime_commit_sha": runtime_commit_sha,
             }
 
         clusters = self.semantic_analyzer.cluster(
@@ -78,7 +82,13 @@ class StudentProfileApplicationService:
             "subject": request.subject,
             "profile_report": report.model_dump(),
             "profile_markdown": self.report_service.render_markdown(report),
+            "runtime_commit_sha": runtime_commit_sha,
         }
+
+
+def _runtime_commit_sha() -> str | None:
+    value = os.getenv("JEE_TUTOR_GIT_SHA", "").strip()
+    return value if value and value != "unknown" else None
 
 
 __all__ = ["StudentProfileApplicationService"]
