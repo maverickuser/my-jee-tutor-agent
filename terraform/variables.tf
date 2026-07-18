@@ -84,6 +84,24 @@ variable "profile_report_llm_enabled" {
   default     = true
 }
 
+variable "profile_report_s3_bucket_name" {
+  description = "S3 bucket where generated student profile report artifacts are written. Defaults to a project/account/region-specific bucket name."
+  type        = string
+  default     = ""
+}
+
+variable "profile_report_s3_bucket_create" {
+  description = "Create the profile report S3 bucket. Set false when using an existing bucket."
+  type        = bool
+  default     = true
+}
+
+variable "profile_report_s3_prefix" {
+  description = "S3 key prefix for generated student profile report artifacts."
+  type        = string
+  default     = "profile-reports"
+}
+
 variable "langfuse_public_key" {
   description = "Langfuse public key for observability, prompt management, and evaluation scores."
   type        = string

@@ -55,3 +55,13 @@ output "evidence_embedding_table_name" {
   value       = aws_dynamodb_table.evidence_embeddings.name
   description = "DynamoDB table used for profile evidence embedding cache records."
 }
+
+output "profile_report_s3_bucket_name" {
+  value       = local.profile_report_s3_bucket_name
+  description = "S3 bucket used for generated student profile report artifacts."
+}
+
+output "profile_report_s3_prefix" {
+  value       = local.profile_report_s3_prefix
+  description = "S3 key prefix used for generated student profile report artifacts."
+}

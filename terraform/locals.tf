@@ -6,6 +6,8 @@ locals {
   invocation_status_table_name = "${var.project_name}-invocations"
   student_diagnosis_metadata_table_name = "${var.project_name}-student-diagnosis-metadata"
   evidence_embedding_table_name = "${var.project_name}-evidence-embeddings"
+  profile_report_s3_bucket_name = var.profile_report_s3_bucket_name != "" ? var.profile_report_s3_bucket_name : "${var.project_name}-${data.aws_caller_identity.current.account_id}-${var.aws_region}-profile-reports"
+  profile_report_s3_prefix      = trim(var.profile_report_s3_prefix, "/")
   email_body_template_compact  = replace(replace(trimspace(var.email_body_template), "\n", " "), "\r", " ")
 
   curriculum_taxonomy_s3_path    = var.curriculum_taxonomy_s3_uri != "" ? trimprefix(var.curriculum_taxonomy_s3_uri, "s3://") : ""

@@ -167,6 +167,19 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
 	          Resource = aws_dynamodb_table.evidence_embeddings.arn
 	        }
 	      ] : [],
+	      local.profile_report_s3_bucket_name != "" ? [
+	        {
+	          Sid    = "WriteProfileReportArtifacts"
+	          Effect = "Allow"
+	          Action = [
+	            "s3:PutObject",
+	            "s3:AbortMultipartUpload"
+	          ]
+	          Resource = [
+	            local.profile_report_s3_prefix != "" ? "arn:aws:s3:::${local.profile_report_s3_bucket_name}/${local.profile_report_s3_prefix}/*" : "arn:aws:s3:::${local.profile_report_s3_bucket_name}/*"
+	          ]
+	        }
+	      ] : [],
 	      length(var.s3_image_input_object_arns) > 0 ? [
         {
           Sid    = "S3ImageObjectReadWrite"

@@ -106,6 +106,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
             artifact_store=artifact_store,
             semantic_analyzer=SemanticGapAnalyzer(clusterer=fixed_clusters),
             report_service=ProfileAnalysisService(),
+            artifact_writer=FakeProfileArtifactWriter(),
         )
 
         response = service.handle(
@@ -118,6 +119,12 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
 
         self.assertEqual(response["profile_status"], "succeeded")
         self.assertEqual(response["runtime_commit_sha"], "profile-sha")
+        self.assertEqual(response["profile_artifact_status"], "succeeded")
+        self.assertEqual(
+            response["profile_pdf_uri"],
+            "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.pdf",
+        )
+        self.assertEqual(response["profile_artifact_errors"], [])
         self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
         self.assertIn("Projectile components", response["profile_markdown"])
 
@@ -145,6 +152,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
                 similarity_threshold=0.95,
             ),
             report_service=ProfileAnalysisService(),
+            artifact_writer=FakeProfileArtifactWriter(),
         )
 
         with patch(
@@ -206,6 +214,23 @@ class RecordingSemanticClassifier:
                 rationale="LLM classified these cosine-near gaps as the same underlying gap.",
             )
         ]
+
+
+class FakeProfileArtifactResult:
+    status = "succeeded"
+    pdf_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.pdf"
+    markdown_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.md"
+    json_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.json"
+    errors = []
+
+
+class FakeProfileArtifactWriter:
+    def __init__(self):
+        self.calls = []
+
+    def write(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeProfileArtifactResult()
 
 
 class SerializingDynamoTable:

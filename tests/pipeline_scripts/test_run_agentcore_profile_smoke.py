@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from scripts.run_agentcore_profile_smoke import (  # noqa: E402
+    _head_s3_uri,
     _load_s3_json,
     main,
 )
@@ -36,11 +37,28 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
         self.assertEqual(s3_client.get_object.call_args.kwargs["Bucket"], "bucket")
         self.assertEqual(s3_client.get_object.call_args.kwargs["Key"], "path/report.json")
 
+    def test_head_s3_uri_rejects_invalid_uri_and_heads_valid_uri(self):
+        s3_client = Mock()
+
+        with self.assertRaisesRegex(ValueError, "Invalid S3 URI"):
+            _head_s3_uri("not-s3")
+
+        with patch("scripts.run_agentcore_profile_smoke.boto3.client", return_value=s3_client):
+            _head_s3_uri("s3://bucket/path/report.pdf")
+
+        s3_client.head_object.assert_called_once_with(Bucket="bucket", Key="path/report.pdf")
+
     def test_profile_smoke_reuses_diagnosis_json_and_invokes_profile_without_image_path(self):
         runtime_client = Mock()
+        s3_client = Mock()
         first_response = {
             "profile_status": "succeeded",
             "profile_markdown": "# Physics Longitudinal Profile",
+            "profile_artifact_status": "succeeded",
+            "profile_pdf_uri": "s3://profile-bucket/student/profile_report.pdf",
+            "profile_markdown_uri": "s3://profile-bucket/student/profile_report.md",
+            "profile_json_uri": "s3://profile-bucket/student/profile_report.json",
+            "profile_artifact_errors": [],
             "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -57,7 +75,12 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
             )
             with (
                 patch("scripts.run_agentcore_profile_smoke.uuid.uuid4", return_value="run-1"),
-                patch("scripts.run_agentcore_profile_smoke.boto3.client", return_value=runtime_client),
+                patch(
+                    "scripts.run_agentcore_profile_smoke.boto3.client",
+                    side_effect=lambda service, **_kwargs: (
+                        runtime_client if service == "bedrock-agentcore" else s3_client
+                    ),
+                ),
                 patch("scripts.run_agentcore_profile_smoke._load_s3_json", return_value=diagnosis_report()),
                 patch("scripts.run_agentcore_profile_smoke._put_metadata") as put_metadata,
                 patch("scripts.run_agentcore_profile_smoke._embedding_count", return_value=2),
@@ -94,6 +117,15 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
             "s3://eval-bucket/cd-evals-images/Physics_analysis.json",
         )
         self.assertEqual(report["embedding_record_count"], 2)
+        self.assertEqual(report["profile_artifact_status"], "succeeded")
+        self.assertEqual(
+            report["profile_pdf_uri"],
+            "s3://profile-bucket/student/profile_report.pdf",
+        )
+        s3_client.head_object.assert_called_once_with(
+            Bucket="profile-bucket",
+            Key="student/profile_report.pdf",
+        )
         put_metadata.assert_called_once()
         metadata_item = put_metadata.call_args.args[1]
         self.assertEqual(metadata_item["email"], "cd-profile-smoke-run-1@example.com")
@@ -143,6 +175,8 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
         response = {
             "profile_status": "succeeded",
             "profile_markdown": "# Physics Longitudinal Profile",
+            "profile_artifact_status": "succeeded",
+            "profile_pdf_uri": "s3://profile-bucket/student/profile_report.pdf",
             "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -157,6 +191,7 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
                 patch("scripts.run_agentcore_profile_smoke._load_s3_json", return_value=diagnosis_report()),
                 patch("scripts.run_agentcore_profile_smoke._put_metadata"),
                 patch("scripts.run_agentcore_profile_smoke._embedding_count", return_value=0),
+                patch("scripts.run_agentcore_profile_smoke._head_s3_uri"),
                 patch(
                     "scripts.run_agentcore_profile_smoke.invoke_until_terminal",
                     side_effect=[(response, 0), (response, 0)],
@@ -185,6 +220,55 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("profile_embeddings_missing", report["failed_assertions"])
+
+    def test_profile_smoke_fails_when_profile_pdf_is_not_returned(self):
+        response = {
+            "profile_status": "succeeded",
+            "profile_markdown": "# Physics Longitudinal Profile",
+            "profile_artifact_status": "disabled",
+            "runtime_commit_sha": "abc123",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "profile-smoke.json"
+            diagnosis_smoke = Path(directory) / "diagnosis-smoke.json"
+            diagnosis_smoke.write_text(
+                json.dumps({"diagnosis_json_uri": "s3://eval-bucket/report.json"})
+            )
+            with (
+                patch("scripts.run_agentcore_profile_smoke.uuid.uuid4", return_value="run-1"),
+                patch("scripts.run_agentcore_profile_smoke.boto3.client", return_value=Mock()),
+                patch("scripts.run_agentcore_profile_smoke._load_s3_json", return_value=diagnosis_report()),
+                patch("scripts.run_agentcore_profile_smoke._put_metadata"),
+                patch("scripts.run_agentcore_profile_smoke._embedding_count", return_value=2),
+                patch(
+                    "scripts.run_agentcore_profile_smoke.invoke_until_terminal",
+                    side_effect=[(response, 0), (response, 0)],
+                ),
+                patch(
+                    "sys.argv",
+                    [
+                        "run_agentcore_profile_smoke.py",
+                        "--runtime-arn",
+                        "arn:runtime",
+                        "--metadata-table-name",
+                        "metadata-table",
+                        "--embedding-table-name",
+                        "embedding-table",
+                        "--diagnosis-smoke-report",
+                        str(diagnosis_smoke),
+                        "--expected-sha",
+                        "abc123",
+                        "--output",
+                        str(output),
+                    ],
+                ),
+            ):
+                exit_code = main()
+                report = json.loads(output.read_text())
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("profile_artifact_not_succeeded", report["failed_assertions"])
+        self.assertIn("profile_pdf_uri_missing", report["failed_assertions"])
 
 
 def diagnosis_report() -> dict:

@@ -113,6 +113,9 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             "profile_report_model",
             "profile_embedding_model",
             "profile_semantic_cluster_model",
+            "profile_report_s3_bucket_name",
+            "profile_report_s3_bucket_create",
+            "profile_report_s3_prefix",
             "structured_diagnosis_enabled",
             "profile_report_llm_enabled",
         ]:
@@ -125,6 +128,8 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             "PROFILE_REPORT_MODEL",
             "PROFILE_EMBEDDING_MODEL",
             "PROFILE_SEMANTIC_CLUSTER_MODEL",
+            "PROFILE_REPORT_S3_BUCKET",
+            "PROFILE_REPORT_S3_PREFIX",
             "STRUCTURED_DIAGNOSIS_ENABLED",
             "PROFILE_REPORT_LLM_ENABLED",
         ]:
@@ -132,6 +137,11 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             self.assertIn(env_name, workflow)
 
         self.assertIn("CD_EVAL_CREWAI_MODEL", workflow)
+        self.assertIn("PROFILE_REPORT_S3_PREFIX", workflow)
+        self.assertIn("WriteProfileReportArtifacts", terraform)
+        self.assertIn('aws_s3_bucket" "profile_reports', terraform)
+        self.assertIn("profile_report_s3_bucket_name", terraform)
+        self.assertIn('TF_VAR_profile_report_s3_bucket_create: "false"', workflow)
         self.assertIn("CD_EVAL_VISION_MODEL", workflow)
         self.assertIn("secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o'", workflow)
         self.assertIn(

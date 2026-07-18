@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from jee_tutor.profile.artifacts import ProfileReportArtifactWriter
 from jee_tutor.profile.evidence import ProfileEvidenceLoader
 from jee_tutor.profile.models import ProfileReportRequest
 from jee_tutor.profile.reporting import (
@@ -31,11 +32,13 @@ class StudentProfileApplicationService:
         artifact_store: StructuredDiagnosisArtifactStore | None = None,
         semantic_analyzer: SemanticGapAnalyzer | None = None,
         report_service: ProfileAnalysisService | None = None,
+        artifact_writer: ProfileReportArtifactWriter | None = None,
     ):
         self.metadata_store = metadata_store or build_student_diagnosis_metadata_store()
         self.artifact_store = artifact_store or build_structured_diagnosis_artifact_store()
         self.semantic_analyzer = semantic_analyzer or SemanticGapAnalyzer()
         self.report_service = report_service or build_profile_analysis_service_from_environment()
+        self.artifact_writer = artifact_writer or ProfileReportArtifactWriter()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         runtime_commit_sha = _runtime_commit_sha()
@@ -77,11 +80,24 @@ class StudentProfileApplicationService:
         )
         report = self.report_service.generate(evidence_pack)
         validate_profile_report(report, evidence_pack)
+        profile_markdown = self.report_service.render_markdown(report)
+        artifact_result = self.artifact_writer.write(
+            student_id=evidence_result.reports[0].student_id,
+            student_name=evidence_result.reports[0].student_name,
+            subject=request.subject,
+            profile_report=report,
+            profile_markdown=profile_markdown,
+        )
         return {
             "profile_status": "succeeded",
             "subject": request.subject,
             "profile_report": report.model_dump(),
-            "profile_markdown": self.report_service.render_markdown(report),
+            "profile_markdown": profile_markdown,
+            "profile_artifact_status": artifact_result.status,
+            "profile_pdf_uri": artifact_result.pdf_uri,
+            "profile_markdown_uri": artifact_result.markdown_uri,
+            "profile_json_uri": artifact_result.json_uri,
+            "profile_artifact_errors": artifact_result.errors,
             "runtime_commit_sha": runtime_commit_sha,
         }
 

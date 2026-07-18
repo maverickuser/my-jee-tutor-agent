@@ -22,6 +22,8 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
 	    PROFILE_SEMANTIC_CLUSTER_MODEL = var.profile_semantic_cluster_model
 	    STRUCTURED_DIAGNOSIS_ENABLED = tostring(var.structured_diagnosis_enabled)
 	    PROFILE_REPORT_LLM_ENABLED   = tostring(var.profile_report_llm_enabled)
+	    PROFILE_REPORT_S3_BUCKET     = local.profile_report_s3_bucket_name
+	    PROFILE_REPORT_S3_PREFIX     = local.profile_report_s3_prefix
     LANGFUSE_PUBLIC_KEY = var.langfuse_public_key
     LANGFUSE_SECRET_KEY = var.langfuse_secret_key
     LANGFUSE_BASE_URL   = var.langfuse_base_url

@@ -48,6 +48,7 @@ def main() -> int:
     second_poll_count = 0
     embedding_count = 0
     diagnosis_json_uri = None
+    profile_pdf_uri = None
     subject = None
     try:
         diagnosis_smoke_report = _load_json_file(args.diagnosis_smoke_report)
@@ -87,6 +88,16 @@ def main() -> int:
             failures.append("profile_status_not_succeeded")
         if not first.get("profile_markdown"):
             failures.append("profile_markdown_missing")
+        if first.get("profile_artifact_status") != "succeeded":
+            failures.append("profile_artifact_not_succeeded")
+        profile_pdf_uri = first.get("profile_pdf_uri")
+        if not profile_pdf_uri:
+            failures.append("profile_pdf_uri_missing")
+        else:
+            try:
+                _head_s3_uri(profile_pdf_uri)
+            except Exception:
+                failures.append("profile_pdf_not_found")
         if "image_s3_prefix" in first or "analysis" in first:
             failures.append("profile_response_looks_like_diagnosis")
 
@@ -122,6 +133,11 @@ def main() -> int:
             "embedding_table_name": args.embedding_table_name,
             "profile_status": first.get("profile_status"),
             "profile_markdown_present": bool(first.get("profile_markdown")),
+            "profile_artifact_status": first.get("profile_artifact_status"),
+            "profile_pdf_uri": profile_pdf_uri,
+            "profile_markdown_uri": first.get("profile_markdown_uri"),
+            "profile_json_uri": first.get("profile_json_uri"),
+            "profile_artifact_errors": first.get("profile_artifact_errors", []),
             "embedding_record_count": embedding_count,
             "idempotency_replay_succeeded": second.get("profile_status") == "succeeded",
             "in_progress_poll_count": first_poll_count + second_poll_count,
@@ -136,6 +152,7 @@ def main() -> int:
             "diagnosis_smoke_report": args.diagnosis_smoke_report,
             "diagnosis_json_uri": diagnosis_json_uri,
             "subject": subject,
+            "profile_pdf_uri": profile_pdf_uri,
             "recipient_email": email,
             "failed_assertions": failures,
             "error_type": type(exc).__name__,
@@ -172,6 +189,16 @@ def _load_s3_json(s3_uri: str) -> dict:
         Key=parsed.path.lstrip("/"),
     )
     return json.loads(response["Body"].read().decode("utf-8"))
+
+
+def _head_s3_uri(s3_uri: str) -> None:
+    parsed = urlparse(s3_uri)
+    if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.strip("/"):
+        raise ValueError(f"Invalid S3 URI: {s3_uri}")
+    boto3.client("s3").head_object(
+        Bucket=parsed.netloc,
+        Key=parsed.path.lstrip("/"),
+    )
 
 
 def _metadata_item(*, email: str, diagnosis_json_uri: str, report: dict) -> dict:
