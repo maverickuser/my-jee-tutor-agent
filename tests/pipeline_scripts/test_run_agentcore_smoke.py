@@ -15,6 +15,13 @@ from scripts.run_agentcore_smoke import (  # noqa: E402
     invoke_until_terminal,
     main,
     markdown_data_row_count,
+    prepare_smoke_image_prefix,
+)
+
+
+CANONICAL_IMAGE_PREFIX = (
+    "s3://eval-bucket/users/cd-profile-smoke/CD_Profile_Smoke/tests/"
+    "CD_SMOKE/subjects/Physics/questions/"
 )
 
 
@@ -66,6 +73,60 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         self.assertEqual(evidence["taxonomy"]["source"], "s3://bucket/taxonomy.json")
         self.assertEqual(evidence["taxonomy"]["required"], "true")
         self.assertTrue(evidence["artifact_safety"]["artifact_replay_checked"])
+
+    def test_prepare_smoke_image_prefix_reuses_canonical_prefix(self):
+        client_factory = Mock()
+
+        result = prepare_smoke_image_prefix(
+            CANONICAL_IMAGE_PREFIX,
+            "run-1",
+            s3_client_factory=client_factory,
+        )
+
+        self.assertEqual(result, CANONICAL_IMAGE_PREFIX)
+        client_factory.assert_not_called()
+
+    def test_prepare_smoke_image_prefix_stages_noncanonical_eval_images(self):
+        s3_client = Mock()
+        s3_client.list_objects_v2.return_value = {
+            "Contents": [
+                {"Key": "cd-evals-images/Physics_Q13.png"},
+                {"Key": "cd-evals-images/Chemistry_Q34.jpg"},
+                {"Key": "cd-evals-images/README.txt"},
+            ],
+            "IsTruncated": False,
+        }
+
+        result = prepare_smoke_image_prefix(
+            "s3://eval-bucket/cd-evals-images/",
+            "run-1",
+            s3_client_factory=Mock(return_value=s3_client),
+        )
+
+        expected_prefix = (
+            "s3://eval-bucket/cd-evals-images/profile-smoke/run-1/users/"
+            "cd-profile-smoke/CD_Profile_Smoke/tests/CD_SMOKE/subjects/Physics/questions/"
+        )
+        self.assertEqual(result, expected_prefix)
+        s3_client.list_objects_v2.assert_called_once_with(
+            Bucket="eval-bucket",
+            Prefix="cd-evals-images/",
+        )
+        self.assertEqual(s3_client.copy_object.call_count, 2)
+        self.assertEqual(
+            s3_client.copy_object.call_args_list[0].kwargs,
+            {
+                "Bucket": "eval-bucket",
+                "Key": (
+                    "cd-evals-images/profile-smoke/run-1/users/cd-profile-smoke/"
+                    "CD_Profile_Smoke/tests/CD_SMOKE/subjects/Physics/questions/Physics_Q13.png"
+                ),
+                "CopySource": {
+                    "Bucket": "eval-bucket",
+                    "Key": "cd-evals-images/Physics_Q13.png",
+                },
+            },
+        )
 
     @patch("scripts.run_agentcore_smoke.invoke_runtime")
     def test_in_progress_response_is_polled_until_terminal(self, invoke):
@@ -139,7 +200,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "--runtime-arn",
                         "arn:runtime",
                         "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
+                        CANONICAL_IMAGE_PREFIX,
                         "--expected-sha",
                         "abc123",
                         "--expected-image-count",
@@ -185,7 +246,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "--runtime-arn",
                         "arn:runtime",
                         "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
+                        CANONICAL_IMAGE_PREFIX,
                         "--expected-sha",
                         "abc123",
                         "--expected-image-count",
@@ -216,7 +277,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                 patch(
                     "scripts.run_agentcore_smoke.invoke_runtime",
                     side_effect=[response, response],
-                ),
+                ) as invoke,
                 patch(
                     "scripts.run_agentcore_smoke.boto3.client",
                     return_value=client,
@@ -228,7 +289,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "--runtime-arn",
                         "arn:runtime",
                         "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
+                        CANONICAL_IMAGE_PREFIX,
                         "--expected-sha",
                         "abc123",
                         "--expected-image-count",
@@ -247,7 +308,12 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
             self.assertFalse(report["artifact_created"])
             self.assertEqual(report["analysis_data_row_count"], 1)
             self.assertEqual(report["expected_image_count"], 1)
+            self.assertEqual(report["requested_image_s3_prefix"], CANONICAL_IMAGE_PREFIX)
+            self.assertEqual(report["effective_image_s3_prefix"], CANONICAL_IMAGE_PREFIX)
             self.assertNotIn("pdf_uri_missing", report["failed_assertions"])
+            first_payload = invoke.call_args_list[0].args[3]
+            self.assertEqual(first_payload["subject"], "Physics")
+            self.assertEqual(first_payload["image_s3_prefix"], CANONICAL_IMAGE_PREFIX)
             client_factory.assert_called_once()
             (service_name,) = client_factory.call_args.args
             config = client_factory.call_args.kwargs["config"]
@@ -295,7 +361,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "--runtime-arn",
                         "arn:runtime",
                         "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
+                        CANONICAL_IMAGE_PREFIX,
                         "--expected-sha",
                         "abc123",
                         "--expected-image-count",
@@ -351,7 +417,7 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
                         "--runtime-arn",
                         "arn:runtime",
                         "--image-s3-prefix",
-                        "s3://eval-bucket/images/",
+                        CANONICAL_IMAGE_PREFIX,
                         "--expected-sha",
                         "abc123",
                         "--expected-image-count",

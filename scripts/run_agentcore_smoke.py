@@ -5,10 +5,13 @@ import json
 import os
 import time
 import uuid
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 import boto3
 from botocore.config import Config
+
+from jee_tutor.profile.parsing import parse_student_context_from_s3_path
 
 from eval_runner import write_report
 
@@ -18,6 +21,12 @@ IN_PROGRESS_ERROR = "Tutor invocation is already in progress."
 IN_PROGRESS_POLL_INTERVAL_SECONDS = 5.0
 IN_PROGRESS_POLL_TIMEOUT_SECONDS = 300.0
 MAX_RUNTIME_ERROR_DETAILS = 20
+SMOKE_PROFILE_SUBJECT = "Physics"
+SMOKE_PROFILE_IMAGE_PREFIX_TEMPLATE = (
+    "cd-evals-images/profile-smoke/{run_id}/users/cd-profile-smoke/"
+    "CD_Profile_Smoke/tests/CD_SMOKE/subjects/Physics/questions/"
+)
+SUPPORTED_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 
 def markdown_data_row_count(text: str) -> int:
@@ -86,6 +95,56 @@ def invoke_until_terminal(
         sleep(min(poll_interval_seconds, remaining))
 
 
+def prepare_smoke_image_prefix(
+    image_s3_prefix: str,
+    run_id: str,
+    *,
+    s3_client_factory: Callable[[str], object] = boto3.client,
+) -> str:
+    if parse_student_context_from_s3_path(image_s3_prefix) is not None:
+        return image_s3_prefix
+
+    parsed = urlparse(image_s3_prefix)
+    if parsed.scheme != "s3" or not parsed.netloc:
+        raise ValueError(f"Smoke image prefix must be an s3:// URI: {image_s3_prefix}")
+
+    bucket = parsed.netloc
+    source_prefix = parsed.path.lstrip("/")
+    destination_prefix = SMOKE_PROFILE_IMAGE_PREFIX_TEMPLATE.format(run_id=run_id)
+    s3_client = s3_client_factory("s3")
+    image_keys = _list_image_keys(s3_client, bucket=bucket, prefix=source_prefix)
+    if not image_keys:
+        raise ValueError(f"No smoke images found under {image_s3_prefix}")
+
+    for source_key in image_keys:
+        destination_key = destination_prefix + source_key.rstrip("/").split("/")[-1]
+        s3_client.copy_object(
+            Bucket=bucket,
+            Key=destination_key,
+            CopySource={"Bucket": bucket, "Key": source_key},
+        )
+
+    return f"s3://{bucket}/{destination_prefix}"
+
+
+def _list_image_keys(s3_client, *, bucket: str, prefix: str) -> list[str]:
+    keys: list[str] = []
+    continuation_token = None
+    while True:
+        request = {"Bucket": bucket, "Prefix": prefix}
+        if continuation_token:
+            request["ContinuationToken"] = continuation_token
+        response = s3_client.list_objects_v2(**request)
+        keys.extend(
+            item["Key"]
+            for item in response.get("Contents", [])
+            if item.get("Key", "").lower().endswith(SUPPORTED_IMAGE_SUFFIXES)
+        )
+        if not response.get("IsTruncated"):
+            return keys
+        continuation_token = response.get("NextContinuationToken")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-arn", required=True)
@@ -101,13 +160,6 @@ def main() -> int:
     args = parser.parse_args()
 
     run_id = str(uuid.uuid4())
-    payload = {
-        "task": "Run the deployed quality-pipeline smoke evaluation.",
-        "subject": f"cd-smoke-{run_id}",
-        "image_s3_prefix": args.image_s3_prefix,
-        "idempotency_key": f"cd-smoke-{run_id}",
-        "save_analysis_pdf": args.save_analysis_pdf,
-    }
     started = time.time()
     client = boto3.client(
         "bedrock-agentcore",
@@ -120,6 +172,14 @@ def main() -> int:
     )
     failures = []
     try:
+        effective_image_s3_prefix = prepare_smoke_image_prefix(args.image_s3_prefix, run_id)
+        payload = {
+            "task": "Run the deployed quality-pipeline smoke evaluation.",
+            "subject": SMOKE_PROFILE_SUBJECT,
+            "image_s3_prefix": effective_image_s3_prefix,
+            "idempotency_key": f"cd-smoke-{run_id}",
+            "save_analysis_pdf": args.save_analysis_pdf,
+        }
         first, first_poll_count = invoke_until_terminal(
             client,
             args.runtime_arn,
@@ -181,6 +241,8 @@ def main() -> int:
             "runtime_arn": args.runtime_arn,
             "expected_sha": args.expected_sha,
             "actual_sha": first.get("runtime_commit_sha"),
+            "requested_image_s3_prefix": args.image_s3_prefix,
+            "effective_image_s3_prefix": effective_image_s3_prefix,
             "expected_image_count": args.expected_image_count,
             "analysis_data_row_count": analysis_data_row_count,
             "artifact_requested": args.save_analysis_pdf,
