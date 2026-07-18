@@ -16,6 +16,11 @@ DIAGNOSIS_SCHEMA_NAME = "jee_question_diagnosis"
 DIAGNOSIS_SCHEMA_VERSION = 1
 UNREADABLE_SENTINEL = "Unreadable from image"
 UNABLE_TO_DETERMINE_SENTINEL = "Unable to determine from image"
+CURRICULUM_LABEL_REVIEW_MARKER = "[Needs human validation]"
+CURRICULUM_LABEL_REVIEW_DISCLAIMER = (
+    "Disclaimer: Chapter/topic labels marked with [Needs human validation] "
+    "were not found in the approved curriculum taxonomy and should be validated by a human."
+)
 
 
 class QuestionDiagnosis(BaseModel):
@@ -172,6 +177,12 @@ def render_diagnosis_markdown(diagnosis: DiagnosisResponse) -> str:
     for question in diagnosis.questions:
         cells = [_escape_markdown_cell(getattr(question, field)) for field in field_names]
         lines.append("| " + " | ".join(cells) + " |")
+    if any(
+        CURRICULUM_LABEL_REVIEW_MARKER in question.chapter
+        or CURRICULUM_LABEL_REVIEW_MARKER in question.topic
+        for question in diagnosis.questions
+    ):
+        lines.extend(["", CURRICULUM_LABEL_REVIEW_DISCLAIMER])
     return "\n".join(lines)
 
 

@@ -4,6 +4,7 @@ from typing import Any, Tuple, get_type_hints
 import unittest
 from unittest.mock import Mock
 
+from jee_tutor.agent.diagnosis_output import CURRICULUM_LABEL_REVIEW_MARKER
 from jee_tutor.agent.task_guardrails import (
     GuardrailFailureCategory,
     GuardrailRetryCategory,
@@ -213,16 +214,52 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
             GuardrailFailureCategory.DUPLICATE_QUESTION_NUMBER,
         )
 
-    def test_taxonomy_failure_is_semantic_retry_without_taxonomy_content(self):
+    def test_taxonomy_topic_failure_marks_label_without_failing_guardrail(self):
         class Result:
             valid = False
             category = "unknown_topic"
             details = {
-                "question_number": "36",
+                "question_number": "6",
                 "chapter": "Coordinate Geometry",
                 "topic": "Unknown topic",
                 "normalized_chapter": "coordinate geometry",
                 "normalized_topic": "unknown topic",
+                "taxonomy_version": "2026-02",
+            }
+
+        observation = diagnosis_json(question(topic="Unknown topic"))
+        with self.assertLogs("jee_tutor.agent.task_guardrails", level="WARNING") as logs:
+            result = evaluate_diagnosis_task_output(
+                observation,
+                tool_call_state=successful_state(observation),
+                expected_image_count=1,
+                taxonomy_validator=lambda diagnosis: Result(),
+            )
+
+        self.assertTrue(result.passed)
+        self.assertEqual(result.failure_category, "unknown_topic")
+        self.assertEqual(result.details, Result.details)
+        self.assertIsNone(result.retry_category)
+        self.assertNotIn("subjects", result.message)
+        marked = json.loads(result.message)
+        self.assertEqual(
+            marked["questions"][0]["topic"],
+            f"Unknown topic {CURRICULUM_LABEL_REVIEW_MARKER}",
+        )
+        joined_logs = "\n".join(logs.output)
+        self.assertIn("crewai_task_guardrail_softened", joined_logs)
+        self.assertIn("failure_category=unknown_topic", joined_logs)
+
+    def test_non_label_taxonomy_failure_still_fails_guardrail(self):
+        class Result:
+            valid = False
+            category = "partial_curriculum_label"
+            details = {
+                "question_number": "36",
+                "chapter": "Coordinate Geometry",
+                "topic": "Unable to determine from image",
+                "normalized_chapter": "coordinate geometry",
+                "normalized_topic": "unable to determine from image",
                 "taxonomy_version": "2026-02",
             }
 
@@ -235,15 +272,10 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
             )
 
         self.assertFalse(result.passed)
-        self.assertEqual(result.failure_category, "unknown_topic")
-        self.assertEqual(result.details, Result.details)
+        self.assertEqual(result.failure_category, "partial_curriculum_label")
         self.assertEqual(result.retry_category, GuardrailRetryCategory.SEMANTIC_VISION_RETRY)
-        self.assertNotIn("subjects", result.message)
         joined_logs = "\n".join(logs.output)
         self.assertIn("detail_question_number=36", joined_logs)
-        self.assertIn("detail_chapter=Coordinate Geometry", joined_logs)
-        self.assertIn("detail_topic=Unknown topic", joined_logs)
-        self.assertIn("detail_normalized_topic=unknown topic", joined_logs)
         self.assertIn("detail_taxonomy_version=2026-02", joined_logs)
 
 

@@ -63,6 +63,8 @@ def run_tutor_workflow(
         )
         crew_result = crew.kickoff()
         analysis = _crew_output_text(crew_result)
+        if tool_call_state.observation_validated and tool_call_state.observation:
+            analysis = tool_call_state.observation.strip()
     else:
         vision_tool = build_vision_tool(
             vision_client,

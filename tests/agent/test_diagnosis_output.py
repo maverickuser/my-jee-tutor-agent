@@ -4,6 +4,8 @@ import unittest
 from pydantic import ValidationError
 
 from jee_tutor.agent.diagnosis_output import (
+    CURRICULUM_LABEL_REVIEW_DISCLAIMER,
+    CURRICULUM_LABEL_REVIEW_MARKER,
     DiagnosisResponse,
     QuestionDiagnosis,
     diagnosis_response_format,
@@ -110,3 +112,23 @@ class DiagnosisOutputTest(unittest.TestCase):
             render_and_validate_diagnosis(diagnosis, expected_question_numbers=["6"]),
             markdown,
         )
+
+    def test_renderer_adds_disclaimer_for_marked_curriculum_labels(self):
+        diagnosis = DiagnosisResponse.model_validate(
+            {
+                "questions": [
+                    question(topic=f"Potentiometer {CURRICULUM_LABEL_REVIEW_MARKER}")
+                ]
+            }
+        )
+
+        markdown = render_diagnosis_markdown(diagnosis)
+
+        self.assertIn(f"Potentiometer {CURRICULUM_LABEL_REVIEW_MARKER}", markdown)
+        self.assertIn(CURRICULUM_LABEL_REVIEW_DISCLAIMER, markdown)
+        result = validate_markdown_analysis(
+            markdown,
+            expected_image_count=1,
+            expected_question_numbers=["6"],
+        )
+        self.assertEqual(result.row_count, 1)

@@ -149,6 +149,35 @@ class WorkflowAndCrewTest(unittest.TestCase):
         self.assertIsInstance(result, DiagnosisMarkdown)
         self.assertEqual(result.diagnosis.questions[0].topic, "Capacitors")
 
+    def test_react_prefers_validated_observation_for_final_markdown(self):
+        observation = json.dumps({"questions": [question(topic="Potentiometer [Needs human validation]")]})
+        crew_output = json.dumps({"questions": [question(topic="Potentiometer")]})
+
+        def build(**kwargs):
+            state = kwargs["tool_call_state"]
+            state.called = True
+            state.success = True
+            state.call_count = 1
+            state.execution_count = 1
+            state.successful_call_count = 1
+            state.image_count = 1
+            state.image_source = "preloaded_invocation_images"
+            state.observation = observation
+            state.observation_validated = True
+            return Mock(kickoff=Mock(return_value=Mock(raw=crew_output)))
+
+        with patch("jee_tutor.agent.workflow.build_tutor_crew", side_effect=build):
+            result = run_tutor_workflow(
+                image_data_uri="data:image/png;base64,x",
+                expected_question_numbers=["6"],
+                llm_client=Mock(),
+                react_enabled=True,
+            )
+
+        self.assertIsInstance(result, DiagnosisMarkdown)
+        self.assertIn("[Needs human validation]", result)
+        self.assertIn("should be validated by a human", result)
+
     def test_workflow_output_helpers_handle_non_raw_and_invalid_json(self):
         self.assertEqual(_crew_output_text(" value "), "value")
 

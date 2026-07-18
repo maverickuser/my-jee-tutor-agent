@@ -8,6 +8,7 @@ import logging
 from typing import Any, Protocol, TYPE_CHECKING, Tuple
 
 from jee_tutor.agent.diagnosis_output import parse_and_validate_diagnosis
+from jee_tutor.agent.diagnosis_output import CURRICULUM_LABEL_REVIEW_MARKER
 from jee_tutor.agent.output_validation import OutputValidationError
 
 if TYPE_CHECKING:
@@ -126,11 +127,10 @@ def evaluate_diagnosis_task_output(
         return result
 
     observation = str(tool_call_state.observation)
-    observation_validation = _validate_observation(
+    observation_validation = _validate_observation_contract(
         observation,
         expected_image_count=expected_image_count,
         expected_question_numbers=expected_question_numbers,
-        taxonomy_validator=taxonomy_validator,
     )
     if not observation_validation.passed:
         _reject_observation(tool_call_state, str(observation_validation.failure_category))
@@ -143,6 +143,11 @@ def evaluate_diagnosis_task_output(
         return observation_validation
 
     try:
+        diagnosis = parse_and_validate_diagnosis(
+            observation,
+            expected_image_count=expected_image_count,
+            expected_question_numbers=expected_question_numbers,
+        )
         canonical_output = canonical_json(raw)
         canonical_observation = canonical_json(observation)
     except Exception as exc:
@@ -171,6 +176,35 @@ def evaluate_diagnosis_task_output(
         )
         _log_guardrail_check(result, tool_call_state, expected_image_count, invocation_id)
         return result
+
+    taxonomy_result = _validate_taxonomy(taxonomy_validator, diagnosis)
+    if taxonomy_result is not None:
+        softened_observation = _soften_taxonomy_failure_observation(diagnosis, taxonomy_result)
+        if softened_observation is not None:
+            result = DiagnosisTaskGuardrailResult(
+                passed=True,
+                message=softened_observation,
+                canonical_match=True,
+                schema_valid=True,
+                actual_question_count=len(diagnosis.questions),
+                failure_category=taxonomy_result.failure_category,
+                details=taxonomy_result.details,
+            )
+            tool_call_state.observation = softened_observation
+            _mark_observation_valid(tool_call_state)
+            logger.warning(
+                "crewai_task_guardrail_softened event=%s invocation_id=%s "
+                "failure_category=%s marker=%s",
+                "crewai_task_guardrail_softened",
+                invocation_id or "unknown",
+                taxonomy_result.failure_category,
+                CURRICULUM_LABEL_REVIEW_MARKER,
+            )
+            _log_guardrail_check(result, tool_call_state, expected_image_count, invocation_id)
+            return result
+        _reject_observation(tool_call_state, str(taxonomy_result.failure_category))
+        _log_guardrail_check(taxonomy_result, tool_call_state, expected_image_count, invocation_id)
+        return taxonomy_result
 
     result = DiagnosisTaskGuardrailResult(
         passed=True,
@@ -204,12 +238,11 @@ def safe_error_summary(exc: Exception) -> str:
     return f"{exc.__class__.__name__}: {message[:240]}"
 
 
-def _validate_observation(
+def _validate_observation_contract(
     observation: str,
     *,
     expected_image_count: int,
     expected_question_numbers: list[str | None] | None,
-    taxonomy_validator: CurriculumValidator | Callable[[Any], Any] | None,
 ) -> DiagnosisTaskGuardrailResult:
     try:
         diagnosis = parse_and_validate_diagnosis(
@@ -230,16 +263,47 @@ def _validate_observation(
             schema_valid=False,
         )
 
-    taxonomy_result = _validate_taxonomy(taxonomy_validator, diagnosis)
-    if taxonomy_result is not None:
-        return taxonomy_result
-
     return DiagnosisTaskGuardrailResult(
         passed=True,
         message=observation,
         schema_valid=True,
         actual_question_count=len(diagnosis.questions),
     )
+
+
+def _soften_taxonomy_failure_observation(
+    diagnosis: Any,
+    taxonomy_result: DiagnosisTaskGuardrailResult,
+) -> str | None:
+    category = str(taxonomy_result.failure_category or "")
+    if category not in {"unknown_chapter", "unknown_topic"}:
+        return None
+
+    details = taxonomy_result.details or {}
+    question_number = details.get("question_number")
+    updated_questions = []
+    applied = False
+    for question in diagnosis.questions:
+        if question_number is not None and str(question.question_number) != str(question_number):
+            updated_questions.append(question)
+            continue
+        updates: dict[str, str] = {}
+        if category == "unknown_chapter":
+            updates["chapter"] = _marked_curriculum_label(question.chapter)
+        if category == "unknown_topic":
+            updates["topic"] = _marked_curriculum_label(question.topic)
+        updated_questions.append(question.model_copy(update=updates))
+        applied = True
+
+    if not applied:
+        return None
+    return diagnosis.model_copy(update={"questions": updated_questions}).model_dump_json()
+
+
+def _marked_curriculum_label(value: str) -> str:
+    if CURRICULUM_LABEL_REVIEW_MARKER in value:
+        return value
+    return f"{value} {CURRICULUM_LABEL_REVIEW_MARKER}"
 
 
 def _category_from_output_validation(exc: OutputValidationError) -> GuardrailFailureCategory:
