@@ -185,6 +185,8 @@ def main() -> int:
             "analysis_data_row_count": analysis_data_row_count,
             "artifact_requested": args.save_analysis_pdf,
             "artifact_created": bool(pdf_uri),
+            "analysis_pdf_uri": pdf_uri,
+            "diagnosis_json_uri": first.get("diagnosis_json_uri"),
             "artifact_last_modified_unchanged": artifact_last_modified_unchanged,
             "artifact_etag_unchanged": artifact_etag_unchanged,
             "idempotency_replayed": first == second,

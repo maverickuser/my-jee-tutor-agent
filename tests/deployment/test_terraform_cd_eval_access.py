@@ -34,6 +34,9 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("--expected-image-count 3", workflow)
+        self.assertIn("scripts/run_agentcore_profile_smoke.py", workflow)
+        self.assertIn("student_diagnosis_metadata_table_name", workflow)
+        self.assertIn("evidence_embedding_table_name", workflow)
         self.assertIn("poetry run python scripts/run_crewai_react_evals.py", workflow)
 
     def test_cd_workflow_uploads_curriculum_taxonomy_before_runtime_deploy(self):

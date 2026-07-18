@@ -1,6 +1,9 @@
 import json
 import unittest
+from decimal import Decimal
 from unittest.mock import Mock, patch
+
+from boto3.dynamodb.types import TypeSerializer
 
 from jee_tutor.profile.embeddings import (
     DynamoDbEvidenceEmbeddingStore,
@@ -189,11 +192,25 @@ class ProfileStorageAdaptersTest(unittest.TestCase):
         self.assertTrue(enabled.enabled)
         self.assertEqual(enabled.table_name, "embedding-table")
         self.assertEqual(enabled.region, "us-east-1")
+        with patch.dict(
+            "os.environ",
+            {
+                "EVIDENCE_EMBEDDING_TABLE_NAME": "embedding-table",
+                "AWS_REGION": "us-east-1",
+            },
+            clear=True,
+        ):
+            self.assertIsInstance(
+                build_evidence_embedding_store(),
+                DynamoDbEvidenceEmbeddingStore,
+            )
 
     def test_dynamodb_embedding_store_puts_and_gets_records(self):
         table = Mock()
         record = embedding_record()
-        table.get_item.return_value = {"Item": record.model_dump(mode="json")}
+        stored_record = record.model_dump(mode="json")
+        stored_record["embedding"] = [Decimal("1.0"), Decimal("0.0")]
+        table.get_item.return_value = {"Item": stored_record}
         resource = Mock()
         resource.Table.return_value = table
         store = DynamoDbEvidenceEmbeddingStore(
@@ -209,6 +226,9 @@ class ProfileStorageAdaptersTest(unittest.TestCase):
             )
 
         self.assertEqual(table.put_item.call_count, 1)
+        put_item = table.put_item.call_args.kwargs["Item"]
+        self.assertEqual(put_item["embedding"], [Decimal("1.0"), Decimal("0.0")])
+        TypeSerializer().serialize(put_item["embedding"])
         self.assertEqual(table.get_item.call_args.kwargs["Key"]["embedding_key"], "report-1:q1#fake#v1")
         self.assertEqual(loaded, record)
 
@@ -219,6 +239,7 @@ class ProfileStorageAdaptersTest(unittest.TestCase):
                 embedding_key="missing",
             )
         )
+
 
 def embedding_record() -> EvidenceEmbeddingRecord:
     return EvidenceEmbeddingRecord(

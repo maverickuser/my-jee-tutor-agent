@@ -20,7 +20,7 @@ env:
   VISION_MODEL: ${{ vars.VISION_MODEL || 'gemini/gemini-2.5-pro' }}
   CREWAI_MODEL: ${{ vars.CREWAI_MODEL || 'gemini/gemini-3-flash-preview' }}
   PROFILE_REPORT_MODEL: ${{ vars.PROFILE_REPORT_MODEL || 'gemini/gemini-2.5-pro' }}
-  PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || 'bedrock/amazon.titan-embed-text-v2:0' }}
+  PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || 'gemini/gemini-embedding-2' }}
   PROFILE_SEMANTIC_CLUSTER_MODEL: ${{ vars.PROFILE_SEMANTIC_CLUSTER_MODEL || 'gemini/gemini-2.5-pro' }}
   STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.STRUCTURED_DIAGNOSIS_ENABLED || 'true' }}
   PROFILE_REPORT_LLM_ENABLED: ${{ vars.PROFILE_REPORT_LLM_ENABLED || 'true' }}
@@ -254,6 +254,8 @@ jobs:
       guardrail_id: ${{ steps.security_outputs.outputs.guardrail_id }}
       guardrail_version: ${{ steps.security_outputs.outputs.guardrail_version }}
       runtime_arn: ${{ steps.security_outputs.outputs.runtime_arn }}
+      student_diagnosis_metadata_table_name: ${{ steps.security_outputs.outputs.student_diagnosis_metadata_table_name }}
+      evidence_embedding_table_name: ${{ steps.security_outputs.outputs.evidence_embedding_table_name }}
 
     steps:
       - name: Checkout repository
@@ -340,6 +342,8 @@ jobs:
           echo "guardrail_id=$(terraform output -raw bedrock_guardrail_id)" >> "$GITHUB_OUTPUT"
           echo "guardrail_version=$(terraform output -raw bedrock_guardrail_version)" >> "$GITHUB_OUTPUT"
           echo "runtime_arn=$(terraform output -raw agentcore_runtime_arn)" >> "$GITHUB_OUTPUT"
+          echo "student_diagnosis_metadata_table_name=$(terraform output -raw student_diagnosis_metadata_table_name)" >> "$GITHUB_OUTPUT"
+          echo "evidence_embedding_table_name=$(terraform output -raw evidence_embedding_table_name)" >> "$GITHUB_OUTPUT"
 
       - name: Verify New Relic ingest accepts deployment canary
         if: env.NEW_RELIC_ENABLED == 'true'
@@ -441,12 +445,25 @@ jobs:
             --expected-image-count 3 \
             --expected-sha "${{ github.sha }}"
 
+      - name: Invoke deployed profile runtime and verify embeddings
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/run_agentcore_profile_smoke.py \
+            --runtime-arn "${{ needs.deploy_runtime.outputs.runtime_arn }}" \
+            --metadata-table-name "${{ needs.deploy_runtime.outputs.student_diagnosis_metadata_table_name }}" \
+            --embedding-table-name "${{ needs.deploy_runtime.outputs.evidence_embedding_table_name }}" \
+            --diagnosis-smoke-report eval_runs/agentcore-smoke.json \
+            --expected-sha "${{ github.sha }}"
+
       - name: Upload smoke report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: deployed-runtime-smoke-report
-          path: eval_runs/agentcore-smoke.json
+          path: |
+            eval_runs/agentcore-smoke.json
+            eval_runs/agentcore-profile-smoke.json
           if-no-files-found: error
 
   agent_evals:

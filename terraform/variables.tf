@@ -63,7 +63,7 @@ variable "profile_report_model" {
 variable "profile_embedding_model" {
   description = "LiteLLM model id used for student profile evidence embeddings."
   type        = string
-  default     = "bedrock/amazon.titan-embed-text-v2:0"
+  default     = "gemini/gemini-embedding-2"
 }
 
 variable "profile_semantic_cluster_model" {

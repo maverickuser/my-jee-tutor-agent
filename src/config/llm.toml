@@ -8,7 +8,7 @@ model = "gemini/gemini-2.5-pro"
 model = "gemini/gemini-3-flash-preview"
 
 [profile_embedding]
-model = "bedrock/amazon.titan-embed-text-v2:0"
+model = "gemini/gemini-embedding-2"
 dimensions = 256
 
 [semantic_clustering]

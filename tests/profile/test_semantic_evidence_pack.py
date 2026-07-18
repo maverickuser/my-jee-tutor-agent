@@ -50,6 +50,21 @@ def evidence(
 
 
 class SemanticEvidencePackTest(unittest.TestCase):
+    def test_embedding_record_rejects_non_numeric_vector_components(self):
+        with self.assertRaisesRegex(ValueError, "valid number"):
+            EvidenceEmbeddingRecord(
+                diagnosis_json_s3_uri="s3://bucket/r1.json",
+                embedding_key="r1:q1#fake-embedding#v1",
+                evidence_id="r1:q1",
+                embedding_model="fake-embedding",
+                embedding_input_version="v1",
+                embedding_text_hash="hash",
+                embedding=["bad"],
+                created_at="2026-07-18T00:00:00+00:00",
+            )
+        with self.assertRaisesRegex(ValueError, "Embedding components must be numeric"):
+            EvidenceEmbeddingRecord.validate_embedding([object()])
+
     def test_cluster_validation_rejects_unknown_and_duplicate_evidence(self):
         items = [evidence("r1:q1", "r1")]
 
@@ -139,6 +154,15 @@ class SemanticEvidencePackTest(unittest.TestCase):
         self.assertEqual(records["r1:q1"].embedding, [1.0, 0.0])
         self.assertEqual(records["r2:q1"].embedding, [0.0, 1.0])
 
+        client.calls = 0
+        reused_records = EvidenceEmbeddingService(store=store, client=client).ensure_embeddings(
+            subject="Physics",
+            evidence_items=items,
+        )
+
+        self.assertEqual(client.calls, 0)
+        self.assertEqual(sorted(reused_records), ["r1:q1", "r2:q1"])
+
     def test_embedding_service_recreates_stale_embeddings_and_checks_count(self):
         item = evidence("r1:q1", "r1")
         store = InMemoryEvidenceEmbeddingStore()
@@ -188,6 +212,10 @@ class SemanticEvidencePackTest(unittest.TestCase):
                 "api_base": "https://proxy.example",
             },
         )
+        self.assertEqual(
+            ProfileEmbeddingSettings(model="fake-embedding").to_litellm_kwargs(),
+            {"model": "fake-embedding"},
+        )
         config = ProfileEmbeddingConfig(
             environ={
                 "PROFILE_EMBEDDING_MODEL": "gemini/text-embedding-004",
@@ -202,6 +230,15 @@ class SemanticEvidencePackTest(unittest.TestCase):
         self.assertEqual(resolved.dimensions, 64)
         self.assertEqual(resolved.api_key, "google-key")
 
+        openai_resolved = ProfileEmbeddingConfig(
+            environ={
+                "PROFILE_EMBEDDING_MODEL": "openai/text-embedding-3-small",
+                "OPENAI_API_KEY": "openai-key",
+            },
+            config={"profile_embedding": {"dimensions": None}},
+        ).resolve()
+        self.assertEqual(openai_resolved.api_key, "openai-key")
+
         captured = {}
 
         def embedding_fn(**kwargs):
@@ -210,6 +247,7 @@ class SemanticEvidencePackTest(unittest.TestCase):
 
         client = LiteLLMEvidenceEmbeddingClient(config=config, embedding_fn=embedding_fn)
         self.assertEqual(client.embed([]), [])
+        self.assertEqual(client.model, "gemini/text-embedding-004")
         self.assertEqual(client.embed(["text"]), [[1.0, 2.0]])
         self.assertEqual(captured["input"], ["text"])
 
@@ -218,6 +256,10 @@ class SemanticEvidencePackTest(unittest.TestCase):
             config={"profile_embedding": "bad"},
         ).resolve()
         self.assertEqual(fallback.api_key, "key")
+
+        default = ProfileEmbeddingConfig(environ={}, config={}).resolve()
+        self.assertEqual(default.model, "gemini/gemini-embedding-2")
+        self.assertEqual(default.dimensions, 256)
 
     def test_cosine_similarity_candidates_are_scoped_to_requested_evidence(self):
         items = [

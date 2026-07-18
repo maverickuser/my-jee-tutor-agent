@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from hashlib import sha256
 import os
 from typing import Any, Protocol
@@ -14,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 
-DEFAULT_PROFILE_EMBEDDING_MODEL = "bedrock/amazon.titan-embed-text-v2:0"
+DEFAULT_PROFILE_EMBEDDING_MODEL = "gemini/gemini-embedding-2"
 DEFAULT_EMBEDDING_INPUT_VERSION = "v1"
 DEFAULT_PROFILE_EMBEDDING_DIMENSIONS = 256
 
@@ -207,7 +208,7 @@ class DynamoDbEvidenceEmbeddingStore:
         return EvidenceEmbeddingRecord.model_validate(item)
 
     def put_embedding(self, record: EvidenceEmbeddingRecord) -> None:
-        self._table_client().put_item(Item=record.model_dump(mode="json"))
+        self._table_client().put_item(Item=_dynamodb_embedding_item(record))
 
     def _table_client(self):
         if self._table is None:
@@ -307,6 +308,12 @@ def build_embedding_key(
     embedding_input_version: str,
 ) -> str:
     return f"{evidence_id}#{embedding_model}#{embedding_input_version}"
+
+
+def _dynamodb_embedding_item(record: EvidenceEmbeddingRecord) -> dict[str, Any]:
+    item = record.model_dump(mode="json")
+    item["embedding"] = [Decimal(str(component)) for component in record.embedding]
+    return item
 
 
 def _api_key_for_model(model: str, environ: Mapping[str, str]) -> str | None:

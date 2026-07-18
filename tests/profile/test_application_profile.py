@@ -1,13 +1,24 @@
 import unittest
+from unittest.mock import patch
+
+from boto3.dynamodb.types import TypeSerializer
 
 from jee_tutor.application.profile import StudentProfileApplicationService
+from jee_tutor.profile.embeddings import (
+    DynamoDbEvidenceEmbeddingStore,
+    EvidenceEmbeddingService,
+)
 from jee_tutor.profile.models import (
     StudentDiagnosisMetadata,
     StructuredDiagnosisQuestionEvidence,
     StructuredDiagnosisReport,
 )
 from jee_tutor.profile.reporting import ProfileAnalysisService
-from jee_tutor.profile.semantic import SemanticGapAnalyzer, SemanticGapCluster
+from jee_tutor.profile.semantic import (
+    SemanticCandidateCluster,
+    SemanticGapAnalyzer,
+    SemanticGapCluster,
+)
 from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,
@@ -68,6 +79,17 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
 
         self.assertEqual(response["profile_status"], "no_history")
 
+    def test_profile_request_rejects_missing_email_or_subject(self):
+        service = StudentProfileApplicationService(
+            metadata_store=InMemoryStudentDiagnosisMetadataStore(),
+            artifact_store=InMemoryStructuredDiagnosisArtifactStore(),
+        )
+
+        response = service.handle({"task": PROFILE_REPORT_TASK})
+
+        self.assertEqual(response["profile_status"], "invalid_request")
+        self.assertIn("Invalid student profile request", response["error"])
+
     def test_profile_request_generates_written_profile_from_history(self):
         metadata_store = InMemoryStudentDiagnosisMetadataStore()
         artifact_store = InMemoryStructuredDiagnosisArtifactStore()
@@ -93,6 +115,49 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
         self.assertIn("Projectile components", response["profile_markdown"])
 
+    def test_profile_request_creates_dynamodb_embeddings_before_semantic_classification(self):
+        metadata_store = InMemoryStudentDiagnosisMetadataStore()
+        artifact_store = InMemoryStructuredDiagnosisArtifactStore()
+        for report_id in ["r1", "r2"]:
+            metadata_store.put_metadata(metadata(report_id))
+            artifact_store.write_report(s3_uri=f"s3://bucket/{report_id}.json", report=report(report_id))
+        embedding_table = SerializingDynamoTable()
+        classifier = RecordingSemanticClassifier()
+        embedding_service = EvidenceEmbeddingService(
+            store=DynamoDbEvidenceEmbeddingStore(
+                table_name="embedding-table",
+                region="ap-south-1",
+            ),
+            client=SequentialEmbeddingClient([[1.0, 0.0], [0.9, 0.1]]),
+        )
+        service = StudentProfileApplicationService(
+            metadata_store=metadata_store,
+            artifact_store=artifact_store,
+            semantic_analyzer=SemanticGapAnalyzer(
+                embedding_service=embedding_service,
+                classifier=classifier,
+                similarity_threshold=0.95,
+            ),
+            report_service=ProfileAnalysisService(),
+        )
+
+        with patch(
+            "jee_tutor.profile.embeddings.boto3.resource",
+            return_value=FakeDynamoResource(embedding_table),
+        ):
+            response = service.handle(
+                {
+                    "task": PROFILE_REPORT_TASK,
+                    "recipient_email": "student@example.com",
+                    "subject": "Physics",
+                }
+            )
+
+        self.assertEqual(response["profile_status"], "succeeded")
+        self.assertEqual(len(embedding_table.put_items), 2)
+        self.assertEqual(classifier.seen_candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
+
+
 def fixed_clusters(_items):
     return [
         SemanticGapCluster(
@@ -103,6 +168,63 @@ def fixed_clusters(_items):
             rationale="same gap",
         )
     ]
+
+
+class SequentialEmbeddingClient:
+    model = "fake-embedding"
+
+    def __init__(self, vectors: list[list[float]]):
+        self.vectors = vectors
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.vectors
+
+
+class RecordingSemanticClassifier:
+    def __init__(self):
+        self.seen_candidates: list[SemanticCandidateCluster] = []
+
+    def classify(
+        self,
+        *,
+        evidence_items,
+        candidates: list[SemanticCandidateCluster],
+    ) -> list[SemanticGapCluster]:
+        self.seen_candidates = candidates
+        return [
+            SemanticGapCluster(
+                cluster_id="cluster-1",
+                cluster_type="same_underlying_gap",
+                title="Projectile components",
+                evidence_ids=[item.evidence_id for item in evidence_items],
+                rationale="LLM classified these cosine-near gaps as the same underlying gap.",
+            )
+        ]
+
+
+class SerializingDynamoTable:
+    def __init__(self):
+        self.items = {}
+        self.put_items = []
+        self.serializer = TypeSerializer()
+
+    def get_item(self, *, Key):
+        item = self.items.get((Key["diagnosis_json_s3_uri"], Key["embedding_key"]))
+        return {"Item": item} if item else {}
+
+    def put_item(self, *, Item):
+        for value in Item.values():
+            self.serializer.serialize(value)
+        self.items[(Item["diagnosis_json_s3_uri"], Item["embedding_key"])] = Item
+        self.put_items.append(Item)
+
+
+class FakeDynamoResource:
+    def __init__(self, table):
+        self.table = table
+
+    def Table(self, _table_name):
+        return self.table
 
 
 if __name__ == "__main__":
