@@ -50,6 +50,21 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
         self.assertEqual(get_type_hints(guardrail)["return"], Tuple[bool, Any])
         self.assertEqual(inspect.signature(guardrail).return_annotation, Tuple[bool, Any])
 
+    def test_crewai_guardrail_callback_returns_crewai_tuple(self):
+        observation = diagnosis_json()
+        state = successful_state(observation)
+        guardrail = build_diagnosis_task_guardrail(
+            tool_call_state=state,
+            expected_image_count=1,
+            expected_question_numbers=["6"],
+            invocation_id="inv-123",
+        )
+
+        passed, message = guardrail(Mock(raw=observation))
+
+        self.assertTrue(passed)
+        self.assertEqual(message, observation)
+
     def test_canonical_json_ignores_object_key_order(self):
         self.assertEqual(canonical_json('{"b":2,"a":1}'), canonical_json('{"a":1,"b":2}'))
 
@@ -145,6 +160,21 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
             GuardrailRetryCategory.CACHED_FINALIZATION_RETRY,
         )
         self.assertFalse(result.canonical_match)
+
+    def test_malformed_json_final_output_uses_schema_invalid_retry(self):
+        observation = diagnosis_json()
+
+        result = evaluate_diagnosis_task_output(
+            "{",
+            tool_call_state=successful_state(observation),
+            expected_image_count=1,
+            expected_question_numbers=["6"],
+        )
+
+        self.assertFalse(result.passed)
+        self.assertEqual(result.failure_category, GuardrailFailureCategory.SCHEMA_INVALID)
+        self.assertEqual(result.retry_category, GuardrailRetryCategory.CACHED_FINALIZATION_RETRY)
+        self.assertFalse(result.schema_valid)
 
     def test_valid_output_passes_and_marks_observation_valid(self):
         observation = diagnosis_json()
@@ -249,6 +279,154 @@ class DiagnosisTaskGuardrailTest(unittest.TestCase):
         joined_logs = "\n".join(logs.output)
         self.assertIn("crewai_task_guardrail_softened", joined_logs)
         self.assertIn("failure_category=unknown_topic", joined_logs)
+
+    def test_taxonomy_chapter_failure_marks_label_without_failing_guardrail(self):
+        class Result:
+            valid = False
+            category = "unknown_chapter"
+            details = {
+                "question_number": "6",
+                "chapter": "Unmapped Chapter",
+                "topic": "Capacitance",
+                "normalized_chapter": "unmapped chapter",
+                "normalized_topic": "capacitance",
+                "taxonomy_version": "2026-02",
+            }
+
+        observation = diagnosis_json(question(chapter="Unmapped Chapter"))
+
+        result = evaluate_diagnosis_task_output(
+            observation,
+            tool_call_state=successful_state(observation),
+            expected_image_count=1,
+            taxonomy_validator=lambda diagnosis: Result(),
+        )
+
+        self.assertTrue(result.passed)
+        marked = json.loads(result.message)
+        self.assertEqual(
+            marked["questions"][0]["chapter"],
+            f"Unmapped Chapter {CURRICULUM_LABEL_REVIEW_MARKER}",
+        )
+
+    def test_taxonomy_failure_marks_all_rows_when_question_number_detail_missing(self):
+        class Result:
+            valid = False
+            category = "unknown_topic"
+            details = {
+                "chapter": "Coordinate Geometry",
+                "topic": "Unknown topic",
+                "normalized_chapter": "coordinate geometry",
+                "normalized_topic": "unknown topic",
+                "taxonomy_version": "2026-02",
+            }
+
+        observation = diagnosis_json(
+            question("6", topic="Unknown topic"),
+            question("7", topic="Unknown topic"),
+        )
+
+        result = evaluate_diagnosis_task_output(
+            observation,
+            tool_call_state=successful_state(observation),
+            expected_image_count=2,
+            taxonomy_validator=lambda diagnosis: Result(),
+        )
+
+        self.assertTrue(result.passed)
+        marked = json.loads(result.message)
+        self.assertEqual(
+            [item["topic"] for item in marked["questions"]],
+            [
+                f"Unknown topic {CURRICULUM_LABEL_REVIEW_MARKER}",
+                f"Unknown topic {CURRICULUM_LABEL_REVIEW_MARKER}",
+            ],
+        )
+
+    def test_taxonomy_failure_does_not_duplicate_existing_marker(self):
+        class Result:
+            valid = False
+            category = "unknown_topic"
+            details = {
+                "question_number": "6",
+                "chapter": "Coordinate Geometry",
+                "topic": f"Unknown topic {CURRICULUM_LABEL_REVIEW_MARKER}",
+                "normalized_chapter": "coordinate geometry",
+                "normalized_topic": "unknown topic",
+                "taxonomy_version": "2026-02",
+            }
+
+        observation = diagnosis_json(
+            question(topic=f"Unknown topic {CURRICULUM_LABEL_REVIEW_MARKER}")
+        )
+
+        result = evaluate_diagnosis_task_output(
+            observation,
+            tool_call_state=successful_state(observation),
+            expected_image_count=1,
+            taxonomy_validator=lambda diagnosis: Result(),
+        )
+
+        marked = json.loads(result.message)
+        self.assertEqual(
+            marked["questions"][0]["topic"].count(CURRICULUM_LABEL_REVIEW_MARKER),
+            1,
+        )
+
+    def test_taxonomy_label_failure_without_matching_question_still_fails(self):
+        class Result:
+            valid = False
+            category = "unknown_topic"
+            details = {
+                "question_number": "99",
+                "chapter": "Coordinate Geometry",
+                "topic": "Unknown topic",
+                "normalized_chapter": "coordinate geometry",
+                "normalized_topic": "unknown topic",
+                "taxonomy_version": "2026-02",
+            }
+
+        result = evaluate_diagnosis_task_output(
+            diagnosis_json(),
+            tool_call_state=successful_state(),
+            expected_image_count=1,
+            taxonomy_validator=lambda diagnosis: Result(),
+        )
+
+        self.assertFalse(result.passed)
+        self.assertEqual(result.failure_category, "unknown_topic")
+
+    def test_taxonomy_validator_exception_can_be_softened(self):
+        class TaxonomyError(Exception):
+            category = "unknown_chapter"
+            details = {
+                "question_number": "6",
+                "chapter": "Unmapped Chapter",
+                "topic": "Capacitance",
+                "normalized_chapter": "unmapped chapter",
+                "normalized_topic": "capacitance",
+                "taxonomy_version": "2026-02",
+            }
+
+        class Validator:
+            def validate(self, diagnosis):
+                raise TaxonomyError("taxonomy miss")
+
+        observation = diagnosis_json(question(chapter="Unmapped Chapter"))
+
+        result = evaluate_diagnosis_task_output(
+            observation,
+            tool_call_state=successful_state(observation),
+            expected_image_count=1,
+            taxonomy_validator=Validator(),
+        )
+
+        self.assertTrue(result.passed)
+        marked = json.loads(result.message)
+        self.assertEqual(
+            marked["questions"][0]["chapter"],
+            f"Unmapped Chapter {CURRICULUM_LABEL_REVIEW_MARKER}",
+        )
 
     def test_non_label_taxonomy_failure_still_fails_guardrail(self):
         class Result:
