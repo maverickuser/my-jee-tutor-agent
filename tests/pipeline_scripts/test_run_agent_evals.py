@@ -192,6 +192,20 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         self.assertIsNone(reason)
 
+    def test_provider_quota_response_is_reported_as_skipped_infrastructure_error(self):
+        response = {
+            "error": "Tutor workflow failed while analyzing images.",
+            "details": [
+                "Exception type: RuntimeError.",
+                "Exception message: GeminiException - RESOURCE_EXHAUSTED: "
+                "Your prepayment credits are depleted.",
+            ],
+        }
+
+        reason = _retryable_response_error_reason(response)
+
+        self.assertIn("Provider quota exhausted", reason)
+
     def test_workflow_failure_without_transient_provider_details_is_not_retryable(self):
         response = {
             "error": "Tutor workflow failed while analyzing images.",
@@ -223,6 +237,24 @@ class RunAgentEvalsTest(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertNotIn("skipped", result)
+
+    def test_run_case_marks_provider_quota_error_as_skipped(self):
+        case = {
+            "id": "coaching_structure",
+            "type": "markdown_table",
+            "task": "diagnose wrong answers",
+        }
+        response = {
+            "error": "Tutor workflow failed while analyzing images.",
+            "details": ["Exception message: RESOURCE_EXHAUSTED prepayment credits are depleted"],
+        }
+
+        with patch("jee_tutor.handler.handle_tutor_invocation", return_value=response):
+            result = _run_case(case, "images")
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(result["skipped"])
+        self.assertIn("Provider quota exhausted", result["reason"])
 
     def test_eval_gate_fails_when_any_case_is_skipped(self):
         with self.assertRaisesRegex(SystemExit, "skipped 1 case"):

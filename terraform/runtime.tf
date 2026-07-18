@@ -11,10 +11,15 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
   }
 
   environment_variables = {
-    LITELLM_API_KEY     = var.litellm_api_key
-    OPENAI_API_KEY      = var.openai_api_key
-    GOOGLE_API_KEY      = var.google_api_key
-    LITELLM_BASE_URL    = var.litellm_base_url
+    LITELLM_API_KEY      = var.litellm_api_key
+    OPENAI_API_KEY       = var.openai_api_key
+    GOOGLE_API_KEY       = var.google_api_key
+    LITELLM_BASE_URL     = var.litellm_base_url
+    VISION_MODEL         = var.vision_model
+    CREWAI_MODEL         = var.crewai_model
+    PROFILE_REPORT_MODEL = var.profile_report_model
+    STRUCTURED_DIAGNOSIS_ENABLED = tostring(var.structured_diagnosis_enabled)
+    PROFILE_REPORT_LLM_ENABLED   = tostring(var.profile_report_llm_enabled)
     LANGFUSE_PUBLIC_KEY = var.langfuse_public_key
     LANGFUSE_SECRET_KEY = var.langfuse_secret_key
     LANGFUSE_BASE_URL   = var.langfuse_base_url

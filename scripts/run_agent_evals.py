@@ -111,6 +111,17 @@ def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[s
         "save_analysis_pdf": False,
     }
     response = handle_tutor_invocation(payload)
+    provider_error_reason = _retryable_response_error_reason(response)
+    if provider_error_reason:
+        return {
+            "id": case["id"],
+            "type": case["type"],
+            "passed": False,
+            "skipped": True,
+            "reason": provider_error_reason,
+            "transient_error": True,
+            "response": _redacted_response(response),
+        }
 
     if case["type"] == "analysis":
         return _score_analysis_case(case, response)
@@ -316,6 +327,17 @@ def _is_retryable_eval_error(exc: Exception) -> bool:
 
 
 def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
+    text = " ".join(
+        [
+            str(response.get("error", "")),
+            " ".join(str(detail) for detail in response.get("details", [])),
+        ]
+    ).casefold()
+    if "resource_exhausted" in text or "prepayment credits are depleted" in text:
+        return (
+            "Provider quota exhausted during eval. Refill provider credits or set "
+            "CD_EVAL_CREWAI_MODEL/CD_EVAL_VISION_MODEL to a funded model."
+        )
     # Vision transport retries are exhausted inside VisionLLMClient. Retrying the
     # entire invocation here would duplicate image analysis and stack retry layers.
     return None

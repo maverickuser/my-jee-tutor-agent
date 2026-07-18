@@ -42,6 +42,36 @@ variable "litellm_base_url" {
   default     = ""
 }
 
+variable "vision_model" {
+  description = "LiteLLM model id used for question image analysis."
+  type        = string
+  default     = "gemini/gemini-2.5-pro"
+}
+
+variable "crewai_model" {
+  description = "LiteLLM model id used for CrewAI orchestration."
+  type        = string
+  default     = "gemini/gemini-3-flash-preview"
+}
+
+variable "profile_report_model" {
+  description = "LiteLLM model id used for student profile report interpretation."
+  type        = string
+  default     = "gemini/gemini-2.5-pro"
+}
+
+variable "structured_diagnosis_enabled" {
+  description = "Enable structured diagnosis JSON output for vision analysis."
+  type        = bool
+  default     = true
+}
+
+variable "profile_report_llm_enabled" {
+  description = "Enable LLM-authored student profile reports."
+  type        = bool
+  default     = true
+}
+
 variable "langfuse_public_key" {
   description = "Langfuse public key for observability, prompt management, and evaluation scores."
   type        = string

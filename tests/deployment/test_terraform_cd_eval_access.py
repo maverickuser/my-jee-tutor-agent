@@ -85,6 +85,42 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("dynamodb:Query", terraform)
         self.assertIn("student_diagnosis_metadata_table_name", terraform)
 
+    def test_runtime_and_cd_evals_can_override_models(self):
+        terraform = "\n".join(
+            path.read_text()
+            for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
+        )
+        workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
+
+        for name in [
+            "vision_model",
+            "crewai_model",
+            "profile_report_model",
+            "structured_diagnosis_enabled",
+            "profile_report_llm_enabled",
+        ]:
+            self.assertIn(f'variable "{name}"', terraform)
+            self.assertIn(f"TF_VAR_{name}", workflow)
+
+        for env_name in [
+            "VISION_MODEL",
+            "CREWAI_MODEL",
+            "PROFILE_REPORT_MODEL",
+            "STRUCTURED_DIAGNOSIS_ENABLED",
+            "PROFILE_REPORT_LLM_ENABLED",
+        ]:
+            self.assertIn(env_name, terraform)
+            self.assertIn(env_name, workflow)
+
+        self.assertIn("CD_EVAL_CREWAI_MODEL", workflow)
+        self.assertIn("CD_EVAL_VISION_MODEL", workflow)
+        self.assertIn("secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o'", workflow)
+        self.assertIn(
+            "CD_EVAL_STRUCTURED_DIAGNOSIS_ENABLED || "
+            "(secrets.OPENAI_API_KEY != '' && 'false'",
+            workflow,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
