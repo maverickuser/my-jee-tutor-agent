@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from jee_tutor.profile.privacy import redact_student_metadata
+
 
 class TutorInvocationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -53,12 +55,13 @@ class TutorInvocationPayload(BaseModel):
         return self.save_analysis_pdf or self.recipient_email is not None
 
     def safe_trace_input(self) -> dict[str, Any]:
-        return self.model_dump(
+        trace_input = self.model_dump(
             exclude={
                 "image_data_uri",
                 "recipient_email",
             }
         )
+        return redact_student_metadata(trace_input)
 
 
 class TutorInvocationResponse(BaseModel):
@@ -67,6 +70,8 @@ class TutorInvocationResponse(BaseModel):
     pdf_wait_minutes: int | None = None
     analysis_pdf_uri: str | None = None
     analysis_markdown_uri: str | None = None
+    diagnosis_report_id: str | None = None
+    diagnosis_json_uri: str | None = None
     artifact_errors: list[str] = Field(default_factory=list)
     email_status: str = "not_requested"
     email_delivery_id: str | None = None

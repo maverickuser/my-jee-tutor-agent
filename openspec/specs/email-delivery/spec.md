@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines the asynchronous email delivery path for generated analysis PDFs.
-
 ## Requirements
-
 ### Requirement: Email Request Eligibility
 
 The system SHALL request email delivery only for valid invocations that can produce a stored PDF artifact.
@@ -98,3 +96,12 @@ The system SHALL send queued PDF emails from the worker.
 - **WHEN** configuration validation, PDF fetch, template rendering, or SES sending fails
 - **THEN** the worker SHALL return `failed`
 - **AND** include the delivery id and compact error string
+
+### Requirement: Email Delivery Port Boundary
+The system SHALL coordinate email delivery through explicit application and adapter boundaries.
+
+#### Scenario: Email delivery is requested
+- **WHEN** an invocation includes a recipient email and a stored PDF artifact is available
+- **THEN** the invocation application SHALL use an email-delivery port to request delivery
+- **AND** Lambda and SES implementation details SHALL remain inside email adapters
+- **AND** delivery status, idempotency, and error behavior SHALL remain compatible with the existing email-delivery requirements

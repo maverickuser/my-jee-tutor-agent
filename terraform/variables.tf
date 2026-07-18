@@ -132,6 +132,12 @@ variable "invocation_status_enabled" {
   default     = true
 }
 
+variable "student_diagnosis_metadata_enabled" {
+  description = "Enable persistent student diagnosis metadata tracking in DynamoDB."
+  type        = bool
+  default     = true
+}
+
 variable "s3_image_input_bucket_arns" {
   description = "S3 bucket ARNs the AgentCore runtime can list for image_s3_prefix inputs."
   type        = list(string)

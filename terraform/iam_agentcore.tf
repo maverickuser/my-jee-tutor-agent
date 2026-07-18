@@ -142,6 +142,19 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Resource = aws_dynamodb_table.invocation_status.arn
         }
       ] : [],
+      var.student_diagnosis_metadata_enabled ? [
+        {
+          Sid    = "ReadWriteStudentDiagnosisMetadata"
+          Effect = "Allow"
+          Action = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:Query",
+            "dynamodb:DescribeTable"
+          ]
+          Resource = aws_dynamodb_table.student_diagnosis_metadata.arn
+        }
+      ] : [],
       length(var.s3_image_input_object_arns) > 0 ? [
         {
           Sid    = "S3ImageObjectReadWrite"

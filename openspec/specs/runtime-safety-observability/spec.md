@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines runtime guardrails, privacy controls, and observability behavior around tutor invocations.
-
 ## Requirements
-
 ### Requirement: Runtime Guardrail Configuration
 
 The system SHALL resolve Bedrock runtime guardrail settings from configuration and environment variables.
@@ -122,3 +120,16 @@ The system SHALL bound model transport retries.
 
 - **WHEN** the configured vision model is not Gemini
 - **THEN** the system SHALL issue a single LiteLLM completion attempt from the client retry layer
+
+### Requirement: Safety and Observability Port Boundary
+The system SHALL access guardrails, invocation status recording, LLM-call recording, and observability through explicit ports.
+
+#### Scenario: Guardrails are evaluated
+- **WHEN** input or output guardrail checks run
+- **THEN** application services SHALL use a guardrail port
+- **AND** Bedrock-specific request and response handling SHALL remain inside the Bedrock guardrail adapter
+
+#### Scenario: Runtime telemetry is recorded
+- **WHEN** invocation, task, generation, or retry telemetry is emitted
+- **THEN** application services SHALL use observability and status ports
+- **AND** concrete Langfuse and DynamoDB implementations SHALL preserve the existing privacy and redaction requirements

@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines the external invocation contract and lifecycle for the JEE tutor runtime.
-
 ## Requirements
-
 ### Requirement: Payload Validation
 
 The system SHALL validate tutor invocations with a strict payload schema.
@@ -86,7 +84,7 @@ The system SHALL provide process-local idempotency for requests that include `id
 
 ### Requirement: Invocation Status Recording
 
-The system SHALL record invocation lifecycle status when a status store is configured.
+The system SHALL record invocation lifecycle status, CrewAI guardrail/retry lifecycle, and nested LLM-call telemetry when a status store is configured.
 
 #### Scenario: Status store disabled
 
@@ -98,7 +96,7 @@ The system SHALL record invocation lifecycle status when a status store is confi
 
 - **WHEN** `INVOCATION_STATUS_TABLE_NAME` is configured and status recording is enabled
 - **THEN** the system SHALL write status records to DynamoDB
-- **AND** include invocation id, status, timestamps, subject, image count, optional idempotency key, optional runtime commit SHA, artifact URI, email fields, and error fields when known
+- **AND** include invocation id, status, timestamps, subject, image count, optional idempotency key, optional runtime commit SHA, artifact URI, email fields, error fields, CrewAI lifecycle metadata, guardrail retry metadata, and nested LLM-call telemetry when known
 
 #### Scenario: Workflow lifecycle
 
@@ -107,6 +105,18 @@ The system SHALL record invocation lifecycle status when a status store is confi
 - **AND** record `VALIDATED` after idempotency and schema validation pass
 - **AND** record `IN_PROGRESS` before vision analysis
 - **AND** record `SUCCEEDED`, `FAILED`, `BLOCKED`, or `REPLAYED` as the terminal status
+
+#### Scenario: CrewAI lifecycle is observed
+
+- **WHEN** CrewAI kickoff starts, kickoff completes, or the diagnosis task completes
+- **THEN** the system SHALL record safe lifecycle telemetry when status recording is configured
+- **AND** SHALL NOT store image payloads, full diagnosis output, full invalid output, stack traces, or raw recipient email in lifecycle telemetry
+
+#### Scenario: LLM call history is recorded
+
+- **WHEN** vision analysis runs in one or more batches
+- **THEN** the system SHALL append nested LLM call records with call id, batch index, batch size, model, provider, purpose, status, attempt number, timestamps, duration, optional token counts, optional error fields, and optional safe response summary
+- **AND** SHALL NOT store full LLM response bodies
 
 ### Requirement: Response Shape
 
@@ -125,3 +135,37 @@ The system SHALL return JSON-compatible response dictionaries.
 - **THEN** the response SHALL include `error`
 - **AND** include a `details` list
 - **AND** include `runtime_commit_sha` when available
+
+### Requirement: Guardrail Approved Invocation Success
+The invocation layer SHALL only produce successful analysis responses after the CrewAI task-output guardrail has passed for the CrewAI/ReAct path.
+
+#### Scenario: Guardrail approved output
+- **WHEN** the CrewAI task guardrail passes
+- **THEN** the invocation MAY continue to Bedrock output guardrail checks, artifact writing, email delivery, status completion, and success response formatting
+
+#### Scenario: Guardrail rejected output
+- **WHEN** the CrewAI task guardrail fails after allowed retry handling
+- **THEN** the invocation SHALL return a handled workflow error
+- **AND** SHALL record terminal failure status
+- **AND** SHALL NOT run Bedrock output guardrail, artifact writing, email delivery, or success response formatting
+
+### Requirement: Status Privacy
+The status store SHALL avoid storing sensitive or bulky payloads.
+
+#### Scenario: Status fields are persisted
+- **WHEN** invocation, CrewAI, guardrail, or LLM-call telemetry is written
+- **THEN** the system SHALL keep status reasons and error messages short
+- **AND** SHALL NOT persist raw image data URIs, base64 payloads, full model responses, full invalid output, stack traces, or raw sensitive values detected by guardrails
+
+### Requirement: Invocation Application Boundary
+The system SHALL route tutor invocation orchestration through an application service that depends on explicit ports for external effects.
+
+#### Scenario: Invocation service uses ports
+- **WHEN** a tutor invocation is handled
+- **THEN** image resolution, guardrail checks, workflow execution, artifact writing, email coordination, idempotency, status recording, and observability SHALL be accessed through injected interfaces or application collaborators
+- **AND** the invocation behavior SHALL remain compatible with the existing payload validation, idempotency, status recording, and response shape requirements
+
+#### Scenario: Handler delegates to composition
+- **WHEN** the runtime handler receives an invocation event
+- **THEN** it SHALL delegate to the configured invocation application service
+- **AND** it SHALL NOT directly construct vendor-specific clients outside the composition path

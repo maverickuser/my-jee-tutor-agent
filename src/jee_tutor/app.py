@@ -3,7 +3,7 @@ import os
 
 from bedrock_agentcore import BedrockAgentCoreApp
 
-from jee_tutor.handler import handle_tutor_invocation
+from jee_tutor.handler import handle_agentcore_request
 
 
 app = BedrockAgentCoreApp()
@@ -17,4 +17,4 @@ def invoke_tutor(payload: dict, context) -> dict:
         os.getenv("JEE_TUTOR_GIT_SHA", "unknown"),
         sorted(payload.keys()),
     )
-    return handle_tutor_invocation(payload)
+    return handle_agentcore_request(payload)

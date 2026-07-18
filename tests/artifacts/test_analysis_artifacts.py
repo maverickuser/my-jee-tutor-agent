@@ -5,6 +5,10 @@ from unittest.mock import Mock
 from jee_tutor.artifacts.writer import AnalysisArtifactWriter
 from jee_tutor.artifacts.pdf import PANDOC_LATEX_HEADER, PANDOC_PDF_ARGS, PandocPdfRenderer
 from jee_tutor.invocation.models import TutorInvocationPayload
+from jee_tutor.profile.models import (
+    StructuredDiagnosisQuestionEvidence,
+    StructuredDiagnosisReport,
+)
 
 
 class FakePandocConverter:
@@ -83,6 +87,64 @@ class AnalysisArtifactWriterTest(unittest.TestCase):
         self.assertEqual(kwargs["Key"], "maths/student-1/Maths_analysis.pdf")
         self.assertEqual(kwargs["ContentType"], "application/pdf")
         self.assertTrue(kwargs["Body"].startswith(b"%PDF"))
+
+    def test_s3_prefix_writes_json_report_beside_pdf_when_report_is_available(self):
+        s3_client = Mock()
+        writer = AnalysisArtifactWriter(
+            s3_client=s3_client,
+            pdf_renderer=PandocPdfRenderer(converter=FakePandocConverter()),
+        )
+        invocation = TutorInvocationPayload(
+            image_s3_prefix=(
+                "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                "MINOR_TEST_2_Paper_2/subjects/Physics/questions/"
+            ),
+            subject="Physics",
+        )
+        report = StructuredDiagnosisReport(
+            diagnosis_report_id="report-1",
+            student_id="YWuzXTHQ",
+            student_name="Mock_Student",
+            subject="Physics",
+            test_name="MINOR_TEST_2_Paper_2",
+            diagnosis_date="2026-07-18T10:00:00+00:00",
+            questions=[
+                StructuredDiagnosisQuestionEvidence(
+                    question_number="1",
+                    chapter="Kinematics",
+                    topic="Projectile motion",
+                    what_you_thought="You likely used constant speed.",
+                    why_that_thought_is_wrong="Vertical acceleration changes velocity.",
+                    exact_concept_gap="Projectile components",
+                    what_you_must_deep_dive="Resolve horizontal and vertical motion.",
+                )
+            ],
+        )
+
+        result = writer.write_for_invocation(
+            analysis_markdown="| Q | Topic |\n|---|---|\n| 1 | Projectile motion |",
+            invocation=invocation,
+            diagnosis_report=report,
+        )
+
+        self.assertEqual(
+            result.diagnosis_json_uri,
+            (
+                "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                "MINOR_TEST_2_Paper_2/subjects/Physics/questions/Physics_analysis.json"
+            ),
+        )
+        self.assertEqual(s3_client.put_object.call_count, 2)
+        _, json_kwargs = s3_client.put_object.call_args
+        self.assertEqual(json_kwargs["ContentType"], "application/json")
+        self.assertEqual(
+            json_kwargs["Key"],
+            (
+                "users/YWuzXTHQ/Mock_Student/tests/MINOR_TEST_2_Paper_2/"
+                "subjects/Physics/questions/Physics_analysis.json"
+            ),
+        )
+        self.assertIn(b'"diagnosis_report_id":"report-1"', json_kwargs["Body"])
 
     def test_non_s3_invocation_does_not_write_artifacts(self):
         s3_client = Mock()

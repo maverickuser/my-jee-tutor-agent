@@ -1,13 +1,17 @@
 import unittest
 from unittest.mock import ANY, Mock, patch
 
+from jee_tutor.agent.diagnosis_output import DiagnosisResponse
 from jee_tutor.agent.guardrails import GuardrailCheck
 from jee_tutor.agent.output_validation import OutputValidationError
+from jee_tutor.agent.workflow import DiagnosisMarkdown
 from jee_tutor.email.models import EmailDeliveryOutcome, EmailDeliveryStatus
 from jee_tutor.handler import handle_tutor_invocation
 from jee_tutor.invocation.image_inputs import ResolvedImage
 from jee_tutor.invocation.models import AgentInvocationStatus, TutorInvocationPayload
 from jee_tutor.invocation.service import TutorInvocationService
+from jee_tutor.profile.storage import InMemoryStudentDiagnosisMetadataStore
+from tests.agent.test_diagnosis_output import question
 
 
 class FakeRuntimeGuardrail:
@@ -139,6 +143,106 @@ class AgentCoreHandlerIntegrationTest(unittest.TestCase):
         image_resolver.resolve_images.assert_not_called()
         status_store.update_invocation.assert_not_called()
         status_store.upsert_invocation.assert_called()
+
+    def test_successful_structured_s3_diagnosis_writes_json_and_metadata(self):
+        image_resolver = Mock()
+        image_resolver.resolve_images.return_value = [resolved_image(question_number="1")]
+        metadata_store = InMemoryStudentDiagnosisMetadataStore()
+        artifact_writer = FakeArtifactWriter(
+            result=Mock(
+                pdf_uri=(
+                    "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                    "MINOR_TEST_2_Paper_2/subjects/Physics/questions/Physics_analysis.pdf"
+                ),
+                markdown_uri=None,
+                diagnosis_json_uri=(
+                    "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                    "MINOR_TEST_2_Paper_2/subjects/Physics/questions/Physics_analysis.json"
+                ),
+                errors=[],
+            )
+        )
+        diagnosis = DiagnosisResponse.model_validate(
+            {"questions": [question(question_number="1", chapter="Kinematics", topic="Projectile motion")]}
+        )
+        email_coordinator = Mock()
+        email_coordinator.request_delivery.return_value = EmailDeliveryOutcome(
+            status=EmailDeliveryStatus.QUEUED,
+            delivery_id="delivery-1",
+        )
+        idempotency_store = Mock()
+        idempotency_store.claim.return_value = Mock(status="claimed")
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(return_value=DiagnosisMarkdown("markdown analysis", diagnosis)),
+            artifact_writer=artifact_writer,
+            email_coordinator=email_coordinator,
+            idempotency_store=idempotency_store,
+            status_store=Mock(),
+            diagnosis_metadata_store=metadata_store,
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": (
+                    "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                    "MINOR_TEST_2_Paper_2/subjects/Physics/questions/"
+                ),
+                "recipient_email": "student@example.com",
+                "idempotency_key": "report-1",
+            }
+        )
+
+        self.assertEqual(response["diagnosis_report_id"], "report-1")
+        self.assertEqual(
+            response["diagnosis_json_uri"],
+            (
+                "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                "MINOR_TEST_2_Paper_2/subjects/Physics/questions/Physics_analysis.json"
+            ),
+        )
+        self.assertEqual(len(metadata_store.records), 1)
+        metadata = metadata_store.records[0]
+        self.assertEqual(metadata.student_id, "YWuzXTHQ")
+        self.assertEqual(metadata.email, "student@example.com")
+        self.assertEqual(metadata.student_name, "Mock_Student")
+        self.assertEqual(metadata.test_name, "MINOR_TEST_2_Paper_2")
+        self.assertEqual(metadata.subject, "Physics")
+        self.assertEqual(metadata.question_count, 1)
+        self.assertEqual(artifact_writer.calls[0]["diagnosis_report"].student_id, "YWuzXTHQ")
+
+    def test_workflow_failure_does_not_write_profile_json_or_metadata(self):
+        image_resolver = Mock()
+        image_resolver.resolve_images.return_value = [resolved_image(question_number="1")]
+        metadata_store = InMemoryStudentDiagnosisMetadataStore()
+        artifact_writer = FakeArtifactWriter()
+        idempotency_store = Mock()
+        idempotency_store.claim.return_value = Mock(status="claimed")
+        service = TutorInvocationService(
+            image_resolver=image_resolver,
+            guardrail=FakeRuntimeGuardrail(),
+            workflow=Mock(side_effect=RuntimeError("vision failed")),
+            artifact_writer=artifact_writer,
+            idempotency_store=idempotency_store,
+            status_store=Mock(),
+            diagnosis_metadata_store=metadata_store,
+        )
+
+        response = service.handle(
+            {
+                "image_s3_prefix": (
+                    "s3://attempt-bucket/users/YWuzXTHQ/Mock_Student/tests/"
+                    "MINOR_TEST_2_Paper_2/subjects/Physics/questions/"
+                ),
+                "recipient_email": "student@example.com",
+                "idempotency_key": "report-1",
+            }
+        )
+
+        self.assertEqual(response["error"], "Tutor workflow failed while analyzing images.")
+        self.assertEqual(metadata_store.records, [])
+        self.assertEqual(artifact_writer.calls, [])
 
     def test_idempotency_conflict_returns_blocked_error(self):
         image_resolver = Mock()

@@ -3,9 +3,7 @@
 ## Purpose
 
 Defines how tutor analysis output is persisted as invocation artifacts.
-
 ## Requirements
-
 ### Requirement: Artifact Creation Decision
 
 The system SHALL decide whether to create analysis artifacts from the invocation payload.
@@ -81,3 +79,12 @@ The system SHALL persist a Markdown fallback when PDF artifact creation fails.
 - **WHEN** both PDF artifact creation and Markdown fallback upload fail
 - **THEN** the response SHALL include artifact errors for both failures
 - **AND** the invocation SHALL still return the analysis text
+
+### Requirement: Artifact Writer Port Boundary
+The system SHALL persist analysis artifacts through an artifact-writer port.
+
+#### Scenario: Artifact creation is requested
+- **WHEN** the invocation application determines that a PDF or Markdown fallback artifact is required
+- **THEN** it SHALL call an artifact-writer interface
+- **AND** S3 upload, PDF rendering, URI derivation, and fallback details SHALL remain inside concrete artifact adapters
+- **AND** artifact response fields SHALL remain compatible with the existing artifact requirements

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import logging
 from pathlib import PurePosixPath
 import re
@@ -10,6 +11,7 @@ import boto3
 
 from jee_tutor.artifacts.pdf import PandocPdfRenderer
 from jee_tutor.invocation.models import TutorInvocationPayload
+from jee_tutor.profile.models import StructuredDiagnosisReport
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 class AnalysisArtifactResult:
     pdf_uri: str | None = None
     markdown_uri: str | None = None
+    diagnosis_json_uri: str | None = None
     errors: list[str] = field(default_factory=list)
 
 
@@ -37,6 +40,7 @@ class AnalysisArtifactWriter:
         *,
         analysis_markdown: str,
         invocation: TutorInvocationPayload,
+        diagnosis_report: StructuredDiagnosisReport | None = None,
     ) -> AnalysisArtifactResult:
         pdf_uri = self._resolve_pdf_uri(invocation)
         if not pdf_uri:
@@ -48,7 +52,6 @@ class AnalysisArtifactWriter:
             self._upload(pdf_uri, pdf_bytes, "application/pdf")
             result.pdf_uri = pdf_uri
             logger.info("analysis_pdf_upload uri=%s bytes=%s", pdf_uri, len(pdf_bytes))
-            return result
         except Exception as exc:
             result.errors.append(
                 f"Failed to write analysis PDF: {exc.__class__.__name__}: {exc or '[no message]'}"
@@ -59,26 +62,53 @@ class AnalysisArtifactWriter:
                 exc or "[no message]",
             )
 
-        markdown_uri = self._markdown_uri_for_pdf_uri(pdf_uri)
-        try:
-            markdown_bytes = analysis_markdown.encode("utf-8")
-            self._upload(markdown_uri, markdown_bytes, "text/markdown; charset=utf-8")
-            result.markdown_uri = markdown_uri
-            logger.info(
-                "analysis_markdown_upload uri=%s bytes=%s",
-                markdown_uri,
-                len(markdown_bytes),
-            )
-        except Exception as exc:
-            result.errors.append(
-                f"Failed to write analysis markdown fallback: {exc.__class__.__name__}: "
-                f"{exc or '[no message]'}"
-            )
-            logger.exception(
-                "analysis_markdown_error error_type=%s error=%s",
-                exc.__class__.__name__,
-                exc or "[no message]",
-            )
+        if result.pdf_uri is None:
+            markdown_uri = self._markdown_uri_for_pdf_uri(pdf_uri)
+            try:
+                markdown_bytes = analysis_markdown.encode("utf-8")
+                self._upload(markdown_uri, markdown_bytes, "text/markdown; charset=utf-8")
+                result.markdown_uri = markdown_uri
+                logger.info(
+                    "analysis_markdown_upload uri=%s bytes=%s",
+                    markdown_uri,
+                    len(markdown_bytes),
+                )
+            except Exception as exc:
+                result.errors.append(
+                    f"Failed to write analysis markdown fallback: {exc.__class__.__name__}: "
+                    f"{exc or '[no message]'}"
+                )
+                logger.exception(
+                    "analysis_markdown_error error_type=%s error=%s",
+                    exc.__class__.__name__,
+                    exc or "[no message]",
+                )
+
+        if diagnosis_report is not None:
+            diagnosis_json_uri = self._json_uri_for_pdf_uri(pdf_uri)
+            try:
+                json_bytes = json.dumps(
+                    diagnosis_report.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                self._upload(diagnosis_json_uri, json_bytes, "application/json")
+                result.diagnosis_json_uri = diagnosis_json_uri
+                logger.info(
+                    "analysis_json_upload uri=%s bytes=%s",
+                    diagnosis_json_uri,
+                    len(json_bytes),
+                )
+            except Exception as exc:
+                result.errors.append(
+                    f"Failed to write diagnosis JSON: {exc.__class__.__name__}: "
+                    f"{exc or '[no message]'}"
+                )
+                logger.exception(
+                    "analysis_json_error error_type=%s error=%s",
+                    exc.__class__.__name__,
+                    exc or "[no message]",
+                )
 
         return result
 
@@ -107,6 +137,13 @@ class AnalysisArtifactWriter:
         path = PurePosixPath(key)
         markdown_key = str(path.with_suffix(".md"))
         return f"s3://{bucket}/{markdown_key}"
+
+    @classmethod
+    def _json_uri_for_pdf_uri(cls, pdf_uri: str) -> str:
+        bucket, key = cls._parse_s3_uri(pdf_uri)
+        path = PurePosixPath(key)
+        json_key = str(path.with_suffix(".json"))
+        return f"s3://{bucket}/{json_key}"
 
     def _upload(self, s3_uri: str, body: bytes, content_type: str) -> None:
         bucket, key = self._parse_s3_uri(s3_uri)

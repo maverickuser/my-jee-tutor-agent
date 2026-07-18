@@ -30,9 +30,19 @@ from jee_tutor.invocation.status_store import (
     build_invocation_status_store,
     _utc_now,
 )
+from jee_tutor.profile.models import (
+    StructuredDiagnosisReport,
+    metadata_from_report,
+)
+from jee_tutor.profile.parsing import parse_student_context_from_s3_path
+from jee_tutor.profile.reports import build_structured_diagnosis_report
+from jee_tutor.profile.storage import (
+    StudentDiagnosisMetadataStore,
+    build_student_diagnosis_metadata_store,
+)
 
 
-TutorWorkflow = Callable[..., str]
+TutorWorkflow = Callable[..., object]
 logger = logging.getLogger(__name__)
 PDF_WAIT_MINUTES = 5
 PDF_WAIT_MESSAGE_TEMPLATE = (
@@ -52,6 +62,7 @@ class TutorInvocationService:
         email_coordinator: EmailDeliveryCoordinator | None = None,
         idempotency_store: InvocationIdempotencyStore | None = None,
         status_store: InvocationStatusStore | None = None,
+        diagnosis_metadata_store: StudentDiagnosisMetadataStore | None = None,
     ):
         self.image_resolver = image_resolver or ImageInputResolver()
         self.guardrail = guardrail or RuntimeGuardrail()
@@ -61,6 +72,9 @@ class TutorInvocationService:
         self.email_coordinator = email_coordinator or EmailDeliveryCoordinator()
         self.idempotency_store = idempotency_store or invocation_idempotency_store
         self.status_store = status_store or build_invocation_status_store()
+        self.diagnosis_metadata_store = (
+            diagnosis_metadata_store or build_student_diagnosis_metadata_store()
+        )
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -216,6 +230,7 @@ class TutorInvocationService:
                     image_count=len(resolved_images),
                 )
                 workflow_result = self._run_workflow(invocation, resolved_images, invocation_id)
+                structured_diagnosis = getattr(workflow_result, "diagnosis", None)
                 analysis = str(workflow_result)
             except Exception as exc:
                 response = self._error_response(
@@ -254,6 +269,8 @@ class TutorInvocationService:
             response = self._success_response(
                 analysis,
                 invocation,
+                invocation_id=invocation_id,
+                structured_diagnosis=structured_diagnosis,
             )
             self._record_invocation(
                 invocation_id=invocation_id,
@@ -275,7 +292,7 @@ class TutorInvocationService:
         invocation: TutorInvocationPayload,
         resolved_images: list[ResolvedImage],
         invocation_id: str,
-    ) -> str:
+    ) -> object:
         return self.workflow(
             image_data_uris=[image.data_uri for image in resolved_images],
             question_context=invocation.resolved_question_context,
@@ -305,9 +322,18 @@ class TutorInvocationService:
         self,
         analysis: str,
         invocation: TutorInvocationPayload,
+        *,
+        invocation_id: str,
+        structured_diagnosis: Any = None,
     ) -> dict[str, Any]:
         analysis_pdf_uri = None
         analysis_markdown_uri = None
+        diagnosis_json_uri = None
+        diagnosis_report = self._build_diagnosis_report(
+            invocation=invocation,
+            invocation_id=invocation_id,
+            structured_diagnosis=structured_diagnosis,
+        )
         artifact_errors: list[str] = []
         if invocation.should_write_analysis_pdf:
             logger.info(
@@ -315,12 +341,16 @@ class TutorInvocationService:
                 "metric_value=1 metric_unit=Count"
             )
             try:
-                artifact_result = self.artifact_writer.write_for_invocation(
-                    analysis_markdown=analysis,
-                    invocation=invocation,
-                )
+                artifact_kwargs: dict[str, Any] = {
+                    "analysis_markdown": analysis,
+                    "invocation": invocation,
+                }
+                if diagnosis_report is not None:
+                    artifact_kwargs["diagnosis_report"] = diagnosis_report
+                artifact_result = self.artifact_writer.write_for_invocation(**artifact_kwargs)
                 analysis_pdf_uri = artifact_result.pdf_uri
                 analysis_markdown_uri = artifact_result.markdown_uri
+                diagnosis_json_uri = getattr(artifact_result, "diagnosis_json_uri", None)
                 artifact_errors.extend(artifact_result.errors)
             except Exception as exc:
                 artifact_errors.append(
@@ -332,6 +362,17 @@ class TutorInvocationService:
                     exc.__class__.__name__,
                     exc or "[no message]",
                 )
+
+        if diagnosis_report is not None and diagnosis_json_uri is not None:
+            metadata_error = self._write_diagnosis_metadata(
+                report=diagnosis_report,
+                invocation=invocation,
+                diagnosis_json_uri=diagnosis_json_uri,
+                analysis_pdf_uri=analysis_pdf_uri,
+                analysis_markdown_uri=analysis_markdown_uri,
+            )
+            if metadata_error:
+                artifact_errors.append(metadata_error)
 
         email_outcome = self._request_email_delivery(
             invocation=invocation,
@@ -348,12 +389,78 @@ class TutorInvocationService:
             pdf_wait_minutes=self._pdf_wait_minutes(analysis_pdf_uri),
             analysis_pdf_uri=analysis_pdf_uri,
             analysis_markdown_uri=analysis_markdown_uri,
+            diagnosis_report_id=diagnosis_report.diagnosis_report_id if diagnosis_report else None,
+            diagnosis_json_uri=diagnosis_json_uri,
             artifact_errors=artifact_errors,
             email_status=email_outcome.status.value,
             email_delivery_id=email_outcome.delivery_id,
             email_error=email_outcome.error,
             runtime_commit_sha=self._runtime_commit_sha(),
         ).model_dump(exclude_none=True, exclude_defaults=True)
+
+    def _build_diagnosis_report(
+        self,
+        *,
+        invocation: TutorInvocationPayload,
+        invocation_id: str,
+        structured_diagnosis: Any,
+    ) -> StructuredDiagnosisReport | None:
+        if structured_diagnosis is None or not invocation.image_s3_prefix:
+            return None
+        context = parse_student_context_from_s3_path(invocation.image_s3_prefix)
+        if context is None:
+            return None
+        try:
+            return build_structured_diagnosis_report(
+                diagnosis=structured_diagnosis,
+                context=context,
+                diagnosis_report_id=invocation_id,
+            )
+        except Exception as exc:
+            logger.exception(
+                "diagnosis_report_build_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
+            return None
+
+    def _write_diagnosis_metadata(
+        self,
+        *,
+        report: StructuredDiagnosisReport,
+        invocation: TutorInvocationPayload,
+        diagnosis_json_uri: str,
+        analysis_pdf_uri: str | None,
+        analysis_markdown_uri: str | None,
+    ) -> str | None:
+        if not invocation.recipient_email:
+            return None
+        try:
+            metadata = metadata_from_report(
+                report=report,
+                email=invocation.recipient_email,
+                diagnosis_json_s3_uri=diagnosis_json_uri,
+                analysis_pdf_s3_uri=analysis_pdf_uri,
+                analysis_markdown_s3_uri=analysis_markdown_uri,
+            )
+            self.diagnosis_metadata_store.put_metadata(metadata)
+            logger.info(
+                "student_diagnosis_metadata_write report_id=%s subject=%s question_count=%s",
+                metadata.diagnosis_report_id,
+                metadata.subject,
+                metadata.question_count,
+            )
+            return None
+        except Exception as exc:
+            logger.exception(
+                "student_diagnosis_metadata_error error_type=%s error=%s",
+                exc.__class__.__name__,
+                exc or "[no message]",
+            )
+            return (
+                f"Failed to write student diagnosis metadata: {exc.__class__.__name__}: "
+                f"{exc or '[no message]'}"
+            )
 
     def _request_email_delivery(
         self,

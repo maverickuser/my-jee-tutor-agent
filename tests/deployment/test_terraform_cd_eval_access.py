@@ -72,6 +72,19 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             terraform,
         )
 
+    def test_runtime_receives_student_diagnosis_metadata_table_and_permissions(self):
+        terraform = "\n".join(
+            path.read_text()
+            for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
+        )
+
+        self.assertIn("aws_dynamodb_table\" \"student_diagnosis_metadata", terraform)
+        self.assertIn("STUDENT_DIAGNOSIS_METADATA_ENABLED", terraform)
+        self.assertIn("STUDENT_DIAGNOSIS_METADATA_TABLE_NAME", terraform)
+        self.assertIn("ReadWriteStudentDiagnosisMetadata", terraform)
+        self.assertIn("dynamodb:Query", terraform)
+        self.assertIn("student_diagnosis_metadata_table_name", terraform)
+
 
 if __name__ == "__main__":
     unittest.main()
