@@ -80,13 +80,21 @@ s3://bucket/users/{student_id}/{student_name}/tests/{test_name}/subjects/{subjec
 
 Rationale: the S3 layout should remain aligned with the incoming image organization, while the metadata table gives profile queries a compact index.
 
-### Use Semantic Clustering Before Recurrence
+### Use Embedding Similarity And Mandatory LLM Classification Before Recurrence
 
-The profile flow will first load the requested student's subject-scoped JSON reports, create compact evidence items, and run semantic gap analysis to identify same underlying gaps, same wrong approaches, same prerequisite weaknesses, same execution patterns, related-but-distinct subgaps, and unrelated mistakes. Recurrence is computed after clustering from distinct source diagnosis report ids.
+The profile flow will first load the requested student's subject-scoped JSON reports and create compact evidence items. Before any recurrence computation, it will ensure each evidence item has an embedding, create only missing embeddings, compute cosine similarity within the requested student and subject scope, and use the resulting neighbor groups as candidate clusters. An LLM classifier must then classify each candidate as a same underlying gap, same wrong approach, same prerequisite weakness, same execution pattern, related-but-distinct subgap, or unrelated mistake. Recurrence is computed only after validated LLM-classified clusters are available.
 
-Rationale: exact string matching is too weak because the same learning gap can appear with different wording. At the same time, report-count recurrence is a correctness rule and should not be left to prose generation.
+Rationale: exact string matching is too weak because the same learning gap can appear with different wording. Embeddings provide recall for differently worded but related evidence items, while the mandatory LLM classifier provides the typed semantic judgment needed for useful profile reports. Report-count recurrence is a correctness rule and should not be left to prose generation.
 
-Alternative considered: deterministic normalized-text grouping only. Rejected because it would miss subtle same-gap or same-approach patterns. Another alternative was to let the profile agent analyze raw reports end to end; rejected because it weakens evidence boundaries and makes recurrence claims harder to validate.
+Alternative considered: deterministic normalized-text grouping only. Rejected because it would miss subtle same-gap or same-approach patterns. Another alternative was to accept embedding-neighbor groups as final clusters without LLM classification. Rejected because cosine similarity can identify likely related evidence but cannot reliably distinguish same underlying gaps from wrong approaches, prerequisite weaknesses, execution patterns, or related-but-distinct subgaps. Another alternative was to let the profile agent analyze raw reports end to end; rejected because it weakens evidence boundaries and makes recurrence claims harder to validate.
+
+### Cache Evidence Embeddings By Source JSON Evidence
+
+Evidence embeddings will be stored in a dedicated DynamoDB table keyed by structured diagnosis JSON path and evidence identity. The storage key must include the JSON report S3 URI, evidence id, embedding model, and embedding input version. Each stored record also tracks the embedding text hash so profile generation can reuse embeddings when source evidence has not changed and recreate only missing or stale embeddings.
+
+Rationale: profile reports are generated on request, and historical diagnosis rows may be reused across many profile requests. Caching embeddings by source JSON evidence avoids recomputing stable vectors while keeping normal diagnosis latency unchanged. Using the JSON artifact path as part of the key ties each vector to the machine-readable diagnosis evidence that produced it.
+
+Alternative considered: precompute embeddings during every diagnosis write. Deferred for the first implementation because diagnosis should remain focused on current-attempt analysis and should not fail or slow down due to profile embedding infrastructure. On-demand embedding creation during profile generation is easier to backfill and safer to retry.
 
 ### Recurrence Is Report-Based
 

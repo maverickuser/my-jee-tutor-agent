@@ -62,7 +62,10 @@ class StudentProfileApplicationService:
                 "subject": request.subject,
             }
 
-        clusters = self.semantic_analyzer.cluster(evidence_result.evidence_items)
+        clusters = self.semantic_analyzer.cluster(
+            evidence_result.evidence_items,
+            subject=request.subject,
+        )
         evidence_pack = build_longitudinal_evidence_pack(
             subject=request.subject,
             evidence_items=evidence_result.evidence_items,

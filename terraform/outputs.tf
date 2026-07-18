@@ -50,3 +50,8 @@ output "student_diagnosis_metadata_table_name" {
   value       = aws_dynamodb_table.student_diagnosis_metadata.name
   description = "DynamoDB table used for student diagnosis metadata lookup."
 }
+
+output "evidence_embedding_table_name" {
+  value       = aws_dynamodb_table.evidence_embeddings.name
+  description = "DynamoDB table used for profile evidence embedding cache records."
+}

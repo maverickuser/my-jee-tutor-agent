@@ -132,6 +132,96 @@ class HandlerAndAppTest(unittest.TestCase):
 
         self.assertEqual(response, {"profile_status": "no_history"})
 
+    def test_agentcore_profile_task_runs_embedding_semantic_flow(self):
+        from jee_tutor.application.profile import StudentProfileApplicationService
+        from jee_tutor.profile.embeddings import (
+            EvidenceEmbeddingRecord,
+            EvidenceEmbeddingService,
+            build_embedding_input_text,
+            build_embedding_key,
+            embedding_text_hash,
+        )
+        from jee_tutor.profile.reporting import ProfileAnalysisService
+        from jee_tutor.profile.semantic import SemanticGapAnalyzer
+        from jee_tutor.profile.storage import (
+            InMemoryStudentDiagnosisMetadataStore,
+            InMemoryStructuredDiagnosisArtifactStore,
+        )
+        from tests.profile.test_application_profile import metadata, report
+
+        metadata_store = InMemoryStudentDiagnosisMetadataStore()
+        artifact_store = InMemoryStructuredDiagnosisArtifactStore()
+        for report_id in ["r1", "r2"]:
+            metadata_store.put_metadata(metadata(report_id))
+            artifact_store.write_report(
+                s3_uri=f"s3://bucket/{report_id}.json",
+                report=report(report_id),
+        )
+        existing_evidence = next(
+            item
+            for item in service_evidence_items(metadata_store, artifact_store)
+            if item.evidence_id == "r1:q1"
+        )
+        existing_embedding_key = build_embedding_key(
+            evidence_id="r1:q1",
+            embedding_model="fake-embedding",
+            embedding_input_version="v1",
+        )
+        embedding_store = RecordingEmbeddingStore(
+            {
+                ("s3://bucket/r1.json", existing_embedding_key): EvidenceEmbeddingRecord(
+                    diagnosis_json_s3_uri="s3://bucket/r1.json",
+                    embedding_key=existing_embedding_key,
+                    evidence_id="r1:q1",
+                    embedding_model="fake-embedding",
+                    embedding_input_version="v1",
+                    embedding_text_hash=embedding_text_hash(
+                        build_embedding_input_text(
+                            subject="Physics",
+                            evidence=existing_evidence,
+                        )
+                    ),
+                    embedding=[1.0, 0.0],
+                    created_at="2026-07-18T00:00:00+00:00",
+                )
+            }
+        )
+        classifier = RecordingSemanticClassifier()
+        service = StudentProfileApplicationService(
+            metadata_store=metadata_store,
+            artifact_store=artifact_store,
+            semantic_analyzer=SemanticGapAnalyzer(
+                embedding_service=EvidenceEmbeddingService(
+                    store=embedding_store,
+                    client=SingleVectorEmbeddingClient([[0.9, 0.1]]),
+                ),
+                classifier=classifier,
+                similarity_threshold=0.95,
+            ),
+            report_service=ProfileAnalysisService(),
+        )
+
+        with patch(
+            "jee_tutor.infrastructure.composition.build_student_profile_service",
+            return_value=service,
+        ):
+            from jee_tutor.handler import handle_agentcore_request
+
+            response = handle_agentcore_request(
+                {
+                    "task": "task profile",
+                    "recipient_email": "student@example.com",
+                    "subject": "Physics",
+                }
+            )
+
+        self.assertEqual(response["profile_status"], "succeeded")
+        self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
+        self.assertEqual(len(embedding_store.puts), 1)
+        self.assertEqual(embedding_store.puts[0].evidence_id, "r2:q1")
+        self.assertEqual(classifier.candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
+        self.assertIn("Projectile components", response["profile_report"]["recurring_gaps"][0])
+
     def test_legacy_tutor_invocation_dispatches_profile_report_task(self):
         with patch("jee_tutor.infrastructure.composition.build_student_profile_service") as build_profile:
             build_profile.return_value.handle.return_value = {"profile_status": "no_history"}
@@ -155,6 +245,58 @@ class HandlerAndAppTest(unittest.TestCase):
             response = handle_agentcore_request({"image_data_uri": "x"})
 
         self.assertEqual(response, {"analysis": "ok"})
+
+
+class RecordingEmbeddingStore:
+    def __init__(self, records):
+        self.records = dict(records)
+        self.puts = []
+
+    def get_embedding(self, *, diagnosis_json_s3_uri: str, embedding_key: str):
+        return self.records.get((diagnosis_json_s3_uri, embedding_key))
+
+    def put_embedding(self, record) -> None:
+        self.records[(record.diagnosis_json_s3_uri, record.embedding_key)] = record
+        self.puts.append(record)
+
+
+def service_evidence_items(metadata_store, artifact_store):
+    from jee_tutor.profile.evidence import ProfileEvidenceLoader
+    from jee_tutor.profile.models import ProfileReportRequest
+
+    return ProfileEvidenceLoader(
+        metadata_store=metadata_store,
+        artifact_store=artifact_store,
+    ).load(ProfileReportRequest(email="student@example.com", subject="Physics")).evidence_items
+
+
+class SingleVectorEmbeddingClient:
+    model = "fake-embedding"
+
+    def __init__(self, vectors):
+        self.vectors = vectors
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.vectors
+
+
+class RecordingSemanticClassifier:
+    def __init__(self):
+        self.candidates = []
+
+    def classify(self, *, evidence_items, candidates):
+        from jee_tutor.profile.semantic import SemanticGapCluster
+
+        self.candidates = candidates
+        return [
+            SemanticGapCluster(
+                cluster_id="semantic-cluster-1",
+                cluster_type="same_underlying_gap",
+                title="Projectile components",
+                evidence_ids=["r1:q1", "r2:q1"],
+                rationale="Mandatory classifier accepted the cosine candidate.",
+            )
+        ]
 
 
 if __name__ == "__main__":

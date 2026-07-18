@@ -18,6 +18,8 @@ class ProfileEvidenceItem(BaseModel):
 
     evidence_id: str = Field(min_length=1)
     diagnosis_report_id: str = Field(min_length=1)
+    diagnosis_json_s3_uri: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
     question_number: str = Field(min_length=1)
     chapter: str = Field(min_length=1)
     topic: str = Field(min_length=1)
@@ -97,12 +99,14 @@ def _evidence_items_from_reports(
             )
         for index, question in enumerate(report.questions, start=1):
             evidence_items.append(
-                ProfileEvidenceItem(
-                    evidence_id=f"{report.diagnosis_report_id}:q{index}",
-                    diagnosis_report_id=report.diagnosis_report_id,
-                    question_number=question.question_number,
-                    chapter=question.chapter,
-                    topic=question.topic,
+                    ProfileEvidenceItem(
+                        evidence_id=f"{report.diagnosis_report_id}:q{index}",
+                        diagnosis_report_id=report.diagnosis_report_id,
+                        diagnosis_json_s3_uri=metadata.diagnosis_json_s3_uri,
+                        subject=report.subject,
+                        question_number=question.question_number,
+                        chapter=question.chapter,
+                        topic=question.topic,
                     exact_concept_gap=question.exact_concept_gap,
                     likely_thought=question.what_you_thought,
                     why_wrong=question.why_that_thought_is_wrong,

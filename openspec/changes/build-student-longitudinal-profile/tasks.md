@@ -35,10 +35,14 @@
 ## 5. Semantic Gap Analysis
 
 - [x] 5.1 Add a semantic clustering prompt/schema for same underlying concept gap, same wrong approach, same prerequisite weakness, same execution pattern, related-but-distinct subgaps, and unrelated mistakes.
-- [x] 5.2 Implement the semantic clustering LLM call over compact evidence items.
-- [x] 5.3 Validate cluster output for known evidence ids, requested subject scope, required fields, duplicate evidence conflicts, and invented evidence references.
-- [x] 5.4 Compute distinct diagnosis report counts, question counts, exact recurring gaps, broader recurring patterns, and isolated or early-indicator gaps from validated clusters.
-- [x] 5.5 Build a chapter/topic map that distinguishes exact recurring gaps, broader related recurring patterns, and isolated gaps.
+- [x] 5.2 Add an evidence embedding model/configuration and embedding input builder over subject, chapter, topic, exact concept gap, likely thought, why wrong, and deep-dive recommendation.
+- [x] 5.3 Add a dedicated embedding store keyed by structured JSON diagnosis report path, evidence id, embedding model, and embedding input version, with an embedding text hash for stale detection.
+- [x] 5.4 Ensure profile generation creates embeddings only for evidence items missing a matching stored embedding.
+- [x] 5.5 Compute cosine similarity over requested student-and-subject evidence embeddings and create candidate cluster groups.
+- [x] 5.6 Implement the mandatory semantic clustering LLM classifier over candidate groups and compact evidence items.
+- [x] 5.7 Validate cluster output for known evidence ids, requested subject scope, required fields, duplicate evidence conflicts, and invented evidence references.
+- [x] 5.8 Compute distinct diagnosis report counts, question counts, exact recurring gaps, broader recurring patterns, and isolated or early-indicator gaps from validated clusters.
+- [x] 5.9 Build a chapter/topic map that distinguishes exact recurring gaps, broader related recurring patterns, and isolated gaps.
 
 ## 6. Longitudinal Evidence Pack
 
@@ -59,8 +63,9 @@
 ## 8. Endpoint And Composition
 
 - [x] 8.1 Add a requested profile report endpoint or AgentCore entrypoint for student email plus subject.
-- [x] 8.2 Wire composition for metadata store, JSON artifact store, semantic clustering model, and profile analysis agent.
+- [x] 8.2 Wire composition for metadata store, JSON artifact store, evidence embedding store/model, mandatory semantic clustering classifier, and profile analysis agent.
 - [x] 8.3 Add deployment configuration, IAM permissions, and outputs for metadata storage and JSON diagnosis report artifacts.
+- [x] 8.5 Add deployment configuration, IAM permissions, and outputs for the evidence embedding table.
 - [x] 8.4 Ensure profile report generation can be disabled without breaking current diagnosis invocations.
 
 ## 9. Tests And Validation
@@ -70,9 +75,12 @@
 - [x] 9.3 Add tests proving no metadata or profile JSON artifact is published on validation, guardrail, workflow, or output failures.
 - [x] 9.4 Add tests for metadata query by recipient email plus subject and exclusion of other subjects/students.
 - [x] 9.5 Add tests for compact evidence loading from JSON diagnosis reports.
-- [x] 9.6 Add tests for semantic cluster validation, including invented evidence ids, duplicate evidence conflicts, and related-but-distinct subgaps.
-- [x] 9.7 Add tests for recurrence requiring at least two separate diagnosis reports.
-- [x] 9.8 Add tests for one-report profile reports using early-indicator language without recurring claims.
-- [x] 9.9 Add tests for written report sections, student study priorities, teacher intervention notes, and evidence appendix.
-- [x] 9.10 Add tests that metadata, evidence packs, profile prompts, reports, and telemetry exclude image data URIs, base64 payloads, raw model responses, and stack traces, and keep recipient email limited to the metadata email field.
-- [x] 9.11 Run `openspec validate build-student-longitudinal-profile`, unit tests, Ruff, and coverage before marking implementation complete.
+- [x] 9.6 Add tests that profile generation reuses existing matching embeddings and creates only missing or stale evidence embeddings.
+- [x] 9.7 Add tests for cosine-similarity candidate generation within requested student-and-subject scope.
+- [x] 9.8 Add tests proving final semantic clusters come from the mandatory LLM classifier, not raw embedding-neighbor groups.
+- [x] 9.9 Add tests for semantic cluster validation, including invented evidence ids, duplicate evidence conflicts, and related-but-distinct subgaps.
+- [x] 9.10 Add tests for recurrence requiring at least two separate diagnosis reports.
+- [x] 9.11 Add tests for one-report profile reports using early-indicator language without recurring claims.
+- [x] 9.12 Add tests for written report sections, student study priorities, teacher intervention notes, and evidence appendix.
+- [x] 9.13 Add tests that metadata, evidence packs, profile prompts, reports, and telemetry exclude image data URIs, base64 payloads, raw model responses, and stack traces, and keep recipient email limited to the metadata email field.
+- [x] 9.14 Run `openspec validate build-student-longitudinal-profile`, unit tests, Ruff, and coverage before marking implementation complete.

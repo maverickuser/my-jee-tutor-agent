@@ -7,6 +7,13 @@ model = "gemini/gemini-2.5-pro"
 [crewai]
 model = "gemini/gemini-3-flash-preview"
 
+[profile_embedding]
+model = "bedrock/amazon.titan-embed-text-v2:0"
+dimensions = 256
+
+[semantic_clustering]
+model = "gemini/gemini-2.5-pro"
+
 [structured_diagnosis]
 enabled = true
 allow_legacy_markdown = false

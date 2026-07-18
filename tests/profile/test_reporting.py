@@ -114,6 +114,7 @@ class ProfileReportingTest(unittest.TestCase):
 
         def completion_fn(**kwargs):
             self.assertEqual(kwargs["response_format"]["type"], "json_schema")
+            self.assertEqual(kwargs["num_retries"], 0)
             return {
                 "choices": [
                     {
@@ -231,7 +232,7 @@ class ProfileReportingTest(unittest.TestCase):
 
 class FakeModelSettings:
     def to_litellm_kwargs(self):
-        return {"model": "fake/profile-report", "timeout": 3}
+        return {"model": "fake/profile-report", "timeout": 3, "num_retries": 0}
 
 
 class FakeProfileReportModelConfig:

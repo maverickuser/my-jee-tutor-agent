@@ -20,6 +20,8 @@ env:
   VISION_MODEL: ${{ vars.VISION_MODEL || 'gemini/gemini-2.5-pro' }}
   CREWAI_MODEL: ${{ vars.CREWAI_MODEL || 'gemini/gemini-3-flash-preview' }}
   PROFILE_REPORT_MODEL: ${{ vars.PROFILE_REPORT_MODEL || 'gemini/gemini-2.5-pro' }}
+  PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || 'bedrock/amazon.titan-embed-text-v2:0' }}
+  PROFILE_SEMANTIC_CLUSTER_MODEL: ${{ vars.PROFILE_SEMANTIC_CLUSTER_MODEL || 'gemini/gemini-2.5-pro' }}
   STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.STRUCTURED_DIAGNOSIS_ENABLED || 'true' }}
   PROFILE_REPORT_LLM_ENABLED: ${{ vars.PROFILE_REPORT_LLM_ENABLED || 'true' }}
   CURRICULUM_TAXONOMY_S3_URI: ${{ vars.CURRICULUM_TAXONOMY_S3_URI || format('s3://{0}/curriculum/jee_curriculum_taxonomy.json', vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state') }}
@@ -77,10 +79,12 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
-          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
-          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
+	          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
+	          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
+	          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
+	          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
+	          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
+	          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
           TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
@@ -304,10 +308,12 @@ jobs:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_google_api_key: ${{ secrets.GOOGLE_API_KEY }}
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
-          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
-          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
-          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
+	          TF_VAR_vision_model: ${{ env.VISION_MODEL }}
+	          TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
+	          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
+	          TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
+	          TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
+	          TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
           TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}

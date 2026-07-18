@@ -6,6 +6,8 @@ from jee_tutor.profile.models import (
     StructuredDiagnosisQuestionEvidence,
     StructuredDiagnosisReport,
 )
+from jee_tutor.profile.reporting import ProfileAnalysisService
+from jee_tutor.profile.semantic import SemanticGapAnalyzer, SemanticGapCluster
 from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,
@@ -75,6 +77,8 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
+            semantic_analyzer=SemanticGapAnalyzer(clusterer=fixed_clusters),
+            report_service=ProfileAnalysisService(),
         )
 
         response = service.handle(
@@ -88,6 +92,17 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         self.assertEqual(response["profile_status"], "succeeded")
         self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
         self.assertIn("Projectile components", response["profile_markdown"])
+
+def fixed_clusters(_items):
+    return [
+        SemanticGapCluster(
+            cluster_id="cluster-1",
+            cluster_type="same_underlying_gap",
+            title="Projectile components",
+            evidence_ids=["r1:q1", "r2:q1"],
+            rationale="same gap",
+        )
+    ]
 
 
 if __name__ == "__main__":

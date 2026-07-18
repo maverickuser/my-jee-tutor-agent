@@ -5,6 +5,7 @@ locals {
   email_delivery_function_name = substr("${var.project_name}-email-delivery", 0, 64)
   invocation_status_table_name = "${var.project_name}-invocations"
   student_diagnosis_metadata_table_name = "${var.project_name}-student-diagnosis-metadata"
+  evidence_embedding_table_name = "${var.project_name}-evidence-embeddings"
   email_body_template_compact  = replace(replace(trimspace(var.email_body_template), "\n", " "), "\r", " ")
 
   curriculum_taxonomy_s3_path    = var.curriculum_taxonomy_s3_uri != "" ? trimprefix(var.curriculum_taxonomy_s3_uri, "s3://") : ""

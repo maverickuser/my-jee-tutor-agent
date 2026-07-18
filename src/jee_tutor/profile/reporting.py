@@ -127,8 +127,10 @@ class LiteLLMProfileReportWriter:
 
     def write(self, evidence_pack: LongitudinalEvidencePack) -> ProfileReportOutput:
         model_settings = self.model_config.resolve()
+        completion_kwargs = model_settings.to_litellm_kwargs()
+        completion_kwargs.setdefault("num_retries", 0)
         response = self.completion_fn(
-            **model_settings.to_litellm_kwargs(),
+            **completion_kwargs,
             messages=[
                 {
                     "role": "system",
@@ -142,7 +144,6 @@ class LiteLLMProfileReportWriter:
             response_format=profile_report_response_format(),
             caching=False,
             cache={"no-cache": True},
-            num_retries=0,
         )
         content = response["choices"][0]["message"]["content"].strip()
         return ProfileReportOutput.model_validate_json(content)

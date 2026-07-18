@@ -55,17 +55,33 @@ The system SHALL generate longitudinal profile reports only when explicitly requ
 - **AND** the system SHALL NOT label any gap as recurring
 
 ### Requirement: Semantic Gap Analysis
-The system SHALL use semantic analysis to cluster same or related learning gaps across structured diagnosis reports.
+The system SHALL use embedding-backed semantic analysis followed by mandatory LLM cluster classification to cluster same or related learning gaps across structured diagnosis reports.
 
 #### Scenario: Evidence items are prepared for clustering
 - **WHEN** student subject history is loaded from JSON diagnosis reports
 - **THEN** the system SHALL prepare compact evidence items for semantic analysis
 - **AND** each evidence item SHALL include evidence id, diagnosis report id, question number, chapter, topic, exact concept gap, likely student thought, why that thought was wrong, and deep-dive recommendation
 
+#### Scenario: Missing evidence embeddings are created first
+- **WHEN** semantic gap analysis starts for a requested profile
+- **THEN** the system SHALL first ensure an embedding exists for every compact evidence item in the requested student and subject history
+- **AND** the embedding input SHALL be derived from the evidence item's subject, chapter, topic, exact concept gap, likely student thought, why that thought was wrong, and deep-dive recommendation
+- **AND** the system SHALL reuse existing embeddings when the embedding model, embedding input version, and embedding text hash match the current evidence item
+- **AND** the system SHALL create embeddings only for evidence items that do not already have a matching stored embedding
+- **AND** stored embeddings SHALL be keyed by the structured JSON diagnosis report path, evidence id, embedding model, and embedding input version
+
+#### Scenario: Embedding similarity proposes candidate clusters
+- **WHEN** all requested evidence items have embeddings
+- **THEN** the system SHALL compute cosine similarity between evidence embeddings within the requested student and subject scope
+- **AND** the system SHALL use cosine similarity to propose candidate same-gap or related-gap groups for classification
+- **AND** deterministic normalized-text matches MAY be added as additional candidates but SHALL NOT replace embedding similarity
+
 #### Scenario: Semantic clusters are produced
-- **WHEN** semantic gap analysis runs
-- **THEN** it SHALL identify same underlying concept gaps, same wrong approaches, same prerequisite weaknesses, same execution patterns, related-but-distinct subgaps, or unrelated mistakes when supported by evidence
+- **WHEN** candidate clusters have been proposed from embedding similarity
+- **THEN** the system SHALL call an LLM classifier to classify cluster type
+- **AND** the LLM classifier SHALL identify same underlying concept gaps, same wrong approaches, same prerequisite weaknesses, same execution patterns, related-but-distinct subgaps, or unrelated mistakes when supported by evidence
 - **AND** each cluster SHALL preserve evidence ids for the source diagnosis rows
+- **AND** the system SHALL NOT treat unclassified embedding-neighbor groups as final semantic clusters
 
 #### Scenario: Semantic clusters are validated
 - **WHEN** semantic gap analysis returns clusters

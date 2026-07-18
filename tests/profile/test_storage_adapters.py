@@ -2,6 +2,13 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
+from jee_tutor.profile.embeddings import (
+    DynamoDbEvidenceEmbeddingStore,
+    EvidenceEmbeddingRecord,
+    EvidenceEmbeddingStoreConfig,
+    InMemoryEvidenceEmbeddingStore,
+    build_evidence_embedding_store,
+)
 from jee_tutor.profile.models import (
     StudentDiagnosisMetadata,
     StructuredDiagnosisQuestionEvidence,
@@ -162,6 +169,68 @@ class ProfileStorageAdaptersTest(unittest.TestCase):
 
         self.assertEqual(config.region, "us-west-2")
         self.assertIsInstance(built, S3StructuredDiagnosisArtifactStore)
+
+    def test_embedding_store_config_and_builder_use_environment(self):
+        with patch.dict("os.environ", {}, clear=True):
+            disabled = EvidenceEmbeddingStoreConfig.from_environment()
+            self.assertFalse(disabled.enabled)
+            self.assertIsInstance(build_evidence_embedding_store(), InMemoryEvidenceEmbeddingStore)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "EVIDENCE_EMBEDDING_TABLE_NAME": "embedding-table",
+                "AWS_REGION": "us-east-1",
+            },
+            clear=True,
+        ):
+            enabled = EvidenceEmbeddingStoreConfig.from_environment()
+
+        self.assertTrue(enabled.enabled)
+        self.assertEqual(enabled.table_name, "embedding-table")
+        self.assertEqual(enabled.region, "us-east-1")
+
+    def test_dynamodb_embedding_store_puts_and_gets_records(self):
+        table = Mock()
+        record = embedding_record()
+        table.get_item.return_value = {"Item": record.model_dump(mode="json")}
+        resource = Mock()
+        resource.Table.return_value = table
+        store = DynamoDbEvidenceEmbeddingStore(
+            table_name="embedding-table",
+            region="ap-south-1",
+        )
+
+        with patch("jee_tutor.profile.embeddings.boto3.resource", return_value=resource):
+            store.put_embedding(record)
+            loaded = store.get_embedding(
+                diagnosis_json_s3_uri=record.diagnosis_json_s3_uri,
+                embedding_key=record.embedding_key,
+            )
+
+        self.assertEqual(table.put_item.call_count, 1)
+        self.assertEqual(table.get_item.call_args.kwargs["Key"]["embedding_key"], "report-1:q1#fake#v1")
+        self.assertEqual(loaded, record)
+
+        table.get_item.return_value = {}
+        self.assertIsNone(
+            store.get_embedding(
+                diagnosis_json_s3_uri=record.diagnosis_json_s3_uri,
+                embedding_key="missing",
+            )
+        )
+
+def embedding_record() -> EvidenceEmbeddingRecord:
+    return EvidenceEmbeddingRecord(
+        diagnosis_json_s3_uri="s3://bucket/report.json",
+        embedding_key="report-1:q1#fake#v1",
+        evidence_id="report-1:q1",
+        embedding_model="fake",
+        embedding_input_version="v1",
+        embedding_text_hash="hash",
+        embedding=[1.0, 0.0],
+        created_at="2026-07-18T00:00:00+00:00",
+    )
 
 
 if __name__ == "__main__":

@@ -60,6 +60,18 @@ variable "profile_report_model" {
   default     = "gemini/gemini-2.5-pro"
 }
 
+variable "profile_embedding_model" {
+  description = "LiteLLM model id used for student profile evidence embeddings."
+  type        = string
+  default     = "bedrock/amazon.titan-embed-text-v2:0"
+}
+
+variable "profile_semantic_cluster_model" {
+  description = "LiteLLM model id used for mandatory student profile semantic cluster classification."
+  type        = string
+  default     = "gemini/gemini-2.5-pro"
+}
+
 variable "structured_diagnosis_enabled" {
   description = "Enable structured diagnosis JSON output for vision analysis."
   type        = bool
@@ -164,6 +176,12 @@ variable "invocation_status_enabled" {
 
 variable "student_diagnosis_metadata_enabled" {
   description = "Enable persistent student diagnosis metadata tracking in DynamoDB."
+  type        = bool
+  default     = true
+}
+
+variable "evidence_embedding_enabled" {
+  description = "Enable persistent profile evidence embedding caching in DynamoDB."
   type        = bool
   default     = true
 }

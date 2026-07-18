@@ -85,6 +85,18 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("dynamodb:Query", terraform)
         self.assertIn("student_diagnosis_metadata_table_name", terraform)
 
+    def test_runtime_receives_evidence_embedding_table_and_permissions(self):
+        terraform = "\n".join(
+            path.read_text()
+            for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
+        )
+
+        self.assertIn("aws_dynamodb_table\" \"evidence_embeddings", terraform)
+        self.assertIn("EVIDENCE_EMBEDDING_ENABLED", terraform)
+        self.assertIn("EVIDENCE_EMBEDDING_TABLE_NAME", terraform)
+        self.assertIn("ReadWriteEvidenceEmbeddings", terraform)
+        self.assertIn("evidence_embedding_table_name", terraform)
+
     def test_runtime_and_cd_evals_can_override_models(self):
         terraform = "\n".join(
             path.read_text()
@@ -96,6 +108,8 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             "vision_model",
             "crewai_model",
             "profile_report_model",
+            "profile_embedding_model",
+            "profile_semantic_cluster_model",
             "structured_diagnosis_enabled",
             "profile_report_llm_enabled",
         ]:
@@ -106,6 +120,8 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             "VISION_MODEL",
             "CREWAI_MODEL",
             "PROFILE_REPORT_MODEL",
+            "PROFILE_EMBEDDING_MODEL",
+            "PROFILE_SEMANTIC_CLUSTER_MODEL",
             "STRUCTURED_DIAGNOSIS_ENABLED",
             "PROFILE_REPORT_LLM_ENABLED",
         ]:
