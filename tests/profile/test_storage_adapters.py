@@ -104,7 +104,9 @@ class ProfileStorageAdaptersTest(unittest.TestCase):
 
     def test_dynamodb_metadata_store_puts_and_queries_records(self):
         table = Mock()
-        table.query.return_value = {"Items": [metadata().model_dump(exclude_none=True)]}
+        stored_item = metadata().model_dump(exclude_none=True)
+        stored_item["subject_report_key"] = "physics#2026-07-18T10:00:00+00:00#report-1"
+        table.query.return_value = {"Items": [stored_item]}
         resource = Mock()
         resource.Table.return_value = table
         store = DynamoDbStudentDiagnosisMetadataStore(

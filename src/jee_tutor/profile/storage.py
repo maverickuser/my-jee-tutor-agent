@@ -99,7 +99,7 @@ class DynamoDbStudentDiagnosisMetadataStore:
             },
         )
         return [
-            StudentDiagnosisMetadata.model_validate(item)
+            StudentDiagnosisMetadata.model_validate(_metadata_model_item(item))
             for item in response.get("Items", [])
         ]
 
@@ -165,6 +165,12 @@ def _metadata_item(metadata: StudentDiagnosisMetadata) -> dict[str, object]:
         f"{metadata.subject.casefold()}#{metadata.diagnosis_date}#{metadata.diagnosis_report_id}"
     )
     return item
+
+
+def _metadata_model_item(item: dict[str, object]) -> dict[str, object]:
+    model_item = dict(item)
+    model_item.pop("subject_report_key", None)
+    return model_item
 
 
 def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
