@@ -5,7 +5,7 @@ from scripts.run_agent_evals import (
     _enforce_eval_gate,
     _image_input_payload,
     _quality_gate_evidence,
-    _retryable_response_error_reason,
+    _provider_response_error_reason,
     _run_case,
     _run_case_with_retries,
     _score_guardrail_case,
@@ -188,11 +188,11 @@ class RunAgentEvalsTest(unittest.TestCase):
             ],
         }
 
-        reason = _retryable_response_error_reason(response)
+        reason = _provider_response_error_reason(response)
 
         self.assertIsNone(reason)
 
-    def test_provider_quota_response_is_reported_as_skipped_infrastructure_error(self):
+    def test_provider_quota_response_is_reported_as_scored_failure(self):
         response = {
             "error": "Tutor workflow failed while analyzing images.",
             "details": [
@@ -202,9 +202,10 @@ class RunAgentEvalsTest(unittest.TestCase):
             ],
         }
 
-        reason = _retryable_response_error_reason(response)
+        reason = _provider_response_error_reason(response)
 
         self.assertIn("Provider quota exhausted", reason)
+        self.assertIn("case scored as failed", reason)
 
     def test_workflow_failure_without_transient_provider_details_is_not_retryable(self):
         response = {
@@ -217,7 +218,7 @@ class RunAgentEvalsTest(unittest.TestCase):
             ],
         }
 
-        reason = _retryable_response_error_reason(response)
+        reason = _provider_response_error_reason(response)
 
         self.assertIsNone(reason)
 
@@ -238,7 +239,7 @@ class RunAgentEvalsTest(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertNotIn("skipped", result)
 
-    def test_run_case_marks_provider_quota_error_as_skipped(self):
+    def test_run_case_scores_provider_quota_error_as_failed(self):
         case = {
             "id": "coaching_structure",
             "type": "markdown_table",
@@ -253,7 +254,8 @@ class RunAgentEvalsTest(unittest.TestCase):
             result = _run_case(case, "images")
 
         self.assertFalse(result["passed"])
-        self.assertTrue(result["skipped"])
+        self.assertNotIn("skipped", result)
+        self.assertNotIn("transient_error", result)
         self.assertIn("Provider quota exhausted", result["reason"])
 
     def test_eval_gate_fails_when_any_case_is_skipped(self):
@@ -273,7 +275,7 @@ class RunAgentEvalsTest(unittest.TestCase):
             "details": ["At least one image input is required."],
         }
 
-        self.assertIsNone(_retryable_response_error_reason(response))
+        self.assertIsNone(_provider_response_error_reason(response))
 
     def test_image_s3_prefix_overrides_local_fixture_data_uri(self):
         self.assertEqual(

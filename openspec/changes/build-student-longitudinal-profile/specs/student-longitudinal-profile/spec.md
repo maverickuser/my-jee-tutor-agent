@@ -60,7 +60,7 @@ The system SHALL use embedding-backed semantic analysis followed by mandatory LL
 #### Scenario: Evidence items are prepared for clustering
 - **WHEN** student subject history is loaded from JSON diagnosis reports
 - **THEN** the system SHALL prepare compact evidence items for semantic analysis
-- **AND** each evidence item SHALL include evidence id, diagnosis report id, question number, chapter, topic, exact concept gap, likely student thought, why that thought was wrong, and deep-dive recommendation
+- **AND** each evidence item SHALL include evidence id, human-readable evidence reference, diagnosis report id, diagnosis date, test or paper name, question number, chapter, topic, exact concept gap, likely student thought, why that thought was wrong, and deep-dive recommendation
 
 #### Scenario: Missing evidence embeddings are created first
 - **WHEN** semantic gap analysis starts for a requested profile
@@ -124,7 +124,9 @@ The system SHALL use a separate profile analysis agent to produce a written per-
 
 #### Scenario: Report sections are produced
 - **WHEN** a profile report is generated from diagnosis history
-- **THEN** the report SHALL include an overall summary, most important recurring gaps, chapter/topic weakness map, mistake pattern analysis, recommended study priorities, teacher intervention notes, and evidence appendix
+- **THEN** the report SHALL include an overall summary, most important recurring gaps, mistake pattern analysis, recommended study priorities, teacher intervention notes, chapter/topic weakness map, and evidence appendix
+- **AND** the chapter/topic weakness map SHALL be rendered as a table grouped by chapter
+- **AND** the chapter/topic weakness map SHALL appear immediately before the evidence appendix in the written report
 
 #### Scenario: Profile agent is separate from diagnosis agent
 - **WHEN** a requested longitudinal profile report is generated
@@ -133,16 +135,21 @@ The system SHALL use a separate profile analysis agent to produce a written per-
 
 #### Scenario: Student-facing priorities are included
 - **WHEN** recurring or isolated gaps are reported
-- **THEN** the report SHALL explain what the student should study next
+- **THEN** the report SHALL explain what the student should study next using actionable guidance derived from the supporting evidence's exact concept gap, likely student thought, why that thought was wrong, and deep-dive recommendation
 - **AND** the report SHALL prioritize recurring gaps before isolated gaps unless an isolated gap is explicitly marked as foundational
+- **AND** study priorities SHALL NOT merely restate cluster titles or chapter/topic labels
 
 #### Scenario: Teacher-facing intervention notes are included
 - **WHEN** recurring or important gaps are reported
-- **THEN** the report SHALL include teacher intervention notes that describe what to reteach, drill, verify, or monitor in the next diagnosis
+- **THEN** the report SHALL include teacher intervention notes that describe what to reteach, drill, verify, or monitor in the next diagnosis using non-obvious evidence from the student's likely thought, why it was wrong, and deep-dive recommendation
+- **AND** teacher intervention notes SHALL NOT merely restate cluster titles or chapter/topic labels
 
 #### Scenario: Evidence grounding is included
 - **WHEN** the report states a major insight or recurring gap
 - **THEN** the report SHALL include supporting diagnosis report references or counts
+- **AND** recurring gap entries SHALL reference the source questions that were clustered
+- **AND** human-facing evidence references SHALL include diagnosis date, test or paper name, and question number rather than opaque internal evidence ids
+- **AND** the evidence appendix SHALL include diagnosis date, test or paper name, question number, chapter, and topic for each source evidence row
 - **AND** the report SHALL NOT claim a major pattern without supporting evidence
 
 #### Scenario: Report output is validated

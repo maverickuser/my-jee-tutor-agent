@@ -17,9 +17,12 @@ class ProfileEvidenceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     evidence_id: str = Field(min_length=1)
+    evidence_reference: str = Field(min_length=1)
     diagnosis_report_id: str = Field(min_length=1)
     diagnosis_json_s3_uri: str = Field(min_length=1)
     subject: str = Field(min_length=1)
+    test_name: str = Field(min_length=1)
+    diagnosis_date: str = Field(min_length=1)
     question_number: str = Field(min_length=1)
     chapter: str = Field(min_length=1)
     topic: str = Field(min_length=1)
@@ -99,14 +102,21 @@ def _evidence_items_from_reports(
             )
         for index, question in enumerate(report.questions, start=1):
             evidence_items.append(
-                    ProfileEvidenceItem(
-                        evidence_id=f"{report.diagnosis_report_id}:q{index}",
-                        diagnosis_report_id=report.diagnosis_report_id,
-                        diagnosis_json_s3_uri=metadata.diagnosis_json_s3_uri,
-                        subject=report.subject,
+                ProfileEvidenceItem(
+                    evidence_id=f"{report.diagnosis_report_id}:q{index}",
+                    evidence_reference=_evidence_reference(
+                        diagnosis_date=metadata.diagnosis_date,
+                        test_name=metadata.test_name,
                         question_number=question.question_number,
-                        chapter=question.chapter,
-                        topic=question.topic,
+                    ),
+                    diagnosis_report_id=report.diagnosis_report_id,
+                    diagnosis_json_s3_uri=metadata.diagnosis_json_s3_uri,
+                    subject=report.subject,
+                    test_name=metadata.test_name,
+                    diagnosis_date=metadata.diagnosis_date,
+                    question_number=question.question_number,
+                    chapter=question.chapter,
+                    topic=question.topic,
                     exact_concept_gap=question.exact_concept_gap,
                     likely_thought=question.what_you_thought,
                     why_wrong=question.why_that_thought_is_wrong,
@@ -114,3 +124,16 @@ def _evidence_items_from_reports(
                 )
             )
     return evidence_items
+
+
+def _evidence_reference(
+    *,
+    diagnosis_date: str,
+    test_name: str,
+    question_number: str,
+) -> str:
+    date_label = diagnosis_date.split("T", 1)[0]
+    question_label = question_number.strip()
+    if not question_label.casefold().startswith("q"):
+        question_label = f"Q{question_label}"
+    return f"{date_label} : {test_name} : {question_label}"

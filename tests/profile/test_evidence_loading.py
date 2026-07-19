@@ -65,6 +65,11 @@ class ProfileEvidenceLoadingTest(unittest.TestCase):
 
         self.assertFalse(result.no_history)
         self.assertEqual([item.evidence_id for item in result.evidence_items], ["physics-1:q1"])
+        self.assertEqual(
+            result.evidence_items[0].evidence_reference,
+            "2026-07-18 : MINOR_TEST_2_Paper_2 : Q1",
+        )
+        self.assertEqual(result.evidence_items[0].test_name, "MINOR_TEST_2_Paper_2")
         self.assertEqual(result.evidence_items[0].exact_concept_gap, "Projectile components")
         self.assertNotIn("email", result.evidence_items[0].model_dump())
 

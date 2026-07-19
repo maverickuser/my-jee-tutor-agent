@@ -111,15 +111,13 @@ def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[s
         "save_analysis_pdf": False,
     }
     response = handle_tutor_invocation(payload)
-    provider_error_reason = _retryable_response_error_reason(response)
+    provider_error_reason = _provider_response_error_reason(response)
     if provider_error_reason:
         return {
             "id": case["id"],
             "type": case["type"],
             "passed": False,
-            "skipped": True,
             "reason": provider_error_reason,
-            "transient_error": True,
             "response": _redacted_response(response),
         }
 
@@ -326,7 +324,7 @@ def _is_retryable_eval_error(exc: Exception) -> bool:
     return False
 
 
-def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
+def _provider_response_error_reason(response: dict[str, Any]) -> str | None:
     text = " ".join(
         [
             str(response.get("error", "")),
@@ -335,7 +333,8 @@ def _retryable_response_error_reason(response: dict[str, Any]) -> str | None:
     ).casefold()
     if "resource_exhausted" in text or "prepayment credits are depleted" in text:
         return (
-            "Provider quota exhausted during eval. Refill provider credits or set "
+            "Provider quota exhausted during eval; case scored as failed. "
+            "Refill provider credits or set "
             "CD_EVAL_CREWAI_MODEL/CD_EVAL_VISION_MODEL to a funded model."
         )
     # Vision transport retries are exhausted inside VisionLLMClient. Retrying the

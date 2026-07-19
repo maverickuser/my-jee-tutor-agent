@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-import json
 import logging
 import os
 from pathlib import Path
@@ -13,7 +12,12 @@ from typing import Any, Protocol
 from litellm import completion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from jee_tutor.profile.semantic import LongitudinalEvidencePack
+from jee_tutor.profile.evidence import ProfileEvidenceItem
+from jee_tutor.profile.prompts import (
+    profile_report_system_prompt,
+    profile_report_user_prompt,
+)
+from jee_tutor.profile.semantic import ClassifiedGapCluster, LongitudinalEvidencePack
 
 
 logger = logging.getLogger(__name__)
@@ -134,11 +138,11 @@ class LiteLLMProfileReportWriter:
             messages=[
                 {
                     "role": "system",
-                    "content": _profile_report_system_prompt(),
+                    "content": profile_report_system_prompt(),
                 },
                 {
                     "role": "user",
-                    "content": _profile_report_user_prompt(evidence_pack),
+                    "content": profile_report_user_prompt(evidence_pack),
                 },
             ],
             response_format=profile_report_response_format(),
@@ -157,6 +161,7 @@ class ProfileAnalysisService:
         if self.report_writer is not None:
             try:
                 report = self.report_writer.write(evidence_pack)
+                report.chapter_topic_weakness_map = _chapter_topic_lines(evidence_pack)
                 validate_profile_report(report, evidence_pack)
                 return report
             except Exception as exc:
@@ -185,7 +190,8 @@ class ProfileAnalysisService:
         recurring_lines = [
             (
                 f"{cluster.cluster.title}: supported by {cluster.diagnosis_report_count} "
-                f"diagnosis reports and {cluster.question_count} questions."
+                f"diagnosis reports and {cluster.question_count} questions. "
+                f"Evidence: {_cluster_evidence_references(cluster, evidence_pack)}."
             )
             for cluster in recurring
         ]
@@ -207,8 +213,8 @@ class ProfileAnalysisService:
             ],
             chapter_topic_weakness_map=_chapter_topic_lines(evidence_pack),
             isolated_gaps=isolated_lines,
-            study_priorities=_study_priorities(recurring_lines, isolated_lines),
-            teacher_intervention_notes=_teacher_notes(recurring_lines, isolated_lines),
+            study_priorities=_study_priorities(evidence_pack, recurring, isolated),
+            teacher_intervention_notes=_teacher_notes(evidence_pack, recurring, isolated),
             evidence_appendix=_evidence_appendix(evidence_pack),
         )
 
@@ -218,17 +224,20 @@ class ProfileAnalysisService:
             ("Overall Summary", [report.overall_summary]),
             ("Recurring Gaps", report.recurring_gaps or ["No recurring gaps yet."]),
             ("Broader Related Patterns", report.broader_related_patterns or ["No broader recurring patterns yet."]),
-            ("Chapter/Topic Weakness Map", report.chapter_topic_weakness_map or ["No chapter/topic weakness map yet."]),
             ("Isolated Or Early Indicators", report.isolated_gaps or ["No isolated gaps yet."]),
             ("Study Priorities", report.study_priorities or ["Continue collecting diagnosis history."]),
             ("Teacher Intervention Notes", report.teacher_intervention_notes or ["Monitor future diagnosis reports."]),
-            ("Evidence Appendix", report.evidence_appendix or ["No evidence references available."]),
         ]
         lines = [f"# {report.subject} Longitudinal Profile"]
         for title, items in sections:
             lines.append(f"\n## {title}")
             for item in items:
                 lines.append(f"- {item}")
+        lines.append("\n## Chapter/Topic Weakness Map")
+        lines.extend(_chapter_topic_markdown_table(report.chapter_topic_weakness_map))
+        lines.append("\n## Evidence Appendix")
+        for item in report.evidence_appendix or ["No evidence references available."]:
+            lines.append(f"- {item}")
         return "\n".join(lines)
 
 
@@ -240,11 +249,30 @@ def validate_profile_report(report: ProfileReportOutput, evidence_pack: Longitud
     }
     if not recurring_cluster_ids and any("recurring" in line.casefold() for line in report.recurring_gaps):
         raise ValueError("Profile report contains unsupported recurring claims.")
-    evidence_ids = set(evidence_pack.evidence_index)
+    evidence_references = {
+        evidence.evidence_reference
+        for evidence in evidence_pack.evidence_index.values()
+    }
     appendix_text = "\n".join(report.evidence_appendix)
-    missing = [evidence_id for evidence_id in evidence_ids if evidence_id not in appendix_text]
+    missing = [
+        evidence_reference
+        for evidence_reference in evidence_references
+        if evidence_reference not in appendix_text
+    ]
     if missing:
         raise ValueError("Profile report evidence appendix is missing evidence references.")
+    recurring_text = "\n".join(report.recurring_gaps)
+    missing_recurring_references = [
+        cluster.cluster.cluster_id
+        for cluster in evidence_pack.clusters
+        if cluster.recurrence_label == "recurring"
+        and not any(
+            evidence_pack.evidence_index[evidence_id].evidence_reference in recurring_text
+            for evidence_id in cluster.cluster.evidence_ids
+        )
+    ]
+    if missing_recurring_references:
+        raise ValueError("Profile report recurring gaps are missing clustered question references.")
     if report.subject != evidence_pack.subject:
         raise ValueError("Profile report subject does not match evidence pack.")
 
@@ -323,29 +351,6 @@ def _resolve_api_key(model: str, environ: Mapping[str, str]) -> str | None:
     return environ.get("LITELLM_API_KEY")
 
 
-def _profile_report_system_prompt() -> str:
-    return (
-        "You write concise longitudinal JEE student profile reports for students and teachers. "
-        "Use only the supplied evidence pack. Do not invent tests, questions, chapters, topics, "
-        "or recurrence claims. Return JSON only, matching the provided schema. The evidence "
-        "appendix must mention every evidence id exactly as provided."
-    )
-
-
-def _profile_report_user_prompt(evidence_pack: LongitudinalEvidencePack) -> str:
-    return (
-        "Interpret this validated longitudinal evidence pack into a readable profile report. "
-        "Keep each list item specific, evidence-backed, and useful for study planning. "
-        "Recurring gaps may only come from clusters whose recurrence_label is recurring. "
-        "Use isolated_gaps for one-off or early-indicator clusters.\n\n"
-        f"{json.dumps(_profile_report_payload(evidence_pack), sort_keys=True)}"
-    )
-
-
-def _profile_report_payload(evidence_pack: LongitudinalEvidencePack) -> dict[str, Any]:
-    return evidence_pack.model_dump(mode="json")
-
-
 def _overall_summary(evidence_pack: LongitudinalEvidencePack) -> str:
     return (
         f"Analyzed {evidence_pack.question_count} diagnosed questions from "
@@ -356,30 +361,100 @@ def _overall_summary(evidence_pack: LongitudinalEvidencePack) -> str:
 def _chapter_topic_lines(evidence_pack: LongitudinalEvidencePack) -> list[str]:
     return [
         (
-            f"{entry.chapter} / {entry.topic}: recurring={len(entry.recurring_cluster_ids)}, "
+            f"{entry.chapter} | {entry.topic} | recurring={len(entry.recurring_cluster_ids)} | "
             f"isolated_or_early={len(entry.isolated_cluster_ids)}"
         )
-        for entry in evidence_pack.chapter_topic_map
+        for entry in sorted(
+            evidence_pack.chapter_topic_map,
+            key=lambda item: (item.chapter.casefold(), item.topic.casefold()),
+        )
     ]
 
 
-def _study_priorities(recurring: list[str], isolated: list[str]) -> list[str]:
-    if recurring:
-        return [f"Prioritize recurring gap: {line}" for line in recurring]
-    return [f"Treat as early indicator: {line}" for line in isolated]
+def _chapter_topic_markdown_table(rows: list[str]) -> list[str]:
+    if not rows:
+        return ["No chapter/topic weakness map yet."]
+    table = [
+        "| Chapter | Topic | Recurring Clusters | Isolated/Early Clusters |",
+        "| --- | --- | ---: | ---: |",
+    ]
+    for row in rows:
+        parts = [part.strip() for part in row.split("|")]
+        if len(parts) == 4:
+            chapter, topic, recurring, isolated = parts
+            table.append(
+                f"| {chapter} | {topic} | {recurring.removeprefix('recurring=')} | "
+                f"{isolated.removeprefix('isolated_or_early=')} |"
+            )
+        else:
+            table.append(f"| {row} |  |  |  |")
+    return table
 
 
-def _teacher_notes(recurring: list[str], isolated: list[str]) -> list[str]:
-    if recurring:
-        return [f"Reteach and drill: {line}" for line in recurring]
-    return [f"Monitor before calling this recurring: {line}" for line in isolated]
+def _study_priorities(
+    evidence_pack: LongitudinalEvidencePack,
+    recurring: list[ClassifiedGapCluster],
+    isolated: list[ClassifiedGapCluster],
+) -> list[str]:
+    clusters = recurring or isolated
+    prefix = "Priority" if recurring else "Early priority"
+    return [
+        (
+            f"{prefix}: practice {_chapter_topic_scope(cluster, evidence_pack)} by targeting "
+            f"{_representative_evidence(cluster, evidence_pack).exact_concept_gap}. "
+            f"Use this drill focus: {_representative_evidence(cluster, evidence_pack).deep_dive_recommendation}"
+        )
+        for cluster in clusters
+    ]
+
+
+def _teacher_notes(
+    evidence_pack: LongitudinalEvidencePack,
+    recurring: list[ClassifiedGapCluster],
+    isolated: list[ClassifiedGapCluster],
+) -> list[str]:
+    clusters = recurring or isolated
+    prefix = "Reteach and verify" if recurring else "Monitor and verify"
+    return [
+        (
+            f"{prefix}: check whether the student still thinks "
+            f"'{_representative_evidence(cluster, evidence_pack).likely_thought}' for "
+            f"{_chapter_topic_scope(cluster, evidence_pack)}. Corrective prompt: "
+            f"{_representative_evidence(cluster, evidence_pack).why_wrong}"
+        )
+        for cluster in clusters
+    ]
+
+
+def _representative_evidence(
+    cluster: ClassifiedGapCluster,
+    evidence_pack: LongitudinalEvidencePack,
+) -> ProfileEvidenceItem:
+    return evidence_pack.evidence_index[cluster.cluster.evidence_ids[0]]
+
+
+def _chapter_topic_scope(
+    cluster: ClassifiedGapCluster,
+    evidence_pack: LongitudinalEvidencePack,
+) -> str:
+    evidence = _representative_evidence(cluster, evidence_pack)
+    return f"{evidence.chapter} / {evidence.topic}"
+
+
+def _cluster_evidence_references(
+    cluster: ClassifiedGapCluster,
+    evidence_pack: LongitudinalEvidencePack,
+) -> str:
+    return "; ".join(
+        evidence_pack.evidence_index[evidence_id].evidence_reference
+        for evidence_id in cluster.cluster.evidence_ids
+    )
 
 
 def _evidence_appendix(evidence_pack: LongitudinalEvidencePack) -> list[str]:
     return [
         (
-            f"{evidence.evidence_id}: report={evidence.diagnosis_report_id}, "
-            f"question={evidence.question_number}, chapter={evidence.chapter}, topic={evidence.topic}"
+            f"{evidence.evidence_reference}: chapter={evidence.chapter}, topic={evidence.topic}"
         )
         for evidence in evidence_pack.evidence_index.values()
     ]

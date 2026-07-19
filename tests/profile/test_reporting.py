@@ -48,9 +48,22 @@ class ProfileReportingTest(unittest.TestCase):
 
         validate_profile_report(report, pack)
         self.assertIn("Projectile components", report.recurring_gaps[0])
-        self.assertIn("Reteach and drill", report.teacher_intervention_notes[0])
+        self.assertIn("2026-07-18 : TEST_r1 : Q1", report.recurring_gaps[0])
+        self.assertIn("2026-07-18 : TEST_r2 : Q1", report.recurring_gaps[0])
+        self.assertIn("Resolve horizontal and vertical motion", report.study_priorities[0])
+        self.assertIn("You likely used constant speed", report.teacher_intervention_notes[0])
+        self.assertIn("Vertical acceleration changes velocity", report.teacher_intervention_notes[0])
         self.assertIn("## Study Priorities", markdown)
-        self.assertIn("r1:q1", "\n".join(report.evidence_appendix))
+        self.assertLess(
+            markdown.index("## Chapter/Topic Weakness Map"),
+            markdown.index("## Evidence Appendix"),
+        )
+        self.assertIn("| Chapter | Topic | Recurring Clusters | Isolated/Early Clusters |", markdown)
+        self.assertIn("| Kinematics | Projectile motion | 1 | 1 |", markdown)
+        appendix = "\n".join(report.evidence_appendix)
+        self.assertIn("2026-07-18 : TEST_r1 : Q1", appendix)
+        self.assertIn("chapter=Kinematics, topic=Projectile motion", appendix)
+        self.assertNotIn("r1:q1", appendix)
 
     def test_one_report_profile_uses_early_indicator_language_without_recurring_claim(self):
         item = evidence("r1:q1", "r1")
@@ -73,7 +86,8 @@ class ProfileReportingTest(unittest.TestCase):
         validate_profile_report(report, pack)
         self.assertEqual(report.recurring_gaps, [])
         self.assertIn("early indicator", report.isolated_gaps[0])
-        self.assertIn("Monitor before calling this recurring", report.teacher_intervention_notes[0])
+        self.assertIn("Early priority", report.study_priorities[0])
+        self.assertIn("Monitor and verify", report.teacher_intervention_notes[0])
 
     def test_profile_report_validation_rejects_missing_evidence_reference(self):
         item = evidence("r1:q1", "r1")
@@ -129,7 +143,7 @@ class ProfileReportingTest(unittest.TestCase):
                               "isolated_gaps": ["Projectile components is an early indicator."],
                               "study_priorities": ["Review component-wise motion before mixed projectile problems."],
                               "teacher_intervention_notes": ["Check whether the student separates horizontal and vertical motion."],
-                              "evidence_appendix": ["r1:q1: Projectile components."]
+                              "evidence_appendix": ["2026-07-18 : TEST_r1 : Q1: Projectile components."]
                             }
                             """
                         }
@@ -145,6 +159,34 @@ class ProfileReportingTest(unittest.TestCase):
 
         validate_profile_report(report, pack)
         self.assertIn("component-wise motion", report.study_priorities[0])
+        self.assertEqual(
+            report.chapter_topic_weakness_map,
+            ["Kinematics | Projectile motion | recurring=0 | isolated_or_early=1"],
+        )
+
+    def test_profile_report_validation_rejects_recurring_gap_without_clustered_question_reference(self):
+        items = [
+            evidence("r1:q1", "r1"),
+            evidence("r2:q1", "r2"),
+        ]
+        pack = build_longitudinal_evidence_pack(
+            subject="Physics",
+            evidence_items=items,
+            clusters=[
+                SemanticGapCluster(
+                    cluster_id="recurring",
+                    cluster_type="same_underlying_gap",
+                    title="Projectile components",
+                    evidence_ids=["r1:q1", "r2:q1"],
+                    rationale="same gap",
+                )
+            ],
+        )
+        report = ProfileAnalysisService().generate(pack)
+        report.recurring_gaps = ["Projectile components: supported by 2 diagnosis reports."]
+
+        with self.assertRaisesRegex(ValueError, "clustered question references"):
+            validate_profile_report(report, pack)
 
     def test_invalid_llm_report_falls_back_to_deterministic_report(self):
         item = evidence("r1:q1", "r1")
