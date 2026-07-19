@@ -73,11 +73,34 @@ jobs:
           TF_VAR_cloudwatch_log_retention_days: ${{ vars.CLOUDWATCH_LOG_RETENTION_DAYS || '3' }}
           TF_VAR_s3_image_input_bucket_arns: ${{ vars.S3_IMAGE_INPUT_BUCKET_ARNS || '[]' }}
           TF_VAR_s3_image_input_object_arns: ${{ vars.S3_IMAGE_INPUT_OBJECT_ARNS || '[]' }}
-        run: terraform plan -destroy -out=tfdestroy.plan
+        run: |
+          targets=()
+          while IFS= read -r resource; do
+            case "$resource" in
+              *aws_dynamodb_table.*)
+                echo "Preserving DynamoDB table in state: $resource"
+                ;;
+              *)
+                targets+=("-target=$resource")
+                ;;
+            esac
+          done < <(terraform state list)
+
+          if [ "${#targets[@]}" -eq 0 ]; then
+            echo "No destroyable Terraform resources found after excluding DynamoDB tables."
+            exit 0
+          fi
+
+          terraform plan -destroy "${targets[@]}" -out=tfdestroy.plan
 
       - name: Terraform destroy
         working-directory: terraform
-        run: terraform apply -auto-approve tfdestroy.plan
+        run: |
+          if [ -f tfdestroy.plan ]; then
+            terraform apply -auto-approve tfdestroy.plan
+          else
+            echo "No destroy plan was created."
+          fi
 
   invalid_confirmation:
     name: Invalid Confirmation
