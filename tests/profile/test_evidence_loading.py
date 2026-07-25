@@ -20,6 +20,7 @@ def report(report_id: str, subject: str = "Physics") -> StructuredDiagnosisRepor
         student_name="Mock_Student",
         subject=subject,
         test_name="MINOR_TEST_2_Paper_2",
+        test_date="2026-07-18",
         diagnosis_date="2026-07-18T10:00:00+00:00",
         questions=[
             StructuredDiagnosisQuestionEvidence(
@@ -42,6 +43,7 @@ def metadata(report_id: str, subject: str = "Physics", email: str = "student@exa
         student_name="Mock_Student",
         subject=subject,
         test_name="MINOR_TEST_2_Paper_2",
+        test_date="2026-07-18",
         diagnosis_report_id=report_id,
         diagnosis_date="2026-07-18T10:00:00+00:00",
         diagnosis_json_s3_uri=f"s3://bucket/{report_id}.json",

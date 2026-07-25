@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -58,6 +58,7 @@ class StructuredDiagnosisReport(BaseModel):
     student_name: str = Field(min_length=1)
     subject: str = Field(min_length=1)
     test_name: str = Field(min_length=1)
+    test_date: str | None = None
     diagnosis_date: str = Field(min_length=1)
     questions: list[StructuredDiagnosisQuestionEvidence] = Field(min_length=1)
 
@@ -71,6 +72,11 @@ class StructuredDiagnosisReport(BaseModel):
     def validate_report_date(cls, value: str) -> str:
         return _iso_datetime(value)
 
+    @field_validator("test_date")
+    @classmethod
+    def validate_test_date(cls, value: str | None) -> str | None:
+        return _iso_date(value)
+
 
 class StudentDiagnosisMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -80,6 +86,7 @@ class StudentDiagnosisMetadata(BaseModel):
     student_name: str = Field(min_length=1)
     subject: str = Field(min_length=1)
     test_name: str = Field(min_length=1)
+    test_date: str | None = None
     diagnosis_report_id: str = Field(min_length=1)
     diagnosis_date: str = Field(min_length=1)
     diagnosis_json_s3_uri: str = Field(min_length=1)
@@ -101,6 +108,11 @@ class StudentDiagnosisMetadata(BaseModel):
     @classmethod
     def validate_metadata_date(cls, value: str) -> str:
         return _iso_datetime(value)
+
+    @field_validator("test_date")
+    @classmethod
+    def validate_metadata_test_date(cls, value: str | None) -> str | None:
+        return _iso_date(value)
 
     @field_validator("diagnosis_json_s3_uri", "analysis_pdf_s3_uri", "analysis_markdown_s3_uri")
     @classmethod
@@ -145,6 +157,7 @@ def metadata_from_report(
         student_name=report.student_name,
         subject=report.subject,
         test_name=report.test_name,
+        test_date=report.test_date,
         diagnosis_report_id=report.diagnosis_report_id,
         diagnosis_date=report.diagnosis_date,
         diagnosis_json_s3_uri=diagnosis_json_s3_uri,
@@ -178,6 +191,17 @@ def _iso_datetime(value: str) -> str:
         datetime.fromisoformat(candidate)
     except ValueError as exc:
         raise ValueError("Value must be an ISO-8601 datetime.") from exc
+    return value
+
+
+def _iso_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = _non_blank(value)
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Value must be an ISO-8601 date.") from exc
     return value
 
 

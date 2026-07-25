@@ -8,14 +8,16 @@ from pydantic import ValidationError
 from jee_tutor.profile.artifacts import ProfileReportArtifactWriter
 from jee_tutor.profile.evidence import ProfileEvidenceLoader
 from jee_tutor.profile.models import ProfileReportRequest
+from jee_tutor.profile.hierarchical import (
+    BroaderPatternAnalyzer,
+    LocalConceptGapAnalyzer,
+    build_longitudinal_evidence_pack,
+    recurring_local_gaps,
+)
 from jee_tutor.profile.reporting import (
     ProfileAnalysisService,
     build_profile_analysis_service_from_environment,
     validate_profile_report,
-)
-from jee_tutor.profile.semantic import (
-    SemanticGapAnalyzer,
-    build_longitudinal_evidence_pack,
 )
 from jee_tutor.profile.storage import (
     StructuredDiagnosisArtifactStore,
@@ -30,13 +32,17 @@ class StudentProfileApplicationService:
         *,
         metadata_store: StudentDiagnosisMetadataStore | None = None,
         artifact_store: StructuredDiagnosisArtifactStore | None = None,
-        semantic_analyzer: SemanticGapAnalyzer | None = None,
+        local_gap_analyzer: LocalConceptGapAnalyzer | None = None,
+        broader_pattern_analyzer: BroaderPatternAnalyzer | None = None,
         report_service: ProfileAnalysisService | None = None,
         artifact_writer: ProfileReportArtifactWriter | None = None,
     ):
         self.metadata_store = metadata_store or build_student_diagnosis_metadata_store()
         self.artifact_store = artifact_store or build_structured_diagnosis_artifact_store()
-        self.semantic_analyzer = semantic_analyzer or SemanticGapAnalyzer()
+        self.local_gap_analyzer = local_gap_analyzer or LocalConceptGapAnalyzer()
+        self.broader_pattern_analyzer = (
+            broader_pattern_analyzer or BroaderPatternAnalyzer()
+        )
         self.report_service = report_service or build_profile_analysis_service_from_environment()
         self.artifact_writer = artifact_writer or ProfileReportArtifactWriter()
 
@@ -69,14 +75,24 @@ class StudentProfileApplicationService:
                 "runtime_commit_sha": runtime_commit_sha,
             }
 
-        clusters = self.semantic_analyzer.cluster(
+        local_gaps = self.local_gap_analyzer.analyze(
             evidence_result.evidence_items,
+            subject=request.subject,
+        )
+        evidence_index = {
+            item.evidence_id: item for item in evidence_result.evidence_items
+        }
+        recurring = recurring_local_gaps(local_gaps, evidence_index)
+        broader_patterns = self.broader_pattern_analyzer.analyze(
+            recurring,
+            evidence_index=evidence_index,
             subject=request.subject,
         )
         evidence_pack = build_longitudinal_evidence_pack(
             subject=request.subject,
             evidence_items=evidence_result.evidence_items,
-            clusters=clusters,
+            local_gaps=local_gaps,
+            broader_patterns=broader_patterns,
         )
         report = self.report_service.generate(evidence_pack)
         validate_profile_report(report, evidence_pack)

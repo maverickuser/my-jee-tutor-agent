@@ -141,8 +141,11 @@ class HandlerAndAppTest(unittest.TestCase):
             build_embedding_key,
             embedding_text_hash,
         )
+        from jee_tutor.profile.hierarchical import (
+            BroaderPatternAnalyzer,
+            LocalConceptGapAnalyzer,
+        )
         from jee_tutor.profile.reporting import ProfileAnalysisService
-        from jee_tutor.profile.semantic import SemanticGapAnalyzer
         from jee_tutor.profile.storage import (
             InMemoryStudentDiagnosisMetadataStore,
             InMemoryStructuredDiagnosisArtifactStore,
@@ -190,7 +193,7 @@ class HandlerAndAppTest(unittest.TestCase):
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
-            semantic_analyzer=SemanticGapAnalyzer(
+            local_gap_analyzer=LocalConceptGapAnalyzer(
                 embedding_service=EvidenceEmbeddingService(
                     store=embedding_store,
                     client=SingleVectorEmbeddingClient([[0.9, 0.1]]),
@@ -198,6 +201,7 @@ class HandlerAndAppTest(unittest.TestCase):
                 classifier=classifier,
                 similarity_threshold=0.95,
             ),
+            broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
             report_service=ProfileAnalysisService(),
         )
 
@@ -220,7 +224,10 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertEqual(len(embedding_store.puts), 1)
         self.assertEqual(embedding_store.puts[0].evidence_id, "r2:q1")
         self.assertEqual(classifier.candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
-        self.assertIn("Projectile components", response["profile_report"]["recurring_gaps"][0])
+        self.assertEqual(
+            response["profile_report"]["recurring_gaps"][0]["title"],
+            "Projectile components",
+        )
 
     def test_legacy_tutor_invocation_dispatches_profile_report_task(self):
         with patch("jee_tutor.infrastructure.composition.build_student_profile_service") as build_profile:
@@ -285,15 +292,20 @@ class RecordingSemanticClassifier:
         self.candidates = []
 
     def classify(self, *, evidence_items, candidates):
-        from jee_tutor.profile.semantic import SemanticGapCluster
+        from jee_tutor.profile.hierarchical import LocalConceptGap
 
         self.candidates = candidates
         return [
-            SemanticGapCluster(
-                cluster_id="semantic-cluster-1",
-                cluster_type="same_underlying_gap",
-                title="Projectile components",
+            LocalConceptGap(
+                gap_id="semantic-gap-1",
+                canonical_chapter="Kinematics",
+                canonical_topic="Projectile motion",
+                required_concept="Independent motion components",
+                concept_gap="Projectile components",
+                shared_misconception="projectile speed is constant",
+                corrective_concept="resolve horizontal and vertical components",
                 evidence_ids=["r1:q1", "r2:q1"],
+                confidence="high",
                 rationale="Mandatory classifier accepted the cosine candidate.",
             )
         ]

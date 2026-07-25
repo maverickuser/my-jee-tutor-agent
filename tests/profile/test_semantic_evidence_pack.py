@@ -42,6 +42,8 @@ def evidence(
         diagnosis_json_s3_uri=f"s3://bucket/{report_id}.json",
         subject="Physics",
         test_name=f"TEST_{report_id}",
+        test_date="2026-07-18",
+        test_date_source="assessment_metadata",
         diagnosis_date="2026-07-18T10:00:00+00:00",
         question_number=question_number,
         chapter=chapter,

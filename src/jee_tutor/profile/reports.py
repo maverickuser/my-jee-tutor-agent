@@ -17,6 +17,7 @@ def build_structured_diagnosis_report(
     context: ParsedStudentS3Context,
     diagnosis_report_id: str,
     diagnosis_date: str | None = None,
+    test_date: str | None = None,
 ) -> StructuredDiagnosisReport:
     parsed = DiagnosisResponse.model_validate(diagnosis)
     return StructuredDiagnosisReport(
@@ -25,6 +26,7 @@ def build_structured_diagnosis_report(
         student_name=context.student_name,
         subject=context.subject,
         test_name=context.test_name,
+        test_date=test_date,
         diagnosis_date=diagnosis_date or datetime.now(timezone.utc).isoformat(),
         questions=[
             StructuredDiagnosisQuestionEvidence.model_validate(question.model_dump())

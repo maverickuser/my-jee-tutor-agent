@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from jee_tutor.profile.models import (
     ProfileReportRequest,
@@ -22,14 +22,24 @@ class ProfileEvidenceItem(BaseModel):
     diagnosis_json_s3_uri: str = Field(min_length=1)
     subject: str = Field(min_length=1)
     test_name: str = Field(min_length=1)
+    test_date: str | None = None
+    test_date_source: str = "unavailable"
     diagnosis_date: str = Field(min_length=1)
     question_number: str = Field(min_length=1)
     chapter: str = Field(min_length=1)
     topic: str = Field(min_length=1)
+    canonical_chapter: str | None = None
+    canonical_topic: str | None = None
     exact_concept_gap: str = Field(min_length=1)
     likely_thought: str = Field(min_length=1)
     why_wrong: str = Field(min_length=1)
     deep_dive_recommendation: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def default_canonical_location(self):
+        self.canonical_chapter = self.canonical_chapter or _canonical_label(self.chapter)
+        self.canonical_topic = self.canonical_topic or _canonical_label(self.topic)
+        return self
 
 
 class ProfileEvidenceLoadResult(BaseModel):
@@ -105,7 +115,7 @@ def _evidence_items_from_reports(
                 ProfileEvidenceItem(
                     evidence_id=f"{report.diagnosis_report_id}:q{index}",
                     evidence_reference=_evidence_reference(
-                        diagnosis_date=metadata.diagnosis_date,
+                        test_date=metadata.test_date,
                         test_name=metadata.test_name,
                         question_number=question.question_number,
                     ),
@@ -113,10 +123,16 @@ def _evidence_items_from_reports(
                     diagnosis_json_s3_uri=metadata.diagnosis_json_s3_uri,
                     subject=report.subject,
                     test_name=metadata.test_name,
+                    test_date=metadata.test_date,
+                    test_date_source="assessment_metadata"
+                    if metadata.test_date
+                    else "unavailable",
                     diagnosis_date=metadata.diagnosis_date,
                     question_number=question.question_number,
                     chapter=question.chapter,
                     topic=question.topic,
+                    canonical_chapter=_canonical_label(question.chapter),
+                    canonical_topic=_canonical_label(question.topic),
                     exact_concept_gap=question.exact_concept_gap,
                     likely_thought=question.what_you_thought,
                     why_wrong=question.why_that_thought_is_wrong,
@@ -128,12 +144,16 @@ def _evidence_items_from_reports(
 
 def _evidence_reference(
     *,
-    diagnosis_date: str,
+    test_date: str | None,
     test_name: str,
     question_number: str,
 ) -> str:
-    date_label = diagnosis_date.split("T", 1)[0]
+    date_label = test_date or "test-date-unavailable"
     question_label = question_number.strip()
     if not question_label.casefold().startswith("q"):
         question_label = f"Q{question_label}"
     return f"{date_label} : {test_name} : {question_label}"
+
+
+def _canonical_label(value: str) -> str:
+    return " ".join(value.strip().split())

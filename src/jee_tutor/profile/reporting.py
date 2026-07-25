@@ -1,460 +1,399 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from copy import deepcopy
-from dataclasses import dataclass
-import logging
-import os
-from pathlib import Path
-import tomllib
-from typing import Any, Protocol
+from collections.abc import Iterable
 
-from litellm import completion
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-from jee_tutor.profile.evidence import ProfileEvidenceItem
-from jee_tutor.profile.prompts import (
-    profile_report_system_prompt,
-    profile_report_user_prompt,
+from jee_tutor.profile.hierarchical import (
+    BroaderConceptualPattern,
+    LongitudinalEvidencePack,
+    ValidatedRecurringGap,
 )
-from jee_tutor.profile.semantic import ClassifiedGapCluster, LongitudinalEvidencePack
 
 
-logger = logging.getLogger(__name__)
-PROFILE_REPORT_SCHEMA_NAME = "student_longitudinal_profile_report"
-PROFILE_REPORT_SCHEMA_VERSION = "1.0"
-PROFILE_REPORT_MODEL = "gemini/gemini-2.5-pro"
-DEFAULT_LLM_TIMEOUT_SECONDS = 180
-DEFAULT_CONFIG_PATHS = (
-    Path("config/llm.toml"),
-    Path("src/config/llm.toml"),
-)
-CompletionFunction = Callable[..., dict]
+class OverallSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_scope: str = Field(min_length=1)
+    synthesis: str = Field(min_length=1)
+    immediate_student_focus: str = Field(min_length=1)
+    immediate_teacher_focus: str = Field(min_length=1)
+    primary_gap_ids: list[str] = Field(default_factory=list, max_length=2)
+    primary_pattern_ids: list[str] = Field(default_factory=list, max_length=1)
 
 
-@dataclass(frozen=True)
-class ProfileReportModelSettings:
-    model: str
-    api_key: str | None = None
-    api_base: str | None = None
-    aws_region_name: str | None = None
-    completion_options: dict[str, Any] | None = None
+class RecurringGapReportEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    def to_litellm_kwargs(self) -> dict[str, Any]:
-        kwargs = deepcopy(self.completion_options) if self.completion_options else {}
-        kwargs["model"] = self.model
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-        if self.aws_region_name:
-            kwargs["aws_region_name"] = self.aws_region_name
-        return kwargs
+    gap_id: str
+    chapter: str
+    topic: str
+    title: str
+    concept_gap: str
+    shared_misconception: str
+    same_gap_reasoning: str
+    diagnosis_report_count: int
+    question_count: int
+    evidence_references: list[str]
+    priority: str
+    priority_reason: str
+    student_action: str
+    teacher_action: str
 
 
-class ProfileReportModelConfig:
-    def __init__(
-        self,
-        environ: Mapping[str, str] | None = None,
-        config: Mapping[str, Any] | None = None,
-    ):
-        self.environ = environ if environ is not None else os.environ
-        self.config = dict(config) if config is not None else _load_llm_config(
-            self.environ.get("LLM_CONFIG_FILE")
-        )
+class BroaderPatternReportEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    def resolve(self) -> ProfileReportModelSettings:
-        model = (
-            self.environ.get("PROFILE_REPORT_MODEL")
-            or _config_get(self.config, "profile_report", "model", PROFILE_REPORT_MODEL)
-        )
-        completion_options = _config_section(self.config, "completion")
-        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
-        if model.startswith("bedrock/") or model.startswith("amazon/"):
-            return ProfileReportModelSettings(
-                model=model,
-                aws_region_name=self.environ.get("AWS_REGION")
-                or self.environ.get("AWS_DEFAULT_REGION")
-                or _config_get(self.config, "aws", "region"),
-                completion_options=completion_options,
-            )
-        api_key = _resolve_api_key(model, self.environ)
-        if not api_key:
-            raise ValueError(
-                "No API key configured for the selected PROFILE_REPORT_MODEL. Set OPENAI_API_KEY, "
-                "GOOGLE_API_KEY, or LITELLM_API_KEY."
-            )
-        return ProfileReportModelSettings(
-            model=model,
-            api_key=api_key,
-            api_base=self.environ.get("LITELLM_BASE_URL")
-            or _config_get(self.config, "litellm", "api_base"),
-            completion_options=completion_options,
-        )
+    pattern_id: str
+    title: str
+    shared_reasoning_gap: str
+    component_gap_ids: list[str]
+    manifestations: list[str]
+    relationship_reasoning: str
+    diagnosis_report_count: int
+    question_count: int
+    chapter_count: int
+    topic_count: int
+    instructional_value: str
+    student_action: str
+    teacher_action: str
+    evidence_references: list[str]
+
+
+class EvidenceAppendixEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    test_date: str | None
+    diagnosis_date: str
+    test_name: str
+    subject: str
+    question_number: str
+    chapter: str
+    topic: str
+    exact_concept_gap: str
+    likely_thought: str
+    why_wrong: str
+    corrective_recommendation: str
+    source_report_id: str
 
 
 class ProfileReportOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subject: str = Field(min_length=1)
-    overall_summary: str = Field(min_length=1)
-    recurring_gaps: list[str] = Field(default_factory=list)
-    broader_related_patterns: list[str] = Field(default_factory=list)
-    chapter_topic_weakness_map: list[str] = Field(default_factory=list)
-    isolated_gaps: list[str] = Field(default_factory=list)
-    study_priorities: list[str] = Field(default_factory=list)
-    teacher_intervention_notes: list[str] = Field(default_factory=list)
-    evidence_appendix: list[str] = Field(default_factory=list)
-
-    @field_validator("*", mode="before")
-    @classmethod
-    def reject_blank_strings(cls, value: object) -> object:
-        if isinstance(value, str) and not value.strip():
-            raise ValueError("Profile report text must not be blank.")
-        return value
-
-
-class ProfileReportWriter(Protocol):
-    def write(self, evidence_pack: LongitudinalEvidencePack) -> ProfileReportOutput:
-        """Create an interpreted written profile from validated evidence."""
-
-
-class LiteLLMProfileReportWriter:
-    def __init__(
-        self,
-        *,
-        model_config: ProfileReportModelConfig | None = None,
-        completion_fn: CompletionFunction | None = None,
-    ):
-        self.model_config = model_config or ProfileReportModelConfig()
-        self.completion_fn = completion_fn or completion
-
-    def write(self, evidence_pack: LongitudinalEvidencePack) -> ProfileReportOutput:
-        model_settings = self.model_config.resolve()
-        completion_kwargs = model_settings.to_litellm_kwargs()
-        completion_kwargs.setdefault("num_retries", 0)
-        response = self.completion_fn(
-            **completion_kwargs,
-            messages=[
-                {
-                    "role": "system",
-                    "content": profile_report_system_prompt(),
-                },
-                {
-                    "role": "user",
-                    "content": profile_report_user_prompt(evidence_pack),
-                },
-            ],
-            response_format=profile_report_response_format(),
-            caching=False,
-            cache={"no-cache": True},
-        )
-        content = response["choices"][0]["message"]["content"].strip()
-        return ProfileReportOutput.model_validate_json(content)
+    overall_summary: OverallSummary
+    recurring_gaps: list[RecurringGapReportEntry] = Field(default_factory=list)
+    broader_related_patterns: list[BroaderPatternReportEntry] = Field(
+        default_factory=list
+    )
+    evidence_appendix: list[EvidenceAppendixEntry] = Field(default_factory=list)
 
 
 class ProfileAnalysisService:
-    def __init__(self, report_writer: ProfileReportWriter | None = None):
-        self.report_writer = report_writer
-
     def generate(self, evidence_pack: LongitudinalEvidencePack) -> ProfileReportOutput:
-        if self.report_writer is not None:
-            try:
-                report = self.report_writer.write(evidence_pack)
-                report.chapter_topic_weakness_map = _chapter_topic_lines(evidence_pack)
-                validate_profile_report(report, evidence_pack)
-                return report
-            except Exception as exc:
-                logger.warning(
-                    "profile_report_llm_failed fallback=deterministic error_type=%s error=%s",
-                    exc.__class__.__name__,
-                    exc or "[no message]",
-                    exc_info=True,
-                )
-        return self._deterministic_report(evidence_pack)
-
-    def _deterministic_report(
-        self,
-        evidence_pack: LongitudinalEvidencePack,
-    ) -> ProfileReportOutput:
-        recurring = [
-            cluster
-            for cluster in evidence_pack.clusters
-            if cluster.recurrence_label == "recurring"
-        ]
-        isolated = [
-            cluster
-            for cluster in evidence_pack.clusters
-            if cluster.recurrence_label != "recurring"
-        ]
-        recurring_lines = [
-            (
-                f"{cluster.cluster.title}: supported by {cluster.diagnosis_report_count} "
-                f"diagnosis reports and {cluster.question_count} questions. "
-                f"Evidence: {_cluster_evidence_references(cluster, evidence_pack)}."
+        recurring_entries = [
+            _recurring_entry(item, evidence_pack)
+            for item in sorted(
+                evidence_pack.recurring_gaps,
+                key=lambda value: (
+                    -value.diagnosis_report_count,
+                    -value.question_count,
+                    value.gap.gap_id,
+                ),
             )
-            for cluster in recurring
         ]
-        isolated_lines = [
-            (
-                f"{cluster.cluster.title}: isolated or early indicator from "
-                f"{cluster.diagnosis_report_count} diagnosis report."
-            )
-            for cluster in isolated
+        broader_entries = [
+            _broader_entry(pattern, evidence_pack)
+            for pattern in evidence_pack.broader_patterns
         ]
-        return ProfileReportOutput(
+        report = ProfileReportOutput(
             subject=evidence_pack.subject,
-            overall_summary=_overall_summary(evidence_pack),
-            recurring_gaps=recurring_lines,
-            broader_related_patterns=[
-                cluster.cluster.title
-                for cluster in recurring
-                if cluster.cluster.cluster_type == "related_distinct_subgaps"
-            ],
-            chapter_topic_weakness_map=_chapter_topic_lines(evidence_pack),
-            isolated_gaps=isolated_lines,
-            study_priorities=_study_priorities(evidence_pack, recurring, isolated),
-            teacher_intervention_notes=_teacher_notes(evidence_pack, recurring, isolated),
+            overall_summary=_overall_summary(
+                evidence_pack,
+                recurring_entries,
+                broader_entries,
+            ),
+            recurring_gaps=recurring_entries,
+            broader_related_patterns=broader_entries,
             evidence_appendix=_evidence_appendix(evidence_pack),
         )
+        validate_profile_report(report, evidence_pack)
+        return report
 
     @staticmethod
     def render_markdown(report: ProfileReportOutput) -> str:
-        sections = [
-            ("Overall Summary", [report.overall_summary]),
-            ("Recurring Gaps", report.recurring_gaps or ["No recurring gaps yet."]),
-            ("Broader Related Patterns", report.broader_related_patterns or ["No broader recurring patterns yet."]),
-            ("Isolated Or Early Indicators", report.isolated_gaps or ["No isolated gaps yet."]),
-            ("Study Priorities", report.study_priorities or ["Continue collecting diagnosis history."]),
-            ("Teacher Intervention Notes", report.teacher_intervention_notes or ["Monitor future diagnosis reports."]),
-        ]
-        lines = [f"# {report.subject} Longitudinal Profile"]
-        for title, items in sections:
-            lines.append(f"\n## {title}")
-            for item in items:
-                lines.append(f"- {item}")
-        lines.append("\n## Chapter/Topic Weakness Map")
-        lines.extend(_chapter_topic_markdown_table(report.chapter_topic_weakness_map))
-        lines.append("\n## Evidence Appendix")
-        for item in report.evidence_appendix or ["No evidence references available."]:
-            lines.append(f"- {item}")
+        lines = [f"# {report.subject} Longitudinal Profile", "", "## Overall Summary"]
+        summary = report.overall_summary
+        lines.extend(
+            [
+                f"- **Evidence scope:** {summary.evidence_scope}",
+                f"- **Key insight:** {summary.synthesis}",
+                f"- **Student focus:** {summary.immediate_student_focus}",
+                f"- **Teacher focus:** {summary.immediate_teacher_focus}",
+                "",
+                "## Recurring Gaps",
+            ]
+        )
+        if not report.recurring_gaps:
+            lines.append("- No concept gap is recurring across two diagnosis reports yet.")
+        for entry in report.recurring_gaps:
+            lines.extend(
+                [
+                    "",
+                    f"### {entry.chapter} → {entry.topic}: {entry.title}",
+                    f"- **Concept gap:** {entry.concept_gap}",
+                    f"- **Recurring misconception:** {entry.shared_misconception}",
+                    f"- **Why this is the same gap:** {entry.same_gap_reasoning}",
+                    (
+                        f"- **Evidence strength:** {entry.diagnosis_report_count} diagnosis "
+                        f"reports, {entry.question_count} questions."
+                    ),
+                    f"- **Priority:** {entry.priority} — {entry.priority_reason}",
+                    f"- **Student action:** {entry.student_action}",
+                    f"- **Teacher action:** {entry.teacher_action}",
+                    f"- **Evidence:** {'; '.join(entry.evidence_references)}",
+                ]
+            )
+        lines.extend(["", "## Broader Related Patterns"])
+        if not report.broader_related_patterns:
+            lines.append(
+                "- No validated conceptual pattern spans distinct chapter/topic contexts yet."
+            )
+        for entry in report.broader_related_patterns:
+            lines.extend(
+                [
+                    "",
+                    f"### {entry.title}",
+                    f"- **Shared reasoning gap:** {entry.shared_reasoning_gap}",
+                    f"- **Manifestations:** {'; '.join(entry.manifestations)}",
+                    f"- **Why these gaps are related:** {entry.relationship_reasoning}",
+                    (
+                        f"- **Scope:** {entry.chapter_count} chapters, {entry.topic_count} "
+                        f"topics, {entry.diagnosis_report_count} reports, "
+                        f"{entry.question_count} questions."
+                    ),
+                    f"- **Instructional value:** {entry.instructional_value}",
+                    f"- **Student action:** {entry.student_action}",
+                    f"- **Teacher action:** {entry.teacher_action}",
+                    f"- **Evidence:** {'; '.join(entry.evidence_references)}",
+                ]
+            )
+        lines.extend(["", "## Evidence Appendix"])
+        for entry in report.evidence_appendix:
+            date_label = entry.test_date or "Test date unavailable"
+            lines.extend(
+                [
+                    "",
+                    (
+                        f"### {date_label} · {entry.test_name} · "
+                        f"{entry.subject} · Q{entry.question_number.removeprefix('Q')}"
+                    ),
+                    f"- **Chapter:** {entry.chapter}",
+                    f"- **Topic:** {entry.topic}",
+                    f"- **Concept gap:** {entry.exact_concept_gap}",
+                    f"- **Likely reasoning:** {entry.likely_thought}",
+                    f"- **Why it was wrong:** {entry.why_wrong}",
+                    f"- **Required correction:** {entry.corrective_recommendation}",
+                    f"- **Source diagnosis:** {entry.source_report_id}",
+                    f"- **Diagnosis date:** {entry.diagnosis_date}",
+                ]
+            )
         return "\n".join(lines)
 
 
-def validate_profile_report(report: ProfileReportOutput, evidence_pack: LongitudinalEvidencePack) -> None:
-    recurring_cluster_ids = {
-        cluster.cluster.cluster_id
-        for cluster in evidence_pack.clusters
-        if cluster.recurrence_label == "recurring"
-    }
-    if not recurring_cluster_ids and any("recurring" in line.casefold() for line in report.recurring_gaps):
-        raise ValueError("Profile report contains unsupported recurring claims.")
-    evidence_references = {
-        evidence.evidence_reference
-        for evidence in evidence_pack.evidence_index.values()
-    }
-    appendix_text = "\n".join(report.evidence_appendix)
-    missing = [
-        evidence_reference
-        for evidence_reference in evidence_references
-        if evidence_reference not in appendix_text
-    ]
-    if missing:
-        raise ValueError("Profile report evidence appendix is missing evidence references.")
-    recurring_text = "\n".join(report.recurring_gaps)
-    missing_recurring_references = [
-        cluster.cluster.cluster_id
-        for cluster in evidence_pack.clusters
-        if cluster.recurrence_label == "recurring"
-        and not any(
-            evidence_pack.evidence_index[evidence_id].evidence_reference in recurring_text
-            for evidence_id in cluster.cluster.evidence_ids
-        )
-    ]
-    if missing_recurring_references:
-        raise ValueError("Profile report recurring gaps are missing clustered question references.")
+def build_profile_analysis_service_from_environment() -> ProfileAnalysisService:
+    return ProfileAnalysisService()
+
+
+def validate_profile_report(
+    report: ProfileReportOutput,
+    evidence_pack: LongitudinalEvidencePack,
+) -> None:
     if report.subject != evidence_pack.subject:
         raise ValueError("Profile report subject does not match evidence pack.")
-
-
-def profile_report_response_format() -> dict[str, object]:
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": PROFILE_REPORT_SCHEMA_NAME,
-            "strict": True,
-            "schema": ProfileReportOutput.model_json_schema(),
-        },
+    gap_index = {item.gap.gap_id: item for item in evidence_pack.recurring_gaps}
+    pattern_index = {
+        item.pattern_id: item for item in evidence_pack.broader_patterns
     }
+    if set(entry.gap_id for entry in report.recurring_gaps) != set(gap_index):
+        raise ValueError("Profile report recurring gaps do not match validated local gaps.")
+    if set(entry.pattern_id for entry in report.broader_related_patterns) != set(
+        pattern_index
+    ):
+        raise ValueError("Profile report broader patterns do not match validated patterns.")
+    if not set(report.overall_summary.primary_gap_ids).issubset(gap_index):
+        raise ValueError("Overall summary references an unknown recurring gap.")
+    if not set(report.overall_summary.primary_pattern_ids).issubset(pattern_index):
+        raise ValueError("Overall summary references an unknown broader pattern.")
+    expected_evidence = set(evidence_pack.evidence_index)
+    appendix_ids = {entry.evidence_id for entry in report.evidence_appendix}
+    if appendix_ids != expected_evidence:
+        raise ValueError("Evidence appendix does not exactly cover the evidence pack.")
+    for entry in report.recurring_gaps:
+        source = gap_index[entry.gap_id]
+        if entry.diagnosis_report_count != source.diagnosis_report_count:
+            raise ValueError("Recurring gap report count does not match evidence.")
+        if entry.question_count != source.question_count:
+            raise ValueError("Recurring gap question count does not match evidence.")
+    for entry in report.broader_related_patterns:
+        source = pattern_index[entry.pattern_id]
+        if set(entry.component_gap_ids) != set(source.component_gap_ids):
+            raise ValueError("Broader pattern components do not match evidence.")
 
 
-def build_profile_analysis_service_from_environment(
-    environ: Mapping[str, str] | None = None,
-) -> ProfileAnalysisService:
-    resolved_environ = environ if environ is not None else os.environ
-    if not _profile_report_llm_enabled(resolved_environ):
-        return ProfileAnalysisService()
-    return ProfileAnalysisService(
-        report_writer=LiteLLMProfileReportWriter(
-            model_config=ProfileReportModelConfig(environ=resolved_environ),
+def _overall_summary(
+    pack: LongitudinalEvidencePack,
+    recurring: list[RecurringGapReportEntry],
+    broader: list[BroaderPatternReportEntry],
+) -> OverallSummary:
+    primary_gaps = recurring[:2]
+    primary_patterns = broader[:1]
+    gap_text = (
+        "; ".join(
+            f"{item.chapter}/{item.topic}: {item.title}" for item in primary_gaps
         )
+        or "No exact concept gap is recurring across two reports yet"
+    )
+    pattern_text = (
+        f" Broader pattern: {primary_patterns[0].title}."
+        if primary_patterns
+        else ""
+    )
+    return OverallSummary(
+        evidence_scope=(
+            f"Analyzed {pack.question_count} diagnosed questions from "
+            f"{pack.diagnosis_report_count} diagnosis reports for {pack.subject}."
+        ),
+        synthesis=f"Highest-priority recurring findings: {gap_text}.{pattern_text}",
+        immediate_student_focus=(
+            primary_gaps[0].student_action
+            if primary_gaps
+            else "Continue collecting diagnosis evidence across assessments."
+        ),
+        immediate_teacher_focus=(
+            primary_gaps[0].teacher_action
+            if primary_gaps
+            else "Monitor future assessments for repeatable concept gaps."
+        ),
+        primary_gap_ids=[item.gap_id for item in primary_gaps],
+        primary_pattern_ids=[item.pattern_id for item in primary_patterns],
     )
 
 
-def _profile_report_llm_enabled(environ: Mapping[str, str]) -> bool:
-    value = environ.get("PROFILE_REPORT_LLM_ENABLED")
-    if value is None:
-        return True
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _load_llm_config(path: str | None = None) -> dict[str, Any]:
-    config_path = _resolve_config_path(path)
-    if not config_path:
-        return {}
-    with config_path.open("rb") as config_file:
-        return tomllib.load(config_file)
-
-
-def _resolve_config_path(path: str | None) -> Path | None:
-    candidates = (Path(path),) if path else DEFAULT_CONFIG_PATHS
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _config_get(
-    config: Mapping[str, Any],
-    section: str,
-    key: str,
-    default: Any = None,
-) -> Any:
-    value = _config_section(config, section).get(key)
-    return value if value not in (None, "") else default
-
-
-def _config_section(config: Mapping[str, Any], section: str) -> dict[str, Any]:
-    current: Any = config
-    for part in section.split("."):
-        if not isinstance(current, Mapping):
-            return {}
-        current = current.get(part, {})
-    return deepcopy(current) if isinstance(current, Mapping) else {}
-
-
-def _resolve_api_key(model: str, environ: Mapping[str, str]) -> str | None:
-    if model.startswith("openai/"):
-        return environ.get("OPENAI_API_KEY") or environ.get("LITELLM_API_KEY")
-    if model.startswith("gemini/") or model.startswith("google/"):
-        return environ.get("GOOGLE_API_KEY") or environ.get("LITELLM_API_KEY")
-    return environ.get("LITELLM_API_KEY")
-
-
-def _overall_summary(evidence_pack: LongitudinalEvidencePack) -> str:
-    return (
-        f"Analyzed {evidence_pack.question_count} diagnosed questions from "
-        f"{evidence_pack.diagnosis_report_count} diagnosis reports for {evidence_pack.subject}."
+def _recurring_entry(
+    item: ValidatedRecurringGap,
+    pack: LongitudinalEvidencePack,
+) -> RecurringGapReportEntry:
+    gap = item.gap
+    evidence = [pack.evidence_index[eid] for eid in gap.evidence_ids]
+    priority = "High" if item.diagnosis_report_count >= 3 else "Medium"
+    return RecurringGapReportEntry(
+        gap_id=gap.gap_id,
+        chapter=gap.canonical_chapter,
+        topic=gap.canonical_topic,
+        title=gap.concept_gap,
+        concept_gap=gap.concept_gap,
+        shared_misconception=gap.shared_misconception,
+        same_gap_reasoning=gap.rationale,
+        diagnosis_report_count=item.diagnosis_report_count,
+        question_count=item.question_count,
+        evidence_references=[entry.evidence_reference for entry in evidence],
+        priority=priority,
+        priority_reason=(
+            f"The same conceptual correction is needed across "
+            f"{item.diagnosis_report_count} independent diagnosis reports."
+        ),
+        student_action=(
+            f"Practise {gap.canonical_topic} problems by first stating and applying: "
+            f"{gap.corrective_concept}"
+        ),
+        teacher_action=(
+            f"Verify and reteach {gap.required_concept}; directly challenge the belief that "
+            f"{gap.shared_misconception}"
+        ),
     )
 
 
-def _chapter_topic_lines(evidence_pack: LongitudinalEvidencePack) -> list[str]:
-    return [
-        (
-            f"{entry.chapter} | {entry.topic} | recurring={len(entry.recurring_cluster_ids)} | "
-            f"isolated_or_early={len(entry.isolated_cluster_ids)}"
-        )
-        for entry in sorted(
-            evidence_pack.chapter_topic_map,
-            key=lambda item: (item.chapter.casefold(), item.topic.casefold()),
-        )
-    ]
-
-
-def _chapter_topic_markdown_table(rows: list[str]) -> list[str]:
-    if not rows:
-        return ["No chapter/topic weakness map yet."]
-    table = [
-        "| Chapter | Topic | Recurring Clusters | Isolated/Early Clusters |",
-        "| --- | --- | ---: | ---: |",
-    ]
-    for row in rows:
-        parts = [part.strip() for part in row.split("|")]
-        if len(parts) == 4:
-            chapter, topic, recurring, isolated = parts
-            table.append(
-                f"| {chapter} | {topic} | {recurring.removeprefix('recurring=')} | "
-                f"{isolated.removeprefix('isolated_or_early=')} |"
+def _broader_entry(
+    pattern: BroaderConceptualPattern,
+    pack: LongitudinalEvidencePack,
+) -> BroaderPatternReportEntry:
+    gap_index = {item.gap.gap_id: item for item in pack.recurring_gaps}
+    components = [gap_index[gap_id] for gap_id in pattern.component_gap_ids]
+    evidence_ids = _unique(
+        eid for component in components for eid in component.gap.evidence_ids
+    )
+    evidence = [pack.evidence_index[eid] for eid in evidence_ids]
+    chapters = {component.gap.canonical_chapter.casefold() for component in components}
+    topics = {component.gap.canonical_topic.casefold() for component in components}
+    reports = {entry.diagnosis_report_id for entry in evidence}
+    return BroaderPatternReportEntry(
+        pattern_id=pattern.pattern_id,
+        title=pattern.title,
+        shared_reasoning_gap=pattern.shared_reasoning_gap,
+        component_gap_ids=pattern.component_gap_ids,
+        manifestations=[
+            (
+                f"{item.chapter} → {item.topic}: {item.manifestation}"
             )
-        else:
-            table.append(f"| {row} |  |  |  |")
-    return table
-
-
-def _study_priorities(
-    evidence_pack: LongitudinalEvidencePack,
-    recurring: list[ClassifiedGapCluster],
-    isolated: list[ClassifiedGapCluster],
-) -> list[str]:
-    clusters = recurring or isolated
-    prefix = "Priority" if recurring else "Early priority"
-    return [
-        (
-            f"{prefix}: practice {_chapter_topic_scope(cluster, evidence_pack)} by targeting "
-            f"{_representative_evidence(cluster, evidence_pack).exact_concept_gap}. "
-            f"Use this drill focus: {_representative_evidence(cluster, evidence_pack).deep_dive_recommendation}"
-        )
-        for cluster in clusters
-    ]
-
-
-def _teacher_notes(
-    evidence_pack: LongitudinalEvidencePack,
-    recurring: list[ClassifiedGapCluster],
-    isolated: list[ClassifiedGapCluster],
-) -> list[str]:
-    clusters = recurring or isolated
-    prefix = "Reteach and verify" if recurring else "Monitor and verify"
-    return [
-        (
-            f"{prefix}: check whether the student still thinks "
-            f"'{_representative_evidence(cluster, evidence_pack).likely_thought}' for "
-            f"{_chapter_topic_scope(cluster, evidence_pack)}. Corrective prompt: "
-            f"{_representative_evidence(cluster, evidence_pack).why_wrong}"
-        )
-        for cluster in clusters
-    ]
-
-
-def _representative_evidence(
-    cluster: ClassifiedGapCluster,
-    evidence_pack: LongitudinalEvidencePack,
-) -> ProfileEvidenceItem:
-    return evidence_pack.evidence_index[cluster.cluster.evidence_ids[0]]
-
-
-def _chapter_topic_scope(
-    cluster: ClassifiedGapCluster,
-    evidence_pack: LongitudinalEvidencePack,
-) -> str:
-    evidence = _representative_evidence(cluster, evidence_pack)
-    return f"{evidence.chapter} / {evidence.topic}"
-
-
-def _cluster_evidence_references(
-    cluster: ClassifiedGapCluster,
-    evidence_pack: LongitudinalEvidencePack,
-) -> str:
-    return "; ".join(
-        evidence_pack.evidence_index[evidence_id].evidence_reference
-        for evidence_id in cluster.cluster.evidence_ids
+            for item in pattern.manifestations
+        ],
+        relationship_reasoning=pattern.rationale,
+        diagnosis_report_count=len(reports),
+        question_count=len(evidence),
+        chapter_count=len(chapters),
+        topic_count=len(topics),
+        instructional_value=(
+            "One transferable reasoning routine can reinforce the connected local concepts: "
+            f"{pattern.common_corrective_principle}"
+        ),
+        student_action=(
+            "Across mixed-topic practice, explicitly apply this reasoning rule before "
+            f"calculation: {pattern.common_corrective_principle}"
+        ),
+        teacher_action=(
+            "Use one problem from each manifestation to verify transfer of the corrective "
+            f"principle: {pattern.common_corrective_principle}"
+        ),
+        evidence_references=[entry.evidence_reference for entry in evidence],
     )
 
 
-def _evidence_appendix(evidence_pack: LongitudinalEvidencePack) -> list[str]:
+def _evidence_appendix(
+    pack: LongitudinalEvidencePack,
+) -> list[EvidenceAppendixEntry]:
     return [
-        (
-            f"{evidence.evidence_reference}: chapter={evidence.chapter}, topic={evidence.topic}"
+        EvidenceAppendixEntry(
+            evidence_id=item.evidence_id,
+            test_date=item.test_date,
+            diagnosis_date=item.diagnosis_date,
+            test_name=item.test_name,
+            subject=item.subject,
+            question_number=item.question_number,
+            chapter=item.canonical_chapter,
+            topic=item.canonical_topic,
+            exact_concept_gap=item.exact_concept_gap,
+            likely_thought=item.likely_thought,
+            why_wrong=item.why_wrong,
+            corrective_recommendation=item.deep_dive_recommendation,
+            source_report_id=item.diagnosis_report_id,
         )
-        for evidence in evidence_pack.evidence_index.values()
+        for item in sorted(
+            pack.evidence_index.values(),
+            key=lambda value: (
+                value.test_date or "9999-12-31",
+                value.test_name.casefold(),
+                _question_sort_key(value.question_number),
+            ),
+        )
     ]
+
+
+def _question_sort_key(value: str) -> tuple[int, str]:
+    normalized = value.strip().removeprefix("Q").removeprefix("q")
+    return (int(normalized), "") if normalized.isdigit() else (10**9, normalized)
+
+
+def _unique(values: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(values))

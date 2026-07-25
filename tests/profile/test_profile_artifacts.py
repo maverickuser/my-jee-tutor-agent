@@ -6,7 +6,7 @@ from jee_tutor.profile.artifacts import (
     ProfileReportArtifactConfig,
     ProfileReportArtifactWriter,
 )
-from jee_tutor.profile.reporting import ProfileReportOutput
+from jee_tutor.profile.reporting import OverallSummary, ProfileReportOutput
 
 
 class FakePdfRenderer:
@@ -122,14 +122,17 @@ class ProfileReportArtifactWriterTest(unittest.TestCase):
 def profile_report() -> ProfileReportOutput:
     return ProfileReportOutput(
         subject="Physics",
-        overall_summary="The student has a recurring projectile motion gap.",
-        recurring_gaps=["Projectile components: recurring across reports."],
+        overall_summary=OverallSummary(
+            evidence_scope="Two reports.",
+            synthesis="Projectile components recur.",
+            immediate_student_focus="Resolve components.",
+            immediate_teacher_focus="Verify vector decomposition.",
+            primary_gap_ids=[],
+            primary_pattern_ids=[],
+        ),
+        recurring_gaps=[],
         broader_related_patterns=[],
-        chapter_topic_weakness_map=["Kinematics / Projectile Motion"],
-        isolated_gaps=[],
-        study_priorities=["Practice component resolution."],
-        teacher_intervention_notes=["Review vector decomposition."],
-        evidence_appendix=["r1:q1"],
+        evidence_appendix=[],
     )
 
 
