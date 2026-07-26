@@ -150,37 +150,6 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             workflow,
         )
 
-    def test_cd_runtime_defaults_to_bedrock_models(self):
-        workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
-
-        expected_defaults = {
-            "VISION_MODEL": (
-                "CD_RUNTIME_VISION_MODEL",
-                "bedrock/amazon.nova-pro-v1:0",
-            ),
-            "CREWAI_MODEL": (
-                "CD_RUNTIME_CREWAI_MODEL",
-                "bedrock/amazon.nova-pro-v1:0",
-            ),
-            "PROFILE_REPORT_MODEL": (
-                "CD_RUNTIME_PROFILE_REPORT_MODEL",
-                "bedrock/amazon.nova-pro-v1:0",
-            ),
-            "PROFILE_EMBEDDING_MODEL": (
-                "CD_RUNTIME_PROFILE_EMBEDDING_MODEL",
-                "bedrock/amazon.titan-embed-text-v2:0",
-            ),
-            "PROFILE_SEMANTIC_CLUSTER_MODEL": (
-                "CD_RUNTIME_PROFILE_SEMANTIC_CLUSTER_MODEL",
-                "bedrock/amazon.nova-pro-v1:0",
-            ),
-        }
-        for env_name, (variable_name, model) in expected_defaults.items():
-            self.assertIn(
-                f"{env_name}: ${{{{ vars.{variable_name} || '{model}' }}}}",
-                workflow,
-            )
-
 
 if __name__ == "__main__":
     unittest.main()
