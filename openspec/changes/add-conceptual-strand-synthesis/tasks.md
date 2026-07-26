@@ -21,4 +21,4 @@
 - [x] 4.1 Update application, artifact, invocation, reporting, and hierarchy unit tests for the revised schema.
 - [x] 4.2 Add Physics-like multi-paper synthesis tests plus unrelated-evidence and non-conceptual exclusion tests.
 - [x] 4.3 Run strict OpenSpec validation, full tests, required coverage, Ruff, and diff checks.
-- [ ] 4.4 Commit and push the corrective change, then monitor and repair CI/CD until the deployed runtime smoke test passes.
+- [x] 4.4 Commit and push the corrective change, then monitor and repair CI/CD until the deployed runtime smoke test passes.
