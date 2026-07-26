@@ -105,3 +105,22 @@ The quality suite SHALL include representative multi-paper evidence that proves 
 #### Scenario: Empty-insight regression
 - **WHEN** the representative evidence fixture is analyzed
 - **THEN** a report containing only an empty-recurring-gap message SHALL fail the quality test
+
+### Requirement: Untrusted classifier output repair
+The system SHALL reconcile semantic classifier references against the authoritative input evidence before strict conceptual-strand validation and SHALL NOT fail a profile request solely because the classifier invents an evidence ID or merges chapter families.
+
+#### Scenario: Invented evidence IDs
+- **WHEN** a classifier strand or exclusion references evidence IDs absent from the input evidence index
+- **THEN** the system SHALL remove those references and continue with the supported evidence
+
+#### Scenario: Cross-family strand
+- **WHEN** a classifier strand contains evidence from multiple normalized chapter families
+- **THEN** the system SHALL retain only a coherent supported family, derive its labels and topics from authoritative evidence, and continue without raising a cross-family validation error
+
+#### Scenario: Strand loses all supported evidence
+- **WHEN** classifier-output repair leaves a strand with no authoritative evidence
+- **THEN** the system SHALL drop that strand rather than fail the profile request
+
+#### Scenario: Missing manifestation for retained evidence
+- **WHEN** a retained authoritative evidence item lacks a valid classifier manifestation
+- **THEN** the system SHALL use the source diagnostic claim as its auditable manifestation before strict validation

@@ -22,3 +22,10 @@
 - [x] 4.2 Add Physics-like multi-paper synthesis tests plus unrelated-evidence and non-conceptual exclusion tests.
 - [x] 4.3 Run strict OpenSpec validation, full tests, required coverage, Ruff, and diff checks.
 - [x] 4.4 Commit and push the corrective change, then monitor and repair CI/CD until the deployed runtime smoke test passes.
+
+## 5. Classifier Boundary Hardening
+
+- [x] 5.1 Reconcile invented evidence IDs, cross-family membership, labels, topics, manifestations, overlaps, and exclusions against authoritative evidence.
+- [x] 5.2 Add regression tests reproducing unknown-ID and cross-family production failures without weakening strict post-repair validation.
+- [x] 5.3 Run strict OpenSpec validation, full tests, required coverage, Ruff, and diff checks.
+- [x] 5.4 Commit, push, and monitor CI/CD until the deployed profile-runtime smoke test passes.

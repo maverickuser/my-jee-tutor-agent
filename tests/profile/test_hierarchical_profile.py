@@ -16,6 +16,7 @@ from jee_tutor.profile.hierarchical import (
     build_longitudinal_evidence_pack,
     build_strand_candidate_clusters,
     normalize_chapter_family,
+    repair_conceptual_strand_output,
     recurring_conceptual_strands,
     validate_broader_patterns,
     validate_conceptual_strand_output,
@@ -203,6 +204,98 @@ class HierarchicalProfileTest(unittest.TestCase):
         validated = validate_conceptual_strand_output(output, [item])
 
         self.assertEqual(validated.exclusions[0].reason, "calculation_execution")
+
+    def test_repairs_invented_ids_and_cross_family_membership(self):
+        items = [
+            evidence(
+                "006445c3-c90d-47fa-985f-b799c78d390e:q12",
+                "006445c3-c90d-47fa-985f-b799c78d390e",
+                chapter="Electrostatics",
+                topic="Capacitor circuits",
+            ),
+            evidence(
+                "227ac774-ba13-4e11-a1e4-6d25d993c1a7:q6",
+                "227ac774-ba13-4e11-a1e4-6d25d993c1a7",
+                chapter="Electrostatics and Capacitance",
+                topic="Charge redistribution",
+            ),
+            evidence(
+                "current-report:q1",
+                "current-report",
+                chapter="Current Electricity",
+                topic="Potentiometer",
+            ),
+        ]
+        malformed = strand(
+            "strand-1",
+            [
+                items[0].evidence_id,
+                "006445c3-c90d-47fa-985f-b799c78d390e:q2",
+                items[1].evidence_id,
+                items[2].evidence_id,
+                "227ac774-ba13-4e11-a1e4-6d25d993c1a7:q1",
+            ],
+        )
+        malformed.manifestations = [
+            StrandManifestation(
+                evidence_id=items[0].evidence_id,
+                manifestation="Used one capacitor's charge as total battery charge.",
+            ),
+            StrandManifestation(
+                evidence_id="006445c3-c90d-47fa-985f-b799c78d390e:q2",
+                manifestation="Invented question.",
+            ),
+            StrandManifestation(
+                evidence_id=items[2].evidence_id,
+                manifestation="Unrelated current-electricity manifestation.",
+            ),
+        ]
+        output = ConceptualStrandOutput(
+            strands=[malformed],
+            exclusions=[
+                EvidenceExclusion(
+                    evidence_id="unknown:q4",
+                    reason="insufficient_evidence",
+                    rationale="Invented exclusion.",
+                ),
+                EvidenceExclusion(
+                    evidence_id=items[0].evidence_id,
+                    reason="unrelated_misconception",
+                    rationale="Conflicts with assigned evidence.",
+                ),
+            ],
+        )
+
+        repaired = repair_conceptual_strand_output(output, items)
+        validated = validate_conceptual_strand_output(repaired, items)
+
+        self.assertEqual(
+            validated.strands[0].evidence_ids,
+            [items[0].evidence_id, items[1].evidence_id],
+        )
+        self.assertEqual(
+            validated.strands[0].chapter_family,
+            "Electrostatics and Capacitance",
+        )
+        self.assertEqual(
+            validated.strands[0].topics,
+            ["Capacitor circuits", "Charge redistribution"],
+        )
+        self.assertEqual(
+            validated.strands[0].manifestations[1].manifestation,
+            items[1].exact_concept_gap,
+        )
+        self.assertEqual(validated.exclusions, [])
+
+    def test_drops_strand_when_classifier_invents_every_evidence_id(self):
+        malformed = strand("strand-1", ["unknown:q1"])
+
+        repaired = repair_conceptual_strand_output(
+            ConceptualStrandOutput(strands=[malformed]),
+            [evidence("r1:q1", "r1")],
+        )
+
+        self.assertEqual(repaired.strands, [])
 
     def test_broader_pattern_requires_distinct_families(self):
         items = [

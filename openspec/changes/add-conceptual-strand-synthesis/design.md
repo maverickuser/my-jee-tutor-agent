@@ -65,10 +65,17 @@ The appendix contains one compact row per evidence item with test/date, question
 
 Production input can legitimately yield no insights, so runtime validation cannot require a non-empty report universally. Instead, a representative Physics-like regression fixture with capacitor-system and field-direction evidence across reports MUST produce the expected conceptual strands. This tests synthesis quality rather than document shape alone.
 
+### 9. Repair untrusted classifier references before strict validation
+
+Structured output constrains shape but does not guarantee that a model copies evidence IDs or chapter-family membership accurately. The classifier boundary therefore treats IDs, manifestations, chapter labels, and topics as untrusted.
+
+Before strict validation, deterministic repair removes unknown evidence IDs, retains only evidence matching the strand's declared chapter family (or the largest actual family when the declaration matches none), derives chapter/topic labels from retained source evidence, fills a missing retained manifestation from the source diagnostic claim, removes duplicate assignment from later strands, and drops strands left without evidence. Unknown or conflicting exclusions are removed. Strict validation remains in place after repair to catch programming errors.
+
 ## Risks / Trade-offs
 
 - [Risk] Chapter-family normalization may combine adjacent but distinct chapters. → Keep deterministic aliases narrow and require the semantic classifier to prove one corrective model covers all evidence.
 - [Risk] A language model may generate plausible but unsupported causal explanations. → Require evidence-ID manifestations, constrained schemas, and deterministic coverage/context validation.
+- [Risk] A model may copy a nonexistent evidence ID or merge chapter families despite prompt constraints. → Repair references against the authoritative evidence index and degrade by dropping unsupported membership instead of failing the profile invocation.
 - [Risk] Broader candidates may become generic study-skill labels. → Reject patterns whose commonality is only formula recall, carelessness, vocabulary, or syllabus proximity.
 - [Risk] Representative fixtures can overfit one student profile. → Test both positive Physics-like synthesis and negative unrelated/equivalent-vocabulary cases.
 - [Trade-off] One additional semantic layer increases prompt size and classifier responsibility. → Keep two semantic calls: one subject-level conceptual-strand adjudication over local candidates and one optional broader-pattern call.

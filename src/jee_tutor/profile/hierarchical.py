@@ -168,7 +168,10 @@ class ConceptualStrandAnalyzer:
     ) -> ConceptualStrandOutput:
         if self.analyzer is not None:
             return validate_conceptual_strand_output(
-                self.analyzer(evidence_items), evidence_items
+                repair_conceptual_strand_output(
+                    self.analyzer(evidence_items), evidence_items
+                ),
+                evidence_items,
             )
         embedding_service = self.embedding_service or EvidenceEmbeddingService(
             input_version="conceptual-strand-v1"
@@ -184,9 +187,12 @@ class ConceptualStrandAnalyzer:
         )
         classifier = self.classifier or LiteLLMConceptualStrandClassifier()
         return validate_conceptual_strand_output(
-            classifier.classify(
-                evidence_items=evidence_items,
-                candidates=candidates,
+            repair_conceptual_strand_output(
+                classifier.classify(
+                    evidence_items=evidence_items,
+                    candidates=candidates,
+                ),
+                evidence_items,
             ),
             evidence_items,
         )
@@ -348,6 +354,102 @@ def validate_conceptual_strand_output(
     if assigned.intersection(exclusion_ids):
         raise ValueError("Evidence cannot be both assigned and excluded.")
     return output
+
+
+def repair_conceptual_strand_output(
+    output: ConceptualStrandOutput,
+    evidence_items: list[ProfileEvidenceItem],
+) -> ConceptualStrandOutput:
+    index = {item.evidence_id: item for item in evidence_items}
+    assigned: set[str] = set()
+    repaired_strands: list[ConceptualStrand] = []
+    for source_strand in output.strands:
+        strand = source_strand.model_copy(deep=True)
+        known_ids = [
+            evidence_id
+            for evidence_id in strand.evidence_ids
+            if evidence_id in index and evidence_id not in assigned
+        ]
+        if not known_ids:
+            continue
+        family_by_id = {
+            evidence_id: normalize_chapter_family(
+                index[evidence_id].canonical_chapter
+            )
+            for evidence_id in known_ids
+        }
+        declared_family = normalize_chapter_family(strand.chapter_family)
+        retained_ids = [
+            evidence_id
+            for evidence_id in known_ids
+            if family_by_id[evidence_id].casefold()
+            == declared_family.casefold()
+        ]
+        if retained_ids:
+            chosen_family = declared_family
+        else:
+            family_counts: dict[str, int] = {}
+            for evidence_id in known_ids:
+                family = family_by_id[evidence_id]
+                family_counts[family] = family_counts.get(family, 0) + 1
+            chosen_family = max(
+                family_counts,
+                key=lambda family: (
+                    family_counts[family],
+                    -known_ids.index(
+                        next(
+                            evidence_id
+                            for evidence_id in known_ids
+                            if family_by_id[evidence_id] == family
+                        )
+                    ),
+                ),
+            )
+            retained_ids = [
+                evidence_id
+                for evidence_id in known_ids
+                if family_by_id[evidence_id] == chosen_family
+            ]
+        manifestation_by_id = {
+            item.evidence_id: item.manifestation
+            for item in strand.manifestations
+            if item.evidence_id in retained_ids
+        }
+        strand.chapter_family = chosen_family
+        strand.chapter_labels = _unique_strings(
+            index[evidence_id].canonical_chapter
+            for evidence_id in retained_ids
+        )
+        strand.topics = _unique_strings(
+            index[evidence_id].canonical_topic
+            for evidence_id in retained_ids
+        )
+        strand.evidence_ids = retained_ids
+        strand.manifestations = [
+            StrandManifestation(
+                evidence_id=evidence_id,
+                manifestation=manifestation_by_id.get(evidence_id)
+                or index[evidence_id].exact_concept_gap,
+            )
+            for evidence_id in retained_ids
+        ]
+        assigned.update(retained_ids)
+        repaired_strands.append(strand)
+    repaired_exclusions: list[EvidenceExclusion] = []
+    excluded: set[str] = set()
+    for exclusion in output.exclusions:
+        if (
+            exclusion.evidence_id not in index
+            or exclusion.evidence_id in assigned
+            or exclusion.evidence_id in excluded
+        ):
+            continue
+        repaired_exclusions.append(exclusion)
+        excluded.add(exclusion.evidence_id)
+    return ConceptualStrandOutput(
+        strands=repaired_strands,
+        exclusions=repaired_exclusions,
+    )
 
 
 def recurring_conceptual_strands(
@@ -604,3 +706,7 @@ def _strand_by_id(
     return next(
         item for item in strands if item.strand.strand_id == strand_id
     )
+
+
+def _unique_strings(values) -> list[str]:
+    return list(dict.fromkeys(values))
