@@ -10,9 +10,9 @@ from jee_tutor.profile.evidence import ProfileEvidenceLoader
 from jee_tutor.profile.models import ProfileReportRequest
 from jee_tutor.profile.hierarchical import (
     BroaderPatternAnalyzer,
-    LocalConceptGapAnalyzer,
+    ConceptualStrandAnalyzer,
     build_longitudinal_evidence_pack,
-    recurring_local_gaps,
+    recurring_conceptual_strands,
 )
 from jee_tutor.profile.reporting import (
     ProfileAnalysisService,
@@ -32,14 +32,16 @@ class StudentProfileApplicationService:
         *,
         metadata_store: StudentDiagnosisMetadataStore | None = None,
         artifact_store: StructuredDiagnosisArtifactStore | None = None,
-        local_gap_analyzer: LocalConceptGapAnalyzer | None = None,
+        conceptual_strand_analyzer: ConceptualStrandAnalyzer | None = None,
         broader_pattern_analyzer: BroaderPatternAnalyzer | None = None,
         report_service: ProfileAnalysisService | None = None,
         artifact_writer: ProfileReportArtifactWriter | None = None,
     ):
         self.metadata_store = metadata_store or build_student_diagnosis_metadata_store()
         self.artifact_store = artifact_store or build_structured_diagnosis_artifact_store()
-        self.local_gap_analyzer = local_gap_analyzer or LocalConceptGapAnalyzer()
+        self.conceptual_strand_analyzer = (
+            conceptual_strand_analyzer or ConceptualStrandAnalyzer()
+        )
         self.broader_pattern_analyzer = (
             broader_pattern_analyzer or BroaderPatternAnalyzer()
         )
@@ -75,14 +77,16 @@ class StudentProfileApplicationService:
                 "runtime_commit_sha": runtime_commit_sha,
             }
 
-        local_gaps = self.local_gap_analyzer.analyze(
+        strand_output = self.conceptual_strand_analyzer.analyze(
             evidence_result.evidence_items,
             subject=request.subject,
         )
         evidence_index = {
             item.evidence_id: item for item in evidence_result.evidence_items
         }
-        recurring = recurring_local_gaps(local_gaps, evidence_index)
+        recurring = recurring_conceptual_strands(
+            strand_output.strands, evidence_index
+        )
         broader_patterns = self.broader_pattern_analyzer.analyze(
             recurring,
             evidence_index=evidence_index,
@@ -91,7 +95,7 @@ class StudentProfileApplicationService:
         evidence_pack = build_longitudinal_evidence_pack(
             subject=request.subject,
             evidence_items=evidence_result.evidence_items,
-            local_gaps=local_gaps,
+            strand_output=strand_output,
             broader_patterns=broader_patterns,
         )
         report = self.report_service.generate(evidence_pack)

@@ -125,9 +125,10 @@ def profile_report() -> ProfileReportOutput:
         overall_summary=OverallSummary(
             evidence_scope="Two reports.",
             synthesis="Projectile components recur.",
+            significance="One model explains distinct manifestations.",
             immediate_student_focus="Resolve components.",
             immediate_teacher_focus="Verify vector decomposition.",
-            primary_gap_ids=[],
+            primary_strand_ids=[],
             primary_pattern_ids=[],
         ),
         recurring_gaps=[],

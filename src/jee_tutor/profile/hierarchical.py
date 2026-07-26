@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import deepcopy
 import json
+import re
 from typing import Literal, Protocol
 
 from litellm import completion
@@ -18,40 +19,64 @@ from jee_tutor.profile.semantic import (
 
 
 Confidence = Literal["high", "medium", "low"]
+ExclusionReason = Literal[
+    "calculation_execution",
+    "ambiguous_question",
+    "insufficient_evidence",
+    "unrelated_misconception",
+]
 
 
-class LocalConceptGap(BaseModel):
+class StrandManifestation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    gap_id: str = Field(min_length=1)
-    canonical_chapter: str = Field(min_length=1)
-    canonical_topic: str = Field(min_length=1)
-    required_concept: str = Field(min_length=1)
-    concept_gap: str = Field(min_length=1)
-    shared_misconception: str = Field(min_length=1)
-    corrective_concept: str = Field(min_length=1)
+    evidence_id: str = Field(min_length=1)
+    manifestation: str = Field(min_length=1)
+
+
+class EvidenceExclusion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str = Field(min_length=1)
+    reason: ExclusionReason
+    rationale: str = Field(min_length=1)
+
+
+class ConceptualStrand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strand_id: str = Field(min_length=1)
+    chapter_family: str = Field(min_length=1)
+    chapter_labels: list[str] = Field(min_length=1)
+    topics: list[str] = Field(min_length=1)
+    title: str = Field(min_length=1)
+    missing_mental_model: str = Field(min_length=1)
+    shared_failure: str = Field(min_length=1)
+    corrective_model: str = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
+    manifestations: list[StrandManifestation] = Field(min_length=1)
     confidence: Confidence
     rationale: str = Field(min_length=1)
 
-    @field_validator("evidence_ids")
+    @field_validator("chapter_labels", "topics", "evidence_ids")
     @classmethod
-    def unique_evidence(cls, value: list[str]) -> list[str]:
+    def unique_values(cls, value: list[str]) -> list[str]:
         if len(value) != len(set(value)):
-            raise ValueError("Local concept gap contains duplicate evidence ids.")
+            raise ValueError("Conceptual strand contains duplicate values.")
         return value
 
 
-class LocalConceptGapOutput(BaseModel):
+class ConceptualStrandOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    gaps: list[LocalConceptGap] = Field(default_factory=list)
+    strands: list[ConceptualStrand] = Field(default_factory=list)
+    exclusions: list[EvidenceExclusion] = Field(default_factory=list)
 
 
-class ValidatedRecurringGap(BaseModel):
+class ValidatedRecurringStrand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    gap: LocalConceptGap
+    strand: ConceptualStrand
     diagnosis_report_count: int = Field(ge=2)
     question_count: int = Field(ge=2)
 
@@ -59,9 +84,8 @@ class ValidatedRecurringGap(BaseModel):
 class BroaderPatternManifestation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    gap_id: str = Field(min_length=1)
-    chapter: str = Field(min_length=1)
-    topic: str = Field(min_length=1)
+    strand_id: str = Field(min_length=1)
+    chapter_family: str = Field(min_length=1)
     manifestation: str = Field(min_length=1)
 
 
@@ -72,16 +96,16 @@ class BroaderConceptualPattern(BaseModel):
     title: str = Field(min_length=1)
     shared_reasoning_gap: str = Field(min_length=1)
     common_corrective_principle: str = Field(min_length=1)
-    component_gap_ids: list[str] = Field(min_length=2)
+    component_strand_ids: list[str] = Field(min_length=2)
     manifestations: list[BroaderPatternManifestation] = Field(min_length=2)
     confidence: Confidence
     rationale: str = Field(min_length=1)
 
-    @field_validator("component_gap_ids")
+    @field_validator("component_strand_ids")
     @classmethod
     def unique_components(cls, value: list[str]) -> list[str]:
         if len(value) != len(set(value)):
-            raise ValueError("Broader pattern contains duplicate component gaps.")
+            raise ValueError("Broader pattern contains duplicate component strands.")
         return value
 
 
@@ -98,36 +122,38 @@ class LongitudinalEvidencePack(BaseModel):
     diagnosis_report_count: int = Field(ge=0)
     question_count: int = Field(ge=0)
     evidence_index: dict[str, ProfileEvidenceItem] = Field(default_factory=dict)
-    recurring_gaps: list[ValidatedRecurringGap] = Field(default_factory=list)
+    recurring_strands: list[ValidatedRecurringStrand] = Field(default_factory=list)
     broader_patterns: list[BroaderConceptualPattern] = Field(default_factory=list)
+    exclusions: list[EvidenceExclusion] = Field(default_factory=list)
 
 
-class LocalGapClassifier(Protocol):
+class ConceptualStrandClassifier(Protocol):
     def classify(
         self,
         *,
         evidence_items: list[ProfileEvidenceItem],
         candidates: list[SemanticCandidateCluster],
-    ) -> list[LocalConceptGap]: ...
+    ) -> ConceptualStrandOutput: ...
 
 
 class BroaderPatternClassifier(Protocol):
     def classify(
         self,
         *,
-        recurring_gaps: list[ValidatedRecurringGap],
+        recurring_strands: list[ValidatedRecurringStrand],
         candidates: list[SemanticCandidateCluster],
     ) -> list[BroaderConceptualPattern]: ...
 
 
-class LocalConceptGapAnalyzer:
+class ConceptualStrandAnalyzer:
     def __init__(
         self,
         *,
         embedding_service: EvidenceEmbeddingService | None = None,
-        classifier: LocalGapClassifier | None = None,
-        analyzer: Callable[[list[ProfileEvidenceItem]], list[LocalConceptGap]] | None = None,
-        similarity_threshold: float = 0.78,
+        classifier: ConceptualStrandClassifier | None = None,
+        analyzer: Callable[[list[ProfileEvidenceItem]], ConceptualStrandOutput]
+        | None = None,
+        similarity_threshold: float = 0.68,
     ):
         self.embedding_service = embedding_service
         self.classifier = classifier
@@ -139,22 +165,29 @@ class LocalConceptGapAnalyzer:
         evidence_items: list[ProfileEvidenceItem],
         *,
         subject: str,
-    ) -> list[LocalConceptGap]:
+    ) -> ConceptualStrandOutput:
         if self.analyzer is not None:
-            return validate_local_gaps(self.analyzer(evidence_items), evidence_items)
-        embedding_service = self.embedding_service or EvidenceEmbeddingService()
+            return validate_conceptual_strand_output(
+                self.analyzer(evidence_items), evidence_items
+            )
+        embedding_service = self.embedding_service or EvidenceEmbeddingService(
+            input_version="conceptual-strand-v1"
+        )
         records = embedding_service.ensure_embeddings(
             subject=subject,
             evidence_items=evidence_items,
         )
-        candidates = build_local_candidate_clusters(
+        candidates = build_strand_candidate_clusters(
             evidence_items=evidence_items,
             embedding_records=records,
             similarity_threshold=self.similarity_threshold,
         )
-        classifier = self.classifier or LiteLLMLocalGapClassifier()
-        return validate_local_gaps(
-            classifier.classify(evidence_items=evidence_items, candidates=candidates),
+        classifier = self.classifier or LiteLLMConceptualStrandClassifier()
+        return validate_conceptual_strand_output(
+            classifier.classify(
+                evidence_items=evidence_items,
+                candidates=candidates,
+            ),
             evidence_items,
         )
 
@@ -166,7 +199,7 @@ class BroaderPatternAnalyzer:
         embedding_service: EvidenceEmbeddingService | None = None,
         classifier: BroaderPatternClassifier | None = None,
         analyzer: Callable[
-            [list[ValidatedRecurringGap]], list[BroaderConceptualPattern]
+            [list[ValidatedRecurringStrand]], list[BroaderConceptualPattern]
         ]
         | None = None,
         similarity_threshold: float = 0.72,
@@ -178,21 +211,23 @@ class BroaderPatternAnalyzer:
 
     def analyze(
         self,
-        recurring_gaps: list[ValidatedRecurringGap],
+        recurring_strands: list[ValidatedRecurringStrand],
         *,
         evidence_index: dict[str, ProfileEvidenceItem],
         subject: str,
     ) -> list[BroaderConceptualPattern]:
-        if len({_location(item.gap) for item in recurring_gaps}) < 2:
+        if len({item.strand.chapter_family.casefold() for item in recurring_strands}) < 2:
             return []
         if self.analyzer is not None:
-            return validate_broader_patterns(self.analyzer(recurring_gaps), recurring_gaps)
+            return validate_broader_patterns(
+                self.analyzer(recurring_strands), recurring_strands
+            )
         synthetic = [
-            _gap_as_evidence(item.gap, evidence_index)
-            for item in recurring_gaps
+            _strand_as_evidence(item.strand, evidence_index)
+            for item in recurring_strands
         ]
         embedding_service = self.embedding_service or EvidenceEmbeddingService(
-            input_version="local-gap-v1"
+            input_version="recurring-strand-v1"
         )
         records = embedding_service.ensure_embeddings(
             subject=subject,
@@ -208,8 +243,9 @@ class BroaderPatternAnalyzer:
             if len(candidate.evidence_ids) >= 2
             and len(
                 {
-                    _location(_gap_by_id(recurring_gaps, gap_id).gap)
-                    for gap_id in candidate.evidence_ids
+                    _strand_by_id(recurring_strands, strand_id)
+                    .strand.chapter_family.casefold()
+                    for strand_id in candidate.evidence_ids
                 }
             )
             >= 2
@@ -218,25 +254,44 @@ class BroaderPatternAnalyzer:
             return []
         classifier = self.classifier or LiteLLMBroaderPatternClassifier()
         return validate_broader_patterns(
-            classifier.classify(recurring_gaps=recurring_gaps, candidates=candidates),
-            recurring_gaps,
+            classifier.classify(
+                recurring_strands=recurring_strands,
+                candidates=candidates,
+            ),
+            recurring_strands,
         )
 
 
-def build_local_candidate_clusters(
+def normalize_chapter_family(chapter: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", chapter.casefold()).strip()
+    if "electrostatic" in normalized or "capacitan" in normalized:
+        return "Electrostatics and Capacitance"
+    if "electromagnetic induction" in normalized:
+        return "Electromagnetic Induction"
+    if "magnetic effect" in normalized or normalized in {
+        "magnetism",
+        "magnetism and matter",
+    }:
+        return "Magnetic Effects and Magnetism"
+    if "current electricity" in normalized:
+        return "Current Electricity"
+    return " ".join(word.capitalize() for word in normalized.split())
+
+
+def build_strand_candidate_clusters(
     *,
     evidence_items: list[ProfileEvidenceItem],
     embedding_records,
     similarity_threshold: float,
 ) -> list[SemanticCandidateCluster]:
-    grouped: dict[tuple[str, str], list[ProfileEvidenceItem]] = {}
+    grouped: dict[str, list[ProfileEvidenceItem]] = {}
     for item in evidence_items:
         grouped.setdefault(
-            (item.canonical_chapter.casefold(), item.canonical_topic.casefold()),
+            normalize_chapter_family(item.canonical_chapter),
             [],
         ).append(item)
     candidates: list[SemanticCandidateCluster] = []
-    for context_index, items in enumerate(grouped.values(), start=1):
+    for family_index, (family, items) in enumerate(grouped.items(), start=1):
         local = build_embedding_candidate_clusters(
             evidence_items=items,
             embedding_records={
@@ -245,53 +300,73 @@ def build_local_candidate_clusters(
             similarity_threshold=similarity_threshold,
         )
         for candidate_index, candidate in enumerate(local, start=1):
-            candidate.candidate_id = f"context-{context_index}-candidate-{candidate_index}"
+            candidate.candidate_id = (
+                f"family-{family_index}-candidate-{candidate_index}"
+            )
+            candidate.rationale = (
+                f"Chapter family: {family}. {candidate.rationale}"
+            )
             candidates.append(candidate)
     return candidates
 
 
-def validate_local_gaps(
-    gaps: list[LocalConceptGap],
+def validate_conceptual_strand_output(
+    output: ConceptualStrandOutput,
     evidence_items: list[ProfileEvidenceItem],
-) -> list[LocalConceptGap]:
+) -> ConceptualStrandOutput:
     index = {item.evidence_id: item for item in evidence_items}
     assigned: set[str] = set()
-    for gap in gaps:
-        unknown = set(gap.evidence_ids) - set(index)
+    for strand in output.strands:
+        unknown = set(strand.evidence_ids) - set(index)
         if unknown:
-            raise ValueError(f"Local concept gap references unknown evidence ids: {sorted(unknown)}")
-        contexts = {
-            (
-                index[evidence_id].canonical_chapter.casefold(),
-                index[evidence_id].canonical_topic.casefold(),
+            raise ValueError(
+                f"Conceptual strand references unknown evidence ids: {sorted(unknown)}"
             )
-            for evidence_id in gap.evidence_ids
+        families = {
+            normalize_chapter_family(index[evidence_id].canonical_chapter)
+            for evidence_id in strand.evidence_ids
         }
-        if len(contexts) != 1:
-            raise ValueError("Local concept gap spans multiple chapter/topic contexts.")
-        if assigned.intersection(gap.evidence_ids):
-            raise ValueError("Evidence is assigned to multiple local concept gaps.")
-        assigned.update(gap.evidence_ids)
-    return gaps
+        if len(families) != 1 or strand.chapter_family.casefold() != next(
+            iter(families)
+        ).casefold():
+            raise ValueError("Conceptual strand spans multiple chapter families.")
+        manifestation_ids = [item.evidence_id for item in strand.manifestations]
+        if len(manifestation_ids) != len(set(manifestation_ids)):
+            raise ValueError("Conceptual strand contains duplicate manifestations.")
+        if set(manifestation_ids) != set(strand.evidence_ids):
+            raise ValueError(
+                "Conceptual strand manifestations must exactly cover evidence ids."
+            )
+        if assigned.intersection(strand.evidence_ids):
+            raise ValueError("Evidence is assigned to multiple conceptual strands.")
+        assigned.update(strand.evidence_ids)
+    exclusion_ids = [item.evidence_id for item in output.exclusions]
+    if len(exclusion_ids) != len(set(exclusion_ids)):
+        raise ValueError("Evidence is excluded more than once.")
+    if set(exclusion_ids) - set(index):
+        raise ValueError("Evidence exclusion references an unknown evidence id.")
+    if assigned.intersection(exclusion_ids):
+        raise ValueError("Evidence cannot be both assigned and excluded.")
+    return output
 
 
-def recurring_local_gaps(
-    gaps: list[LocalConceptGap],
+def recurring_conceptual_strands(
+    strands: list[ConceptualStrand],
     evidence_index: dict[str, ProfileEvidenceItem],
-) -> list[ValidatedRecurringGap]:
-    recurring: list[ValidatedRecurringGap] = []
-    for gap in gaps:
+) -> list[ValidatedRecurringStrand]:
+    recurring: list[ValidatedRecurringStrand] = []
+    for strand in strands:
         report_ids = {
             evidence_index[evidence_id].diagnosis_report_id
-            for evidence_id in gap.evidence_ids
+            for evidence_id in strand.evidence_ids
         }
-        if len(report_ids) < 2 or gap.confidence == "low":
+        if len(report_ids) < 2 or strand.confidence == "low":
             continue
         recurring.append(
-            ValidatedRecurringGap(
-                gap=gap,
+            ValidatedRecurringStrand(
+                strand=strand,
                 diagnosis_report_count=len(report_ids),
-                question_count=len(gap.evidence_ids),
+                question_count=len(strand.evidence_ids),
             )
         )
     return recurring
@@ -299,25 +374,31 @@ def recurring_local_gaps(
 
 def validate_broader_patterns(
     patterns: list[BroaderConceptualPattern],
-    recurring_gaps: list[ValidatedRecurringGap],
+    recurring_strands: list[ValidatedRecurringStrand],
 ) -> list[BroaderConceptualPattern]:
-    gap_index = {item.gap.gap_id: item for item in recurring_gaps}
+    strand_index = {
+        item.strand.strand_id: item for item in recurring_strands
+    }
     for pattern in patterns:
-        unknown = set(pattern.component_gap_ids) - set(gap_index)
+        unknown = set(pattern.component_strand_ids) - set(strand_index)
         if unknown:
-            raise ValueError(f"Broader pattern references unknown gap ids: {sorted(unknown)}")
-        contexts = {
-            _location(gap_index[gap_id].gap)
-            for gap_id in pattern.component_gap_ids
+            raise ValueError(
+                f"Broader pattern references unknown strand ids: {sorted(unknown)}"
+            )
+        families = {
+            strand_index[strand_id].strand.chapter_family.casefold()
+            for strand_id in pattern.component_strand_ids
         }
-        if len(contexts) < 2:
-            raise ValueError("Broader pattern must span distinct chapter/topic contexts.")
+        if len(families) < 2:
+            raise ValueError("Broader pattern must span distinct chapter families.")
         if pattern.confidence == "low":
             raise ValueError("Low-confidence broader patterns are not reportable.")
-        if {item.gap_id for item in pattern.manifestations} != set(
-            pattern.component_gap_ids
+        if {item.strand_id for item in pattern.manifestations} != set(
+            pattern.component_strand_ids
         ):
-            raise ValueError("Broader pattern manifestations must cover component gaps.")
+            raise ValueError(
+                "Broader pattern manifestations must cover component strands."
+            )
     return patterns
 
 
@@ -325,12 +406,16 @@ def build_longitudinal_evidence_pack(
     *,
     subject: str,
     evidence_items: list[ProfileEvidenceItem],
-    local_gaps: list[LocalConceptGap],
+    strand_output: ConceptualStrandOutput,
     broader_patterns: list[BroaderConceptualPattern],
 ) -> LongitudinalEvidencePack:
     evidence_index = {item.evidence_id: item for item in evidence_items}
-    recurring = recurring_local_gaps(local_gaps, evidence_index)
-    validated_patterns = validate_broader_patterns(broader_patterns, recurring)
+    recurring = recurring_conceptual_strands(
+        strand_output.strands, evidence_index
+    )
+    validated_patterns = validate_broader_patterns(
+        broader_patterns, recurring
+    )
     return LongitudinalEvidencePack(
         subject=subject,
         diagnosis_report_count=len(
@@ -338,12 +423,13 @@ def build_longitudinal_evidence_pack(
         ),
         question_count=len(evidence_items),
         evidence_index=evidence_index,
-        recurring_gaps=recurring,
+        recurring_strands=recurring,
         broader_patterns=validated_patterns,
+        exclusions=strand_output.exclusions,
     )
 
 
-class LiteLLMLocalGapClassifier:
+class LiteLLMConceptualStrandClassifier:
     def __init__(
         self,
         *,
@@ -353,14 +439,14 @@ class LiteLLMLocalGapClassifier:
         self.model_config = model_config or SemanticClusterModelConfig()
         self.completion_fn = completion_fn
 
-    def classify(self, *, evidence_items, candidates) -> list[LocalConceptGap]:
+    def classify(self, *, evidence_items, candidates) -> ConceptualStrandOutput:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
         kwargs.setdefault("num_retries", 0)
         response = self.completion_fn(
             **kwargs,
             messages=[
-                {"role": "system", "content": _local_system_prompt()},
+                {"role": "system", "content": _strand_system_prompt()},
                 {
                     "role": "user",
                     "content": json.dumps(
@@ -377,15 +463,15 @@ class LiteLLMLocalGapClassifier:
                 },
             ],
             response_format=_response_format(
-                "student_profile_local_concept_gaps",
-                LocalConceptGapOutput,
+                "student_profile_conceptual_strands",
+                ConceptualStrandOutput,
             ),
             caching=False,
             cache={"no-cache": True},
         )
-        return LocalConceptGapOutput.model_validate_json(
+        return ConceptualStrandOutput.model_validate_json(
             response["choices"][0]["message"]["content"].strip()
-        ).gaps
+        )
 
 
 class LiteLLMBroaderPatternClassifier:
@@ -398,7 +484,9 @@ class LiteLLMBroaderPatternClassifier:
         self.model_config = model_config or SemanticClusterModelConfig()
         self.completion_fn = completion_fn
 
-    def classify(self, *, recurring_gaps, candidates) -> list[BroaderConceptualPattern]:
+    def classify(
+        self, *, recurring_strands, candidates
+    ) -> list[BroaderConceptualPattern]:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
         kwargs.setdefault("num_retries", 0)
@@ -410,8 +498,8 @@ class LiteLLMBroaderPatternClassifier:
                     "role": "user",
                     "content": json.dumps(
                         {
-                            "recurring_gaps": [
-                                item.model_dump() for item in recurring_gaps
+                            "recurring_strands": [
+                                item.model_dump() for item in recurring_strands
                             ],
                             "candidates": [
                                 candidate.model_dump() for candidate in candidates
@@ -433,24 +521,29 @@ class LiteLLMBroaderPatternClassifier:
         ).patterns
 
 
-def _local_system_prompt() -> str:
+def _strand_system_prompt() -> str:
     return (
-        "Classify JEE diagnosis evidence into precise local concept gaps within the supplied "
-        "chapter/topic context. A gap is exact only when all evidence requires the same "
-        "concept, shows the same or equivalent misconception, and is corrected by one "
-        "targeted explanation. Split broad candidates. Do not convert arithmetic, careless "
-        "execution, or prompt-reading errors into concept gaps. Preserve evidence ids and "
-        "return strict JSON only."
+        "Synthesize precise conceptual strands from JEE question diagnoses. A strand is "
+        "one missing mental model or conceptual operation within the chapter family named "
+        "in each candidate. Different topic labels and question symptoms may belong "
+        "together only when one coherent corrective model fixes every item. You may merge "
+        "embedding candidates inside the same family, split them, or exclude evidence. "
+        "For each evidence id, state its distinct manifestation of the shared gap. Do not "
+        "create strands from arithmetic execution, ambiguous questions, generic formula "
+        "recall, carelessness, shared vocabulary, or syllabus proximity. Use exclusions "
+        "for non-conceptual or unsupported evidence. Preserve evidence ids and return "
+        "strict JSON only."
     )
 
 
 def _broader_system_prompt() -> str:
     return (
-        "Identify broader conceptual-reasoning patterns across validated recurring local "
-        "gaps from different chapter/topic contexts. A pattern must name the common reasoning "
-        "failure and common corrective principle while preserving each local manifestation. "
-        "Do not group by vocabulary, syllabus proximity, calculation slips, or generic study "
-        "behavior. Preserve component gap ids and return strict JSON only."
+        "Identify broader conceptual-reasoning patterns across validated recurring "
+        "conceptual strands from distinct chapter families. A pattern must name a precise "
+        "transferable reasoning failure and common corrective principle while preserving "
+        "each strand's distinct manifestation. Reject generic labels such as formula "
+        "recall, carelessness, calculation mistakes, vocabulary overlap, or syllabus "
+        "proximity. Preserve component strand ids and return strict JSON only."
     )
 
 
@@ -468,6 +561,7 @@ def _evidence_payload(item: ProfileEvidenceItem) -> dict[str, str]:
         "evidence_id": item.evidence_id,
         "diagnosis_report_id": item.diagnosis_report_id,
         "chapter": item.canonical_chapter,
+        "chapter_family": normalize_chapter_family(item.canonical_chapter),
         "topic": item.canonical_topic,
         "exact_concept_gap": item.exact_concept_gap,
         "likely_thought": item.likely_thought,
@@ -476,39 +570,37 @@ def _evidence_payload(item: ProfileEvidenceItem) -> dict[str, str]:
     }
 
 
-def _gap_as_evidence(
-    gap: LocalConceptGap,
+def _strand_as_evidence(
+    strand: ConceptualStrand,
     evidence_index: dict[str, ProfileEvidenceItem],
 ) -> ProfileEvidenceItem:
-    source = evidence_index[gap.evidence_ids[0]]
+    source = evidence_index[strand.evidence_ids[0]]
     return ProfileEvidenceItem(
-        evidence_id=gap.gap_id,
-        evidence_reference=gap.gap_id,
-        diagnosis_report_id=f"local-gap:{gap.gap_id}",
+        evidence_id=strand.strand_id,
+        evidence_reference=strand.strand_id,
+        diagnosis_report_id=f"conceptual-strand:{strand.strand_id}",
         diagnosis_json_s3_uri=source.diagnosis_json_s3_uri,
         subject=source.subject,
-        test_name="local-gap-synthesis",
+        test_name="conceptual-strand-synthesis",
         test_date=None,
         test_date_source="unavailable",
         diagnosis_date=source.diagnosis_date,
-        question_number=gap.gap_id,
-        chapter=gap.canonical_chapter,
-        topic=gap.canonical_topic,
-        canonical_chapter=gap.canonical_chapter,
-        canonical_topic=gap.canonical_topic,
-        exact_concept_gap=gap.concept_gap,
-        likely_thought=gap.shared_misconception,
-        why_wrong=gap.rationale,
-        deep_dive_recommendation=gap.corrective_concept,
+        question_number=strand.strand_id,
+        chapter=strand.chapter_family,
+        topic=strand.title,
+        canonical_chapter=strand.chapter_family,
+        canonical_topic=strand.title,
+        exact_concept_gap=strand.missing_mental_model,
+        likely_thought=strand.shared_failure,
+        why_wrong=strand.rationale,
+        deep_dive_recommendation=strand.corrective_model,
     )
 
 
-def _location(gap: LocalConceptGap) -> tuple[str, str]:
-    return gap.canonical_chapter.casefold(), gap.canonical_topic.casefold()
-
-
-def _gap_by_id(
-    gaps: list[ValidatedRecurringGap],
-    gap_id: str,
-) -> ValidatedRecurringGap:
-    return next(item for item in gaps if item.gap.gap_id == gap_id)
+def _strand_by_id(
+    strands: list[ValidatedRecurringStrand],
+    strand_id: str,
+) -> ValidatedRecurringStrand:
+    return next(
+        item for item in strands if item.strand.strand_id == strand_id
+    )

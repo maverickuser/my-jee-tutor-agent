@@ -143,7 +143,7 @@ class HandlerAndAppTest(unittest.TestCase):
         )
         from jee_tutor.profile.hierarchical import (
             BroaderPatternAnalyzer,
-            LocalConceptGapAnalyzer,
+            ConceptualStrandAnalyzer,
         )
         from jee_tutor.profile.reporting import ProfileAnalysisService
         from jee_tutor.profile.storage import (
@@ -193,7 +193,7 @@ class HandlerAndAppTest(unittest.TestCase):
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
-            local_gap_analyzer=LocalConceptGapAnalyzer(
+            conceptual_strand_analyzer=ConceptualStrandAnalyzer(
                 embedding_service=EvidenceEmbeddingService(
                     store=embedding_store,
                     client=SingleVectorEmbeddingClient([[0.9, 0.1]]),
@@ -292,23 +292,37 @@ class RecordingSemanticClassifier:
         self.candidates = []
 
     def classify(self, *, evidence_items, candidates):
-        from jee_tutor.profile.hierarchical import LocalConceptGap
+        from jee_tutor.profile.hierarchical import (
+            ConceptualStrand,
+            ConceptualStrandOutput,
+            StrandManifestation,
+        )
 
         self.candidates = candidates
-        return [
-            LocalConceptGap(
-                gap_id="semantic-gap-1",
-                canonical_chapter="Kinematics",
-                canonical_topic="Projectile motion",
-                required_concept="Independent motion components",
-                concept_gap="Projectile components",
-                shared_misconception="projectile speed is constant",
-                corrective_concept="resolve horizontal and vertical components",
+        return ConceptualStrandOutput(
+            strands=[
+            ConceptualStrand(
+                strand_id="semantic-strand-1",
+                chapter_family="Kinematics",
+                chapter_labels=["Kinematics"],
+                topics=["Projectile motion"],
+                title="Projectile components",
+                missing_mental_model="Independent motion components",
+                shared_failure="Treats projectile speed as constant.",
+                corrective_model="Resolve horizontal and vertical components.",
                 evidence_ids=["r1:q1", "r2:q1"],
+                manifestations=[
+                    StrandManifestation(
+                        evidence_id=evidence_id,
+                        manifestation="Did not update vertical velocity.",
+                    )
+                    for evidence_id in ["r1:q1", "r2:q1"]
+                ],
                 confidence="high",
-                rationale="Mandatory classifier accepted the cosine candidate.",
+                rationale="One component model corrects both manifestations.",
             )
-        ]
+            ]
+        )
 
 
 if __name__ == "__main__":

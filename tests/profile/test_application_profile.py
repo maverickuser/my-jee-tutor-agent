@@ -10,8 +10,10 @@ from jee_tutor.profile.embeddings import (
 )
 from jee_tutor.profile.hierarchical import (
     BroaderPatternAnalyzer,
-    LocalConceptGap,
-    LocalConceptGapAnalyzer,
+    ConceptualStrand,
+    ConceptualStrandAnalyzer,
+    ConceptualStrandOutput,
+    StrandManifestation,
 )
 from jee_tutor.profile.models import (
     StudentDiagnosisMetadata,
@@ -105,7 +107,9 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
-            local_gap_analyzer=LocalConceptGapAnalyzer(analyzer=fixed_gaps),
+            conceptual_strand_analyzer=ConceptualStrandAnalyzer(
+                analyzer=fixed_strands
+            ),
             broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
             report_service=ProfileAnalysisService(),
             artifact_writer=FakeProfileArtifactWriter(),
@@ -148,7 +152,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
-            local_gap_analyzer=LocalConceptGapAnalyzer(
+            conceptual_strand_analyzer=ConceptualStrandAnalyzer(
                 embedding_service=embedding_service,
                 classifier=classifier,
                 similarity_threshold=0.95,
@@ -175,21 +179,31 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         self.assertEqual(classifier.seen_candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
 
 
-def fixed_gaps(_items):
-    return [
-        LocalConceptGap(
-            gap_id="gap-1",
-            canonical_chapter="Kinematics",
-            canonical_topic="Projectile motion",
-            required_concept="Independent horizontal and vertical motion",
-            concept_gap="Projectile components",
-            shared_misconception="projectile speed is constant",
-            corrective_concept="resolve acceleration and velocity by component",
+def fixed_strands(_items):
+    return ConceptualStrandOutput(
+        strands=[
+        ConceptualStrand(
+            strand_id="strand-1",
+            chapter_family="Kinematics",
+            chapter_labels=["Kinematics"],
+            topics=["Projectile motion"],
+            title="Projectile components",
+            missing_mental_model="Independent horizontal and vertical motion",
+            shared_failure="Treats projectile speed as constant.",
+            corrective_model="Resolve acceleration and velocity by component.",
             evidence_ids=["r1:q1", "r2:q1"],
+            manifestations=[
+                StrandManifestation(
+                    evidence_id=evidence_id,
+                    manifestation="Did not update the vertical velocity component.",
+                )
+                for evidence_id in ["r1:q1", "r2:q1"]
+            ],
             confidence="high",
-            rationale="same gap",
+            rationale="One component model corrects both manifestations.",
         )
-    ]
+        ],
+    )
 
 
 class SequentialEmbeddingClient:
@@ -211,22 +225,32 @@ class RecordingSemanticClassifier:
         *,
         evidence_items,
         candidates: list[SemanticCandidateCluster],
-    ) -> list[LocalConceptGap]:
+    ) -> ConceptualStrandOutput:
         self.seen_candidates = candidates
-        return [
-            LocalConceptGap(
-                gap_id="gap-1",
-                canonical_chapter="Kinematics",
-                canonical_topic="Projectile motion",
-                required_concept="Independent horizontal and vertical motion",
-                concept_gap="Projectile components",
-                shared_misconception="projectile speed is constant",
-                corrective_concept="resolve acceleration and velocity by component",
+        return ConceptualStrandOutput(
+            strands=[
+            ConceptualStrand(
+                strand_id="strand-1",
+                chapter_family="Kinematics",
+                chapter_labels=["Kinematics"],
+                topics=["Projectile motion"],
+                title="Projectile components",
+                missing_mental_model="Independent horizontal and vertical motion",
+                shared_failure="Treats projectile speed as constant.",
+                corrective_model="Resolve acceleration and velocity by component.",
                 evidence_ids=[item.evidence_id for item in evidence_items],
+                manifestations=[
+                    StrandManifestation(
+                        evidence_id=item.evidence_id,
+                        manifestation="Did not update vertical velocity.",
+                    )
+                    for item in evidence_items
+                ],
                 confidence="high",
-                rationale="LLM classified these cosine-near gaps as the same underlying gap.",
+                rationale="One component model corrects all manifestations.",
             )
-        ]
+            ]
+        )
 
 
 class FakeProfileArtifactResult:
