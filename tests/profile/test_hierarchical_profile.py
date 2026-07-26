@@ -354,24 +354,14 @@ class HierarchicalProfileTest(unittest.TestCase):
         self.assertEqual(pack.evidence_index["r1:q1"].test_date, "2026-07-18")
 
     def test_litellm_classifier_returns_strands_and_strict_schema(self):
-        item = evidence(
-            "006445c3-c90d-47fa-985f-b799c78d390e:q12",
-            "006445c3-c90d-47fa-985f-b799c78d390e",
-        )
+        item = evidence("r1:q1", "r1")
         candidate = SemanticCandidateCluster(
             candidate_id="candidate-1",
-            evidence_ids=[item.evidence_id],
+            evidence_ids=["r1:q1"],
             rationale="Chapter family: Electrostatics and Capacitance.",
         )
         output = ConceptualStrandOutput(
-            strands=[strand("strand-1", ["E001"])],
-            exclusions=[
-                EvidenceExclusion(
-                    evidence_id="E001",
-                    reason="insufficient_evidence",
-                    rationale="Alias resolution is tested for exclusions too.",
-                )
-            ],
+            strands=[strand("strand-1", ["r1:q1"])]
         )
         captured = {}
 
@@ -388,18 +378,10 @@ class HierarchicalProfileTest(unittest.TestCase):
             completion_fn=completion_fn,
         ).classify(evidence_items=[item], candidates=[candidate])
 
-        self.assertEqual(actual.strands[0].evidence_ids, [item.evidence_id])
-        self.assertEqual(
-            actual.strands[0].manifestations[0].evidence_id,
-            item.evidence_id,
-        )
-        self.assertEqual(actual.exclusions[0].evidence_id, item.evidence_id)
+        self.assertEqual(actual, output)
         self.assertEqual(captured["num_retries"], 0)
         self.assertTrue(captured["response_format"]["json_schema"]["strict"])
         self.assertIn("chapter_family", captured["messages"][1]["content"])
-        self.assertIn('"evidence_id": "E001"', captured["messages"][1]["content"])
-        self.assertIn('"evidence_ids": ["E001"]', captured["messages"][1]["content"])
-        self.assertNotIn(item.evidence_id, captured["messages"][1]["content"])
 
     def test_litellm_broader_classifier_uses_recurring_strand_contract(self):
         first = ValidatedRecurringStrand(

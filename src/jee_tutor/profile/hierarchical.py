@@ -545,14 +545,6 @@ class LiteLLMConceptualStrandClassifier:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
         kwargs.setdefault("num_retries", 0)
-        alias_by_evidence_id = {
-            item.evidence_id: f"E{index:03d}"
-            for index, item in enumerate(evidence_items, start=1)
-        }
-        evidence_id_by_alias = {
-            alias: evidence_id
-            for evidence_id, alias in alias_by_evidence_id.items()
-        }
         response = self.completion_fn(
             **kwargs,
             messages=[
@@ -562,24 +554,10 @@ class LiteLLMConceptualStrandClassifier:
                     "content": json.dumps(
                         {
                             "evidence": [
-                                _evidence_payload(
-                                    item,
-                                    evidence_id=alias_by_evidence_id[
-                                        item.evidence_id
-                                    ],
-                                )
-                                for item in evidence_items
+                                _evidence_payload(item) for item in evidence_items
                             ],
                             "candidates": [
-                                candidate.model_copy(
-                                    update={
-                                        "evidence_ids": [
-                                            alias_by_evidence_id[evidence_id]
-                                            for evidence_id in candidate.evidence_ids
-                                        ]
-                                    }
-                                ).model_dump()
-                                for candidate in candidates
+                                candidate.model_dump() for candidate in candidates
                             ],
                         },
                         sort_keys=True,
@@ -593,10 +571,9 @@ class LiteLLMConceptualStrandClassifier:
             caching=False,
             cache={"no-cache": True},
         )
-        output = ConceptualStrandOutput.model_validate_json(
+        return ConceptualStrandOutput.model_validate_json(
             response["choices"][0]["message"]["content"].strip()
         )
-        return _resolve_evidence_aliases(output, evidence_id_by_alias)
 
 
 class LiteLLMBroaderPatternClassifier:
@@ -653,9 +630,7 @@ def _strand_system_prompt() -> str:
         "in each candidate. Different topic labels and question symptoms may belong "
         "together only when one coherent corrective model fixes every item. You may merge "
         "embedding candidates inside the same family, split them, or exclude evidence. "
-        "Evidence ids are short aliases such as E001; copy only aliases present in the "
-        "payload. For each evidence alias, state its distinct manifestation of the shared "
-        "gap. Do not "
+        "For each evidence id, state its distinct manifestation of the shared gap. Do not "
         "create strands from arithmetic execution, ambiguous questions, generic formula "
         "recall, carelessness, shared vocabulary, or syllabus proximity. Use exclusions "
         "for non-conceptual or unsupported evidence. Preserve evidence ids and return "
@@ -683,13 +658,9 @@ def _response_format(name: str, model: type[BaseModel]) -> dict[str, object]:
     }
 
 
-def _evidence_payload(
-    item: ProfileEvidenceItem,
-    *,
-    evidence_id: str | None = None,
-) -> dict[str, str]:
+def _evidence_payload(item: ProfileEvidenceItem) -> dict[str, str]:
     return {
-        "evidence_id": evidence_id or item.evidence_id,
+        "evidence_id": item.evidence_id,
         "diagnosis_report_id": item.diagnosis_report_id,
         "chapter": item.canonical_chapter,
         "chapter_family": normalize_chapter_family(item.canonical_chapter),
@@ -739,26 +710,3 @@ def _strand_by_id(
 
 def _unique_strings(values) -> list[str]:
     return list(dict.fromkeys(values))
-
-
-def _resolve_evidence_aliases(
-    output: ConceptualStrandOutput,
-    evidence_id_by_alias: dict[str, str],
-) -> ConceptualStrandOutput:
-    resolved = output.model_copy(deep=True)
-    for strand in resolved.strands:
-        strand.evidence_ids = [
-            evidence_id_by_alias.get(evidence_id, evidence_id)
-            for evidence_id in strand.evidence_ids
-        ]
-        for manifestation in strand.manifestations:
-            manifestation.evidence_id = evidence_id_by_alias.get(
-                manifestation.evidence_id,
-                manifestation.evidence_id,
-            )
-    for exclusion in resolved.exclusions:
-        exclusion.evidence_id = evidence_id_by_alias.get(
-            exclusion.evidence_id,
-            exclusion.evidence_id,
-        )
-    return resolved

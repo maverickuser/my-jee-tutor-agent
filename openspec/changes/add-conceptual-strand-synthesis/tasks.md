@@ -29,9 +29,3 @@
 - [x] 5.2 Add regression tests reproducing unknown-ID and cross-family production failures without weakening strict post-repair validation.
 - [x] 5.3 Run strict OpenSpec validation, full tests, required coverage, Ruff, and diff checks.
 - [x] 5.4 Commit, push, and monitor CI/CD until the deployed profile-runtime smoke test passes.
-
-## 6. Stable Evidence Membership
-
-- [x] 6.1 Send deterministic short evidence aliases in classifier evidence and candidate payloads and resolve them to authoritative IDs.
-- [x] 6.2 Add regression coverage proving UUID question suffixes are never model copying targets and aliases restore exact membership.
-- [x] 6.3 Run all local quality gates and deploy through a successful CD profile-runtime smoke.

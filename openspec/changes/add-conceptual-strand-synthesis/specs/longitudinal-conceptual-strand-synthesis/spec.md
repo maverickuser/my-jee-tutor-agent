@@ -124,14 +124,3 @@ The system SHALL reconcile semantic classifier references against the authoritat
 #### Scenario: Missing manifestation for retained evidence
 - **WHEN** a retained authoritative evidence item lacks a valid classifier manifestation
 - **THEN** the system SHALL use the source diagnostic claim as its auditable manifestation before strict validation
-
-### Requirement: Stable classifier evidence aliases
-The system SHALL represent authoritative evidence with short deterministic aliases in semantic classifier prompts and SHALL resolve returned aliases back to authoritative evidence IDs before repair and validation.
-
-#### Scenario: UUID question suffix mutation
-- **WHEN** authoritative evidence IDs contain UUID report IDs and question-number suffixes
-- **THEN** the classifier SHALL receive short aliases instead of being required to reproduce those storage IDs
-
-#### Scenario: Alias resolution
-- **WHEN** structured classifier output references a known evidence alias
-- **THEN** the adapter SHALL replace it with the exact authoritative evidence ID before downstream recurrence counting
