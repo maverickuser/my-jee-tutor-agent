@@ -10,6 +10,7 @@ from jee_tutor.profile.embeddings import (
 )
 from jee_tutor.profile.hierarchical import (
     BroaderPatternAnalyzer,
+    CandidateRelationshipDecision,
     ConceptualStrand,
     ConceptualStrandAnalyzer,
     ConceptualStrandOutput,
@@ -21,7 +22,6 @@ from jee_tutor.profile.models import (
     StructuredDiagnosisReport,
 )
 from jee_tutor.profile.reporting import ProfileAnalysisService
-from jee_tutor.profile.semantic import SemanticCandidateCluster
 from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,
@@ -155,7 +155,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
             conceptual_strand_analyzer=ConceptualStrandAnalyzer(
                 embedding_service=embedding_service,
                 classifier=classifier,
-                similarity_threshold=0.95,
+                similarity_floor=0.95,
             ),
             broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
             report_service=ProfileAnalysisService(),
@@ -176,7 +176,13 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
 
         self.assertEqual(response["profile_status"], "succeeded")
         self.assertEqual(len(embedding_table.put_items), 2)
-        self.assertEqual(classifier.seen_candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
+        self.assertEqual(
+            (
+                classifier.seen_candidate_pairs[0].left_evidence_id,
+                classifier.seen_candidate_pairs[0].right_evidence_id,
+            ),
+            ("r1:q1", "r2:q1"),
+        )
 
 
 def fixed_strands(_items):
@@ -218,16 +224,24 @@ class SequentialEmbeddingClient:
 
 class RecordingSemanticClassifier:
     def __init__(self):
-        self.seen_candidates: list[SemanticCandidateCluster] = []
+        self.seen_candidate_pairs = []
 
     def classify(
         self,
         *,
         evidence_items,
-        candidates: list[SemanticCandidateCluster],
+        candidate_pairs,
     ) -> ConceptualStrandOutput:
-        self.seen_candidates = candidates
+        self.seen_candidate_pairs = candidate_pairs
         return ConceptualStrandOutput(
+            relationships=[
+                CandidateRelationshipDecision(
+                    candidate_pair_id=pair.pair_id,
+                    relationship="same_underlying_gap",
+                    rationale="Both failures reflect the same component model.",
+                )
+                for pair in candidate_pairs
+            ],
             strands=[
             ConceptualStrand(
                 strand_id="strand-1",

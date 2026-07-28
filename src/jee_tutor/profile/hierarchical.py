@@ -9,7 +9,14 @@ from typing import Literal, Protocol
 from litellm import completion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from jee_tutor.profile.embeddings import EvidenceEmbeddingService
+from jee_tutor.profile.clustering import (
+    EvidenceNeighborPair,
+    build_mutual_neighbor_pairs,
+)
+from jee_tutor.profile.embeddings import (
+    EvidenceEmbeddingRecord,
+    EvidenceEmbeddingService,
+)
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 from jee_tutor.profile.semantic import (
     SemanticCandidateCluster,
@@ -19,6 +26,12 @@ from jee_tutor.profile.semantic import (
 
 
 Confidence = Literal["high", "medium", "low"]
+RelationshipType = Literal[
+    "same_underlying_gap",
+    "related_but_distinct",
+    "unrelated",
+    "non_conceptual",
+]
 ExclusionReason = Literal[
     "calculation_execution",
     "ambiguous_question",
@@ -39,6 +52,14 @@ class EvidenceExclusion(BaseModel):
 
     evidence_id: str = Field(min_length=1)
     reason: ExclusionReason
+    rationale: str = Field(min_length=1)
+
+
+class CandidateRelationshipDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_pair_id: str = Field(min_length=1)
+    relationship: RelationshipType
     rationale: str = Field(min_length=1)
 
 
@@ -69,6 +90,9 @@ class ConceptualStrand(BaseModel):
 class ConceptualStrandOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    relationships: list[CandidateRelationshipDecision] = Field(
+        default_factory=list
+    )
     strands: list[ConceptualStrand] = Field(default_factory=list)
     exclusions: list[EvidenceExclusion] = Field(default_factory=list)
 
@@ -132,7 +156,7 @@ class ConceptualStrandClassifier(Protocol):
         self,
         *,
         evidence_items: list[ProfileEvidenceItem],
-        candidates: list[SemanticCandidateCluster],
+        candidate_pairs: list[EvidenceNeighborPair],
     ) -> ConceptualStrandOutput: ...
 
 
@@ -153,12 +177,14 @@ class ConceptualStrandAnalyzer:
         classifier: ConceptualStrandClassifier | None = None,
         analyzer: Callable[[list[ProfileEvidenceItem]], ConceptualStrandOutput]
         | None = None,
-        similarity_threshold: float = 0.68,
+        similarity_floor: float = 0.68,
+        max_neighbors: int = 3,
     ):
         self.embedding_service = embedding_service
         self.classifier = classifier
         self.analyzer = analyzer
-        self.similarity_threshold = similarity_threshold
+        self.similarity_floor = similarity_floor
+        self.max_neighbors = max_neighbors
 
     def analyze(
         self,
@@ -174,27 +200,35 @@ class ConceptualStrandAnalyzer:
                 evidence_items,
             )
         embedding_service = self.embedding_service or EvidenceEmbeddingService(
-            input_version="conceptual-strand-v1"
+            input_version="conceptual-strand-v2"
         )
         records = embedding_service.ensure_embeddings(
             subject=subject,
             evidence_items=evidence_items,
         )
-        candidates = build_strand_candidate_clusters(
+        candidate_pairs = build_strand_candidate_pairs(
             evidence_items=evidence_items,
             embedding_records=records,
-            similarity_threshold=self.similarity_threshold,
+            similarity_floor=self.similarity_floor,
+            max_neighbors=self.max_neighbors,
         )
         classifier = self.classifier or LiteLLMConceptualStrandClassifier()
+        classified = classifier.classify(
+            evidence_items=evidence_items,
+            candidate_pairs=candidate_pairs,
+        )
+        validate_candidate_relationships(
+            classified.relationships,
+            candidate_pairs,
+        )
         return validate_conceptual_strand_output(
             repair_conceptual_strand_output(
-                classifier.classify(
-                    evidence_items=evidence_items,
-                    candidates=candidates,
-                ),
+                classified,
                 evidence_items,
+                candidate_pairs=candidate_pairs,
             ),
             evidence_items,
+            candidate_pairs=candidate_pairs,
         )
 
 
@@ -233,7 +267,7 @@ class BroaderPatternAnalyzer:
             for item in recurring_strands
         ]
         embedding_service = self.embedding_service or EvidenceEmbeddingService(
-            input_version="recurring-strand-v1"
+            input_version="recurring-strand-v2"
         )
         records = embedding_service.ensure_embeddings(
             subject=subject,
@@ -284,42 +318,45 @@ def normalize_chapter_family(chapter: str) -> str:
     return " ".join(word.capitalize() for word in normalized.split())
 
 
-def build_strand_candidate_clusters(
+def build_strand_candidate_pairs(
     *,
     evidence_items: list[ProfileEvidenceItem],
-    embedding_records,
-    similarity_threshold: float,
-) -> list[SemanticCandidateCluster]:
+    embedding_records: dict[str, EvidenceEmbeddingRecord],
+    similarity_floor: float,
+    max_neighbors: int,
+) -> list[EvidenceNeighborPair]:
     grouped: dict[str, list[ProfileEvidenceItem]] = {}
     for item in evidence_items:
         grouped.setdefault(
             normalize_chapter_family(item.canonical_chapter),
             [],
         ).append(item)
-    candidates: list[SemanticCandidateCluster] = []
-    for family_index, (family, items) in enumerate(grouped.items(), start=1):
-        local = build_embedding_candidate_clusters(
-            evidence_items=items,
-            embedding_records={
-                item.evidence_id: embedding_records[item.evidence_id] for item in items
-            },
-            similarity_threshold=similarity_threshold,
+    pairs: list[EvidenceNeighborPair] = []
+    for family in sorted(grouped):
+        family_items = grouped[family]
+        pairs.extend(
+            build_mutual_neighbor_pairs(
+                evidence_items=family_items,
+                embedding_records=embedding_records,
+                chapter_family=family,
+                similarity_floor=similarity_floor,
+                max_neighbors=max_neighbors,
+            )
         )
-        for candidate_index, candidate in enumerate(local, start=1):
-            candidate.candidate_id = (
-                f"family-{family_index}-candidate-{candidate_index}"
-            )
-            candidate.rationale = (
-                f"Chapter family: {family}. {candidate.rationale}"
-            )
-            candidates.append(candidate)
-    return candidates
+    return pairs
 
 
 def validate_conceptual_strand_output(
     output: ConceptualStrandOutput,
     evidence_items: list[ProfileEvidenceItem],
+    *,
+    candidate_pairs: list[EvidenceNeighborPair] | None = None,
 ) -> ConceptualStrandOutput:
+    if candidate_pairs is not None:
+        validate_candidate_relationships(
+            output.relationships,
+            candidate_pairs,
+        )
     index = {item.evidence_id: item for item in evidence_items}
     assigned: set[str] = set()
     for strand in output.strands:
@@ -345,6 +382,12 @@ def validate_conceptual_strand_output(
             )
         if assigned.intersection(strand.evidence_ids):
             raise ValueError("Evidence is assigned to multiple conceptual strands.")
+        if candidate_pairs is not None and len(strand.evidence_ids) > 1:
+            _validate_strand_relationship_support(
+                strand,
+                output.relationships,
+                candidate_pairs,
+            )
         assigned.update(strand.evidence_ids)
     exclusion_ids = [item.evidence_id for item in output.exclusions]
     if len(exclusion_ids) != len(set(exclusion_ids)):
@@ -359,6 +402,8 @@ def validate_conceptual_strand_output(
 def repair_conceptual_strand_output(
     output: ConceptualStrandOutput,
     evidence_items: list[ProfileEvidenceItem],
+    *,
+    candidate_pairs: list[EvidenceNeighborPair] | None = None,
 ) -> ConceptualStrandOutput:
     index = {item.evidence_id: item for item in evidence_items}
     assigned: set[str] = set()
@@ -447,9 +492,103 @@ def repair_conceptual_strand_output(
         repaired_exclusions.append(exclusion)
         excluded.add(exclusion.evidence_id)
     return ConceptualStrandOutput(
+        relationships=_ordered_relationships(
+            output.relationships,
+            candidate_pairs,
+        ),
         strands=repaired_strands,
         exclusions=repaired_exclusions,
     )
+
+
+def validate_candidate_relationships(
+    relationships: list[CandidateRelationshipDecision],
+    candidate_pairs: list[EvidenceNeighborPair],
+) -> list[CandidateRelationshipDecision]:
+    expected_pair_ids = {pair.pair_id for pair in candidate_pairs}
+    relationship_ids = [
+        relationship.candidate_pair_id for relationship in relationships
+    ]
+    if len(relationship_ids) != len(set(relationship_ids)):
+        raise ValueError("Candidate relationship decisions contain duplicate pair ids.")
+    invented = set(relationship_ids) - expected_pair_ids
+    if invented:
+        raise ValueError(
+            f"Candidate relationship decisions reference unknown pair ids: "
+            f"{sorted(invented)}"
+        )
+    missing = expected_pair_ids - set(relationship_ids)
+    if missing:
+        raise ValueError(
+            f"Candidate relationship decisions are missing pair ids: "
+            f"{sorted(missing)}"
+        )
+    return relationships
+
+
+def _ordered_relationships(
+    relationships: list[CandidateRelationshipDecision],
+    candidate_pairs: list[EvidenceNeighborPair] | None,
+) -> list[CandidateRelationshipDecision]:
+    if candidate_pairs is None:
+        return list(relationships)
+    by_pair_id = {
+        relationship.candidate_pair_id: relationship
+        for relationship in relationships
+    }
+    return [
+        by_pair_id[pair.pair_id]
+        for pair in candidate_pairs
+        if pair.pair_id in by_pair_id
+    ]
+
+
+def _validate_strand_relationship_support(
+    strand: ConceptualStrand,
+    relationships: list[CandidateRelationshipDecision],
+    candidate_pairs: list[EvidenceNeighborPair],
+) -> None:
+    relationship_by_pair_id = {
+        relationship.candidate_pair_id: relationship.relationship
+        for relationship in relationships
+    }
+    strand_evidence_ids = set(strand.evidence_ids)
+    same_gap_adjacency = {
+        evidence_id: set() for evidence_id in strand.evidence_ids
+    }
+    for pair in candidate_pairs:
+        pair_evidence_ids = {
+            pair.left_evidence_id,
+            pair.right_evidence_id,
+        }
+        if not pair_evidence_ids.issubset(strand_evidence_ids):
+            continue
+        relationship = relationship_by_pair_id[pair.pair_id]
+        if relationship != "same_underlying_gap":
+            raise ValueError(
+                "Conceptual strand contains a contradictory internal "
+                "candidate relationship."
+            )
+        same_gap_adjacency[pair.left_evidence_id].add(
+            pair.right_evidence_id
+        )
+        same_gap_adjacency[pair.right_evidence_id].add(
+            pair.left_evidence_id
+        )
+
+    reachable: set[str] = set()
+    pending = [strand.evidence_ids[0]]
+    while pending:
+        evidence_id = pending.pop()
+        if evidence_id in reachable:
+            continue
+        reachable.add(evidence_id)
+        pending.extend(same_gap_adjacency[evidence_id] - reachable)
+    if reachable != strand_evidence_ids:
+        raise ValueError(
+            "Conceptual strand is not connected by same-underlying-gap "
+            "candidate relationships."
+        )
 
 
 def recurring_conceptual_strands(
@@ -541,7 +680,12 @@ class LiteLLMConceptualStrandClassifier:
         self.model_config = model_config or SemanticClusterModelConfig()
         self.completion_fn = completion_fn
 
-    def classify(self, *, evidence_items, candidates) -> ConceptualStrandOutput:
+    def classify(
+        self,
+        *,
+        evidence_items,
+        candidate_pairs,
+    ) -> ConceptualStrandOutput:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
         kwargs.setdefault("num_retries", 0)
@@ -556,8 +700,8 @@ class LiteLLMConceptualStrandClassifier:
                             "evidence": [
                                 _evidence_payload(item) for item in evidence_items
                             ],
-                            "candidates": [
-                                candidate.model_dump() for candidate in candidates
+                            "candidate_pairs": [
+                                pair.model_dump() for pair in candidate_pairs
                             ],
                         },
                         sort_keys=True,
@@ -625,16 +769,19 @@ class LiteLLMBroaderPatternClassifier:
 
 def _strand_system_prompt() -> str:
     return (
-        "Synthesize precise conceptual strands from JEE question diagnoses. A strand is "
-        "one missing mental model or conceptual operation within the chapter family named "
-        "in each candidate. Different topic labels and question symptoms may belong "
-        "together only when one coherent corrective model fixes every item. You may merge "
-        "embedding candidates inside the same family, split them, or exclude evidence. "
-        "For each evidence id, state its distinct manifestation of the shared gap. Do not "
-        "create strands from arithmetic execution, ambiguous questions, generic formula "
-        "recall, carelessness, shared vocabulary, or syllabus proximity. Use exclusions "
-        "for non-conceptual or unsupported evidence. Preserve evidence ids and return "
-        "strict JSON only."
+        "Synthesize precise conceptual strands from JEE question diagnoses. First classify "
+        "every supplied candidate pair exactly once as same_underlying_gap, "
+        "related_but_distinct, unrelated, or non_conceptual, with a specific rationale. "
+        "A strand is one missing mental model or conceptual operation within the pair's "
+        "chapter family. Every multi-evidence strand must be connected through candidate "
+        "pairs classified as same_underlying_gap; never place a related-but-distinct, "
+        "unrelated, or non-conceptual internal pair in one strand. Different topic labels "
+        "and question symptoms may belong together only when one coherent corrective model "
+        "fixes every item. For each evidence id, state its distinct manifestation of the "
+        "shared gap. Do not create strands from arithmetic execution, ambiguous questions, "
+        "generic formula recall, carelessness, shared vocabulary, or syllabus proximity. "
+        "Use exclusions for non-conceptual or unsupported evidence. Preserve all evidence "
+        "and candidate pair ids exactly and return strict JSON only."
     )
 
 

@@ -168,7 +168,7 @@ class HandlerAndAppTest(unittest.TestCase):
         existing_embedding_key = build_embedding_key(
             evidence_id="r1:q1",
             embedding_model="fake-embedding",
-            embedding_input_version="v1",
+            embedding_input_version="v2",
         )
         embedding_store = RecordingEmbeddingStore(
             {
@@ -177,10 +177,9 @@ class HandlerAndAppTest(unittest.TestCase):
                     embedding_key=existing_embedding_key,
                     evidence_id="r1:q1",
                     embedding_model="fake-embedding",
-                    embedding_input_version="v1",
+                    embedding_input_version="v2",
                     embedding_text_hash=embedding_text_hash(
                         build_embedding_input_text(
-                            subject="Physics",
                             evidence=existing_evidence,
                         )
                     ),
@@ -199,7 +198,7 @@ class HandlerAndAppTest(unittest.TestCase):
                     client=SingleVectorEmbeddingClient([[0.9, 0.1]]),
                 ),
                 classifier=classifier,
-                similarity_threshold=0.95,
+                similarity_floor=0.95,
             ),
             broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
             report_service=ProfileAnalysisService(),
@@ -223,7 +222,13 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
         self.assertEqual(len(embedding_store.puts), 1)
         self.assertEqual(embedding_store.puts[0].evidence_id, "r2:q1")
-        self.assertEqual(classifier.candidates[0].evidence_ids, ["r1:q1", "r2:q1"])
+        self.assertEqual(
+            (
+                classifier.candidate_pairs[0].left_evidence_id,
+                classifier.candidate_pairs[0].right_evidence_id,
+            ),
+            ("r1:q1", "r2:q1"),
+        )
         self.assertEqual(
             response["profile_report"]["recurring_gaps"][0]["title"],
             "Projectile components",
@@ -289,17 +294,26 @@ class SingleVectorEmbeddingClient:
 
 class RecordingSemanticClassifier:
     def __init__(self):
-        self.candidates = []
+        self.candidate_pairs = []
 
-    def classify(self, *, evidence_items, candidates):
+    def classify(self, *, evidence_items, candidate_pairs):
         from jee_tutor.profile.hierarchical import (
+            CandidateRelationshipDecision,
             ConceptualStrand,
             ConceptualStrandOutput,
             StrandManifestation,
         )
 
-        self.candidates = candidates
+        self.candidate_pairs = candidate_pairs
         return ConceptualStrandOutput(
+            relationships=[
+                CandidateRelationshipDecision(
+                    candidate_pair_id=pair.pair_id,
+                    relationship="same_underlying_gap",
+                    rationale="Both failures reflect the same component model.",
+                )
+                for pair in candidate_pairs
+            ],
             strands=[
             ConceptualStrand(
                 strand_id="semantic-strand-1",

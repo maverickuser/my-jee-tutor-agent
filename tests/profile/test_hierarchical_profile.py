@@ -1,11 +1,13 @@
 import json
 import unittest
 
+from jee_tutor.profile.clustering import EvidenceNeighborPair
 from jee_tutor.profile.embeddings import EvidenceEmbeddingRecord
 from jee_tutor.profile.hierarchical import (
     BroaderConceptualPattern,
     BroaderPatternAnalyzer,
     BroaderPatternManifestation,
+    CandidateRelationshipDecision,
     ConceptualStrand,
     ConceptualStrandOutput,
     EvidenceExclusion,
@@ -14,11 +16,12 @@ from jee_tutor.profile.hierarchical import (
     StrandManifestation,
     ValidatedRecurringStrand,
     build_longitudinal_evidence_pack,
-    build_strand_candidate_clusters,
+    build_strand_candidate_pairs,
     normalize_chapter_family,
     repair_conceptual_strand_output,
     recurring_conceptual_strands,
     validate_broader_patterns,
+    validate_candidate_relationships,
     validate_conceptual_strand_output,
 )
 from jee_tutor.profile.semantic import (
@@ -66,6 +69,35 @@ def strand(
         ],
         confidence=confidence,
         rationale="One node-and-equilibrium model corrects every manifestation.",
+    )
+
+
+def candidate_pair(
+    pair_id: str,
+    left_evidence_id: str,
+    right_evidence_id: str,
+    *,
+    family: str = "Electrostatics and Capacitance",
+) -> EvidenceNeighborPair:
+    return EvidenceNeighborPair(
+        pair_id=pair_id,
+        left_evidence_id=left_evidence_id,
+        right_evidence_id=right_evidence_id,
+        chapter_family=family,
+        cosine_similarity=0.91,
+        left_neighbor_rank=1,
+        right_neighbor_rank=1,
+    )
+
+
+def relationship(
+    pair_id: str,
+    label: str = "same_underlying_gap",
+) -> CandidateRelationshipDecision:
+    return CandidateRelationshipDecision(
+        candidate_pair_id=pair_id,
+        relationship=label,
+        rationale=f"Relationship rationale for {pair_id}.",
     )
 
 
@@ -119,15 +151,23 @@ class HierarchicalProfileTest(unittest.TestCase):
             for item in items
         }
 
-        candidates = build_strand_candidate_clusters(
+        pairs = build_strand_candidate_pairs(
             evidence_items=items,
             embedding_records=records,
-            similarity_threshold=0.5,
+            similarity_floor=0.5,
+            max_neighbors=3,
         )
 
         self.assertEqual(
-            [candidate.evidence_ids for candidate in candidates],
-            [["r1:q1", "r2:q1"], ["r3:q1"]],
+            [
+                (pair.left_evidence_id, pair.right_evidence_id)
+                for pair in pairs
+            ],
+            [("r1:q1", "r2:q1")],
+        )
+        self.assertEqual(
+            pairs[0].chapter_family,
+            "Electrostatics and Capacitance",
         )
 
     def test_strand_requires_manifestation_for_every_evidence_item(self):
@@ -155,6 +195,66 @@ class HierarchicalProfileTest(unittest.TestCase):
                     strands=[strand("strand-1", ["r1:q1", "r2:q1"])]
                 ),
                 items,
+            )
+
+    def test_relationship_decisions_must_exactly_cover_candidate_pairs(self):
+        pair = candidate_pair("pair-1", "r1:q1", "r2:q1")
+
+        with self.assertRaisesRegex(ValueError, "missing pair ids"):
+            validate_candidate_relationships([], [pair])
+        with self.assertRaisesRegex(ValueError, "unknown pair ids"):
+            validate_candidate_relationships(
+                [relationship("invented-pair")],
+                [pair],
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate pair ids"):
+            validate_candidate_relationships(
+                [relationship("pair-1"), relationship("pair-1")],
+                [pair],
+            )
+
+    def test_multi_evidence_strand_requires_consistent_same_gap_path(self):
+        items = [
+            evidence("r1:q1", "r1", chapter="Electrostatics"),
+            evidence("r2:q1", "r2", chapter="Electrostatics"),
+            evidence("r3:q1", "r3", chapter="Electrostatics"),
+        ]
+        pairs = [
+            candidate_pair("pair-1", "r1:q1", "r2:q1"),
+            candidate_pair("pair-2", "r2:q1", "r3:q1"),
+        ]
+        valid = ConceptualStrandOutput(
+            relationships=[relationship("pair-1"), relationship("pair-2")],
+            strands=[strand("strand-1", ["r1:q1", "r2:q1", "r3:q1"])],
+        )
+
+        self.assertEqual(
+            validate_conceptual_strand_output(
+                valid,
+                items,
+                candidate_pairs=pairs,
+            ),
+            valid,
+        )
+
+        contradictory = valid.model_copy(deep=True)
+        contradictory.relationships[1].relationship = "related_but_distinct"
+        with self.assertRaisesRegex(ValueError, "contradictory internal"):
+            validate_conceptual_strand_output(
+                contradictory,
+                items,
+                candidate_pairs=pairs,
+            )
+
+        disconnected = ConceptualStrandOutput(
+            relationships=[relationship("pair-1")],
+            strands=[strand("strand-1", ["r1:q1", "r2:q1", "r3:q1"])],
+        )
+        with self.assertRaisesRegex(ValueError, "not connected"):
+            validate_conceptual_strand_output(
+                disconnected,
+                items,
+                candidate_pairs=[pairs[0]],
             )
 
     def test_recurrence_requires_independent_reports_and_confidence(self):
@@ -353,15 +453,19 @@ class HierarchicalProfileTest(unittest.TestCase):
         self.assertEqual(pack.recurring_strands[0].strand.strand_id, "strand-1")
         self.assertEqual(pack.evidence_index["r1:q1"].test_date, "2026-07-18")
 
-    def test_litellm_classifier_returns_strands_and_strict_schema(self):
-        item = evidence("r1:q1", "r1")
-        candidate = SemanticCandidateCluster(
-            candidate_id="candidate-1",
-            evidence_ids=["r1:q1"],
-            rationale="Chapter family: Electrostatics and Capacitance.",
+    def test_litellm_classifier_returns_relationships_and_strict_schema(self):
+        items = [
+            evidence("r1:q1", "r1", chapter="Electrostatics"),
+            evidence("r2:q1", "r2", chapter="Electrostatics"),
+        ]
+        pair = candidate_pair(
+            "pair-1",
+            items[0].evidence_id,
+            items[1].evidence_id,
         )
         output = ConceptualStrandOutput(
-            strands=[strand("strand-1", ["r1:q1"])]
+            relationships=[relationship("pair-1")],
+            strands=[strand("strand-1", ["r1:q1", "r2:q1"])],
         )
         captured = {}
 
@@ -376,12 +480,13 @@ class HierarchicalProfileTest(unittest.TestCase):
         actual = LiteLLMConceptualStrandClassifier(
             model_config=FakeModelConfig(),
             completion_fn=completion_fn,
-        ).classify(evidence_items=[item], candidates=[candidate])
+        ).classify(evidence_items=items, candidate_pairs=[pair])
 
         self.assertEqual(actual, output)
         self.assertEqual(captured["num_retries"], 0)
         self.assertTrue(captured["response_format"]["json_schema"]["strict"])
         self.assertIn("chapter_family", captured["messages"][1]["content"])
+        self.assertIn("candidate_pairs", captured["messages"][1]["content"])
 
     def test_litellm_broader_classifier_uses_recurring_strand_contract(self):
         first = ValidatedRecurringStrand(

@@ -2,6 +2,7 @@ import unittest
 
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 from jee_tutor.profile.embeddings import (
+    DEFAULT_EMBEDDING_INPUT_VERSION,
     EvidenceEmbeddingRecord,
     EvidenceEmbeddingService,
     InMemoryEvidenceEmbeddingStore,
@@ -56,6 +57,32 @@ def evidence(
 
 
 class SemanticEvidencePackTest(unittest.TestCase):
+    def test_embedding_input_contains_only_conceptual_diagnosis_fields(self):
+        item = evidence("r1:q1", "r1")
+
+        embedding_text = build_embedding_input_text(
+            evidence=item,
+        )
+
+        self.assertEqual(
+            embedding_text,
+            "\n".join(
+                [
+                    "Exact concept gap: Projectile components",
+                    "Likely student thought: You likely used constant speed.",
+                    "Why wrong: Vertical acceleration changes velocity.",
+                ]
+            ),
+        )
+        for excluded_value in (
+            "Physics",
+            "Kinematics",
+            "Projectile motion",
+            "Resolve horizontal and vertical motion.",
+        ):
+            self.assertNotIn(excluded_value, embedding_text)
+        self.assertEqual(DEFAULT_EMBEDDING_INPUT_VERSION, "v2")
+
     def test_embedding_record_rejects_non_numeric_vector_components(self):
         with self.assertRaisesRegex(ValueError, "valid number"):
             EvidenceEmbeddingRecord(
@@ -131,18 +158,18 @@ class SemanticEvidencePackTest(unittest.TestCase):
             evidence("r2:q1", "r2", gap="Circular motion"),
         ]
         store = InMemoryEvidenceEmbeddingStore()
-        existing_text = build_embedding_input_text(subject="Physics", evidence=items[0])
+        existing_text = build_embedding_input_text(evidence=items[0])
         store.put_embedding(
             EvidenceEmbeddingRecord(
                 diagnosis_json_s3_uri="s3://bucket/r1.json",
                 embedding_key=build_embedding_key(
                     evidence_id="r1:q1",
                     embedding_model="fake-embedding",
-                    embedding_input_version="v1",
+                    embedding_input_version="v2",
                 ),
                 evidence_id="r1:q1",
                 embedding_model="fake-embedding",
-                embedding_input_version="v1",
+                embedding_input_version="v2",
                 embedding_text_hash=embedding_text_hash(existing_text),
                 embedding=[1.0, 0.0],
                 created_at="2026-07-18T00:00:00+00:00",

@@ -12,6 +12,7 @@ from litellm import completion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.profile.clustering import cosine_similarity
 from jee_tutor.profile.embeddings import EvidenceEmbeddingRecord, EvidenceEmbeddingService
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 
@@ -316,17 +317,6 @@ def build_embedding_candidate_clusters(
             )
         )
     return candidates
-
-
-def cosine_similarity(left: list[float], right: list[float]) -> float:
-    if len(left) != len(right):
-        raise ValueError("Embedding vectors must have the same dimensions.")
-    left_norm = sum(component * component for component in left) ** 0.5
-    right_norm = sum(component * component for component in right) ** 0.5
-    if left_norm == 0 or right_norm == 0:
-        return 0.0
-    dot_product = sum(left_component * right_component for left_component, right_component in zip(left, right, strict=True))
-    return dot_product / (left_norm * right_norm)
 
 
 def build_longitudinal_evidence_pack(

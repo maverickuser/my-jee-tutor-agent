@@ -16,7 +16,7 @@ from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 
 DEFAULT_PROFILE_EMBEDDING_MODEL = "gemini/gemini-embedding-2"
-DEFAULT_EMBEDDING_INPUT_VERSION = "v1"
+DEFAULT_EMBEDDING_INPUT_VERSION = "v2"
 DEFAULT_PROFILE_EMBEDDING_DIMENSIONS = 256
 
 EmbeddingFunction = Callable[..., Mapping[str, Any]]
@@ -239,7 +239,7 @@ class EvidenceEmbeddingService:
         records: dict[str, EvidenceEmbeddingRecord] = {}
         missing: list[tuple[ProfileEvidenceItem, str, str]] = []
         for item in evidence_items:
-            embedding_text = build_embedding_input_text(subject=subject, evidence=item)
+            embedding_text = build_embedding_input_text(evidence=item)
             text_hash = embedding_text_hash(embedding_text)
             embedding_key = build_embedding_key(
                 evidence_id=item.evidence_id,
@@ -283,16 +283,12 @@ def build_evidence_embedding_store() -> EvidenceEmbeddingStore:
     return DynamoDbEvidenceEmbeddingStore.from_environment()
 
 
-def build_embedding_input_text(*, subject: str, evidence: ProfileEvidenceItem) -> str:
+def build_embedding_input_text(*, evidence: ProfileEvidenceItem) -> str:
     return "\n".join(
         [
-            f"Subject: {subject}",
-            f"Chapter: {evidence.chapter}",
-            f"Topic: {evidence.topic}",
             f"Exact concept gap: {evidence.exact_concept_gap}",
             f"Likely student thought: {evidence.likely_thought}",
             f"Why wrong: {evidence.why_wrong}",
-            f"Deep-dive recommendation: {evidence.deep_dive_recommendation}",
         ]
     )
 
