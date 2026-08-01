@@ -312,7 +312,7 @@ class LLMClientAccountingTest(unittest.TestCase):
         )
         self.assertEqual(
             observability.generation_spans[0]["metadata"],
-            {"attempt": 1, "max_attempts": 2, "timeout_seconds": 180},
+            {"attempt": 1, "max_attempts": 2, "timeout_seconds": 360},
         )
 
     def test_each_retry_gets_a_separate_generation_span(self):

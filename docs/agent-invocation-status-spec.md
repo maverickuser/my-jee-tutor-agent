@@ -183,7 +183,7 @@ Rule:
 Short human-readable failure detail.
 
 Examples:
-- `Vision analyzer timed out after 180 seconds`
+- `Vision analyzer timed out after 360 seconds`
 - `Email address is not verified`
 - `CrewAI final output was invalid`
 

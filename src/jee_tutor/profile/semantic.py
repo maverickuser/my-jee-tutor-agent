@@ -12,6 +12,7 @@ from litellm import completion
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.model_config import DEFAULT_LLM_TIMEOUT_SECONDS
 from jee_tutor.profile.clustering import cosine_similarity
 from jee_tutor.profile.embeddings import EvidenceEmbeddingRecord, EvidenceEmbeddingService
 from jee_tutor.profile.evidence import ProfileEvidenceItem
@@ -233,7 +234,7 @@ class SemanticClusterModelConfig:
             or DEFAULT_SEMANTIC_CLUSTER_MODEL
         )
         completion_options = _config_section(self.config, "completion")
-        completion_options.setdefault("timeout", 180)
+        completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)
         return SemanticClusterModelSettings(
             model=model,
             api_key=_api_key_for_model(model, self.environ),

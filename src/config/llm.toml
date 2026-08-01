@@ -25,7 +25,7 @@ max_orchestration_calls = 2
 
 [completion]
 temperature = 0.2
-timeout = 180
+timeout = 360
 num_retries = 0
 
 # Add any LiteLLM completion kwarg here, for example:

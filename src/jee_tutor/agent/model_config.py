@@ -7,7 +7,7 @@ from typing import Any
 from jee_tutor.agent.config_loader import LLMConfig
 
 
-DEFAULT_LLM_TIMEOUT_SECONDS = 180
+DEFAULT_LLM_TIMEOUT_SECONDS = 360
 DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
 CREWAI_MODEL = "gemini/gemini-3-flash-preview"
 

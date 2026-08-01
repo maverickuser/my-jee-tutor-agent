@@ -452,6 +452,7 @@ class SemanticEvidencePackTest(unittest.TestCase):
             config={"completion": "bad"},
         ).resolve()
         self.assertEqual(fallback.api_key, "litellm-key")
+        self.assertEqual(fallback.completion_options["timeout"], 360)
 
     def test_evidence_pack_marks_recurrence_only_across_reports(self):
         items = [
