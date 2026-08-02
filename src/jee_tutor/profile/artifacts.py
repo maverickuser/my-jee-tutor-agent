@@ -1,32 +1,43 @@
+"""PDF persistence for student-facing profile reports."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import json
+from dataclasses import dataclass
 import logging
 import os
 import re
+from typing import Protocol
 from urllib.parse import urlparse
 
 import boto3
 
 from jee_tutor.artifacts.pdf import PandocPdfRenderer
-from jee_tutor.profile.reporting import ProfileReportOutput
-
 
 logger = logging.getLogger(__name__)
 DEFAULT_PROFILE_REPORT_S3_PREFIX = "profile-reports"
+DEFAULT_PROFILE_REPORT_S3_BUCKET = "jee-tutor-agent-terraform-state"
+
+
+class PdfRenderer(Protocol):
+    def render(self, markdown: str) -> bytes: ...
+
+
+class S3ObjectWriter(Protocol):
+    def put_object(self, **kwargs): ...
 
 
 @dataclass(frozen=True)
 class ProfileReportArtifactConfig:
-    bucket: str = ""
+    bucket: str = DEFAULT_PROFILE_REPORT_S3_BUCKET
     prefix: str = DEFAULT_PROFILE_REPORT_S3_PREFIX
     region: str = "ap-south-1"
 
     @classmethod
     def from_environment(cls) -> "ProfileReportArtifactConfig":
         return cls(
-            bucket=os.getenv("PROFILE_REPORT_S3_BUCKET", "").strip(),
+            bucket=os.getenv(
+                "PROFILE_REPORT_S3_BUCKET", DEFAULT_PROFILE_REPORT_S3_BUCKET
+            ).strip(),
             prefix=os.getenv(
                 "PROFILE_REPORT_S3_PREFIX",
                 DEFAULT_PROFILE_REPORT_S3_PREFIX,
@@ -35,26 +46,22 @@ class ProfileReportArtifactConfig:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProfileReportArtifactResult:
     pdf_uri: str | None = None
-    markdown_uri: str | None = None
-    json_uri: str | None = None
-    errors: list[str] = field(default_factory=list)
+    error: str | None = None
 
     @property
     def status(self) -> str:
-        if not self.configured:
+        if not self.pdf_uri and not self.error:
             return "disabled"
-        if self.pdf_uri and self.json_uri:
+        if self.pdf_uri:
             return "succeeded"
-        if self.markdown_uri or self.json_uri:
-            return "partial"
         return "failed"
 
     @property
-    def configured(self) -> bool:
-        return bool(self.pdf_uri or self.markdown_uri or self.json_uri or self.errors)
+    def errors(self) -> list[str]:
+        return [self.error] if self.error else []
 
 
 class ProfileReportArtifactWriter:
@@ -62,8 +69,8 @@ class ProfileReportArtifactWriter:
         self,
         *,
         config: ProfileReportArtifactConfig | None = None,
-        s3_client=None,
-        pdf_renderer: PandocPdfRenderer | None = None,
+        s3_client: S3ObjectWriter | None = None,
+        pdf_renderer: PdfRenderer | None = None,
     ):
         self.config = config or ProfileReportArtifactConfig.from_environment()
         self.s3_client = s3_client
@@ -75,7 +82,6 @@ class ProfileReportArtifactWriter:
         student_id: str,
         student_name: str,
         subject: str,
-        profile_report: ProfileReportOutput,
         profile_markdown: str,
     ) -> ProfileReportArtifactResult:
         if not self.config.bucket:
@@ -87,76 +93,19 @@ class ProfileReportArtifactWriter:
             subject=subject,
             suffix=".pdf",
         )
-        result = ProfileReportArtifactResult()
         try:
             pdf_bytes = self.pdf_renderer.render(profile_markdown)
             self._upload(pdf_uri, pdf_bytes, "application/pdf")
-            result.pdf_uri = pdf_uri
             logger.info("profile_report_pdf_upload uri=%s bytes=%s", pdf_uri, len(pdf_bytes))
+            return ProfileReportArtifactResult(pdf_uri=pdf_uri)
         except Exception as exc:
-            result.errors.append(
-                f"Failed to write profile report PDF: {exc.__class__.__name__}: "
-                f"{exc or '[no message]'}"
-            )
+            error = _artifact_error("PDF", exc)
             logger.exception(
                 "profile_report_pdf_error error_type=%s error=%s",
                 exc.__class__.__name__,
                 exc or "[no message]",
             )
-
-        markdown_uri = self._profile_uri(
-            student_id=student_id,
-            student_name=student_name,
-            subject=subject,
-            suffix=".md",
-        )
-        try:
-            markdown_bytes = profile_markdown.encode("utf-8")
-            self._upload(markdown_uri, markdown_bytes, "text/markdown; charset=utf-8")
-            result.markdown_uri = markdown_uri
-            logger.info(
-                "profile_report_markdown_upload uri=%s bytes=%s",
-                markdown_uri,
-                len(markdown_bytes),
-            )
-        except Exception as exc:
-            result.errors.append(
-                f"Failed to write profile report markdown: {exc.__class__.__name__}: "
-                f"{exc or '[no message]'}"
-            )
-            logger.exception(
-                "profile_report_markdown_error error_type=%s error=%s",
-                exc.__class__.__name__,
-                exc or "[no message]",
-            )
-
-        json_uri = self._profile_uri(
-            student_id=student_id,
-            student_name=student_name,
-            subject=subject,
-            suffix=".json",
-        )
-        try:
-            json_bytes = json.dumps(
-                profile_report.model_dump(mode="json"),
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            self._upload(json_uri, json_bytes, "application/json")
-            result.json_uri = json_uri
-            logger.info("profile_report_json_upload uri=%s bytes=%s", json_uri, len(json_bytes))
-        except Exception as exc:
-            result.errors.append(
-                f"Failed to write profile report JSON: {exc.__class__.__name__}: "
-                f"{exc or '[no message]'}"
-            )
-            logger.exception(
-                "profile_report_json_error error_type=%s error=%s",
-                exc.__class__.__name__,
-                exc or "[no message]",
-            )
-
-        return result
+            return ProfileReportArtifactResult(error=error)
 
     def _profile_uri(
         self,
@@ -170,9 +119,8 @@ class ProfileReportArtifactWriter:
             part
             for part in [
                 self.config.prefix,
-                _safe_path_part(student_id),
-                _safe_path_part(student_name),
-                "profile_reports",
+                f"{_safe_path_part(student_name)}+{_safe_path_part(student_id)}",
+                _safe_path_part(subject),
                 f"{_safe_path_part(subject)}_profile_report{suffix}",
             ]
             if part
@@ -196,7 +144,9 @@ class ProfileReportArtifactWriter:
 
 def _safe_path_part(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
-    return normalized or "unknown"
+    if not normalized:
+        raise ValueError("Profile path component is blank after sanitization.")
+    return normalized
 
 
 def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
@@ -204,3 +154,15 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     if parsed.scheme != "s3" or not parsed.netloc or not parsed.path.strip("/"):
         raise ValueError(f"Invalid S3 URI: {s3_uri}")
     return parsed.netloc, parsed.path.lstrip("/")
+
+
+def _artifact_error(artifact: str, exc: Exception) -> str:
+    message = str(exc) or "[no message]"
+    return f"Failed to write profile report {artifact}: {exc.__class__.__name__}: {message}"
+
+
+__all__ = [
+    "ProfileReportArtifactConfig",
+    "ProfileReportArtifactResult",
+    "ProfileReportArtifactWriter",
+]

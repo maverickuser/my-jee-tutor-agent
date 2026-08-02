@@ -9,7 +9,6 @@ from jee_tutor.profile.embeddings import (
     EvidenceEmbeddingService,
 )
 from jee_tutor.profile.hierarchical import (
-    BroaderPatternAnalyzer,
     CandidateRelationshipDecision,
     ConceptualStrand,
     ConceptualStrandAnalyzer,
@@ -21,7 +20,6 @@ from jee_tutor.profile.models import (
     StructuredDiagnosisQuestionEvidence,
     StructuredDiagnosisReport,
 )
-from jee_tutor.profile.reporting import ProfileAnalysisService
 from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,
@@ -110,8 +108,6 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
             conceptual_strand_analyzer=ConceptualStrandAnalyzer(
                 analyzer=fixed_strands
             ),
-            broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
-            report_service=ProfileAnalysisService(),
             artifact_writer=FakeProfileArtifactWriter(),
         )
 
@@ -127,12 +123,15 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         self.assertEqual(response["runtime_commit_sha"], "profile-sha")
         self.assertEqual(response["profile_artifact_status"], "succeeded")
         self.assertEqual(
-            response["profile_pdf_uri"],
-            "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.pdf",
+            response["profile_report_pdf_uri"],
+            "s3://profile-bucket/profile-reports/Mock_Student+YWuzXTHQ/Physics/Physics_profile_report.pdf",
         )
         self.assertEqual(response["profile_artifact_errors"], [])
-        self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
-        self.assertIn("Projectile components", response["profile_markdown"])
+        self.assertIn("What to do differently next time", response["profile_markdown"])
+        self.assertIn("**Do:**", response["profile_markdown"])
+        self.assertIn("**Ask this when you see:**", response["profile_markdown"])
+        self.assertNotIn("r1:q1", response["profile_markdown"])
+        self.assertEqual(len(response["profile_internal_metadata"]["insights"]), 1)
 
     def test_profile_request_creates_dynamodb_embeddings_before_semantic_classification(self):
         metadata_store = InMemoryStudentDiagnosisMetadataStore()
@@ -157,8 +156,6 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
                 classifier=classifier,
                 similarity_floor=0.95,
             ),
-            broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
-            report_service=ProfileAnalysisService(),
             artifact_writer=FakeProfileArtifactWriter(),
         )
 
@@ -269,9 +266,7 @@ class RecordingSemanticClassifier:
 
 class FakeProfileArtifactResult:
     status = "succeeded"
-    pdf_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.pdf"
-    markdown_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.md"
-    json_uri = "s3://profile-bucket/YWuzXTHQ/Mock_Student/profile_reports/Physics_profile_report.json"
+    pdf_uri = "s3://profile-bucket/profile-reports/Mock_Student+YWuzXTHQ/Physics/Physics_profile_report.pdf"
     errors = []
 
 

@@ -1,16 +1,16 @@
 """Diagnosis domain contract re-exports."""
 
 from jee_tutor.agent.diagnosis_output import (
-    DiagnosisQuestion,
+    QuestionDiagnosis as DiagnosisQuestion,
     DiagnosisResponse,
-    diagnosis_response_schema,
+    diagnosis_response_format as diagnosis_response_schema,
     parse_and_validate_diagnosis,
     render_diagnosis_markdown,
 )
 from jee_tutor.agent.output_validation import (
     REQUIRED_MARKDOWN_COLUMNS,
     OutputValidationError,
-    validate_analysis_output,
+    validate_markdown_analysis as validate_analysis_output,
 )
 
 __all__ = [

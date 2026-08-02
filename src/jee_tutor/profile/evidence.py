@@ -51,6 +51,7 @@ class ProfileEvidenceLoadResult(BaseModel):
     evidence_items: list[ProfileEvidenceItem] = Field(default_factory=list)
     no_history: bool = False
     message: str | None = None
+    loading_errors: list[str] = Field(default_factory=list)
 
 
 class ProfileEvidenceLoader:
@@ -75,16 +76,26 @@ class ProfileEvidenceLoader:
                 message="No diagnosis history is available for this student and subject.",
             )
 
-        reports = [
-            self.artifact_store.load_report(s3_uri=metadata.diagnosis_json_s3_uri)
-            for metadata in metadata_records
-        ]
+        reports: list[StructuredDiagnosisReport] = []
+        loading_errors: list[str] = []
+        for metadata in metadata_records:
+            try:
+                reports.append(
+                    self.artifact_store.load_report(
+                        s3_uri=metadata.diagnosis_json_s3_uri
+                    )
+                )
+            except Exception as exc:
+                loading_errors.append(
+                    f"{metadata.diagnosis_report_id}: {exc.__class__.__name__}"
+                )
         evidence_items = _evidence_items_from_reports(metadata_records, reports)
         if not evidence_items:
             return ProfileEvidenceLoadResult(
                 request=request,
                 metadata_records=metadata_records,
                 reports=reports,
+                loading_errors=loading_errors,
                 no_history=True,
                 message="No diagnosis question evidence is available for this student and subject.",
             )
@@ -93,6 +104,7 @@ class ProfileEvidenceLoader:
             metadata_records=metadata_records,
             reports=reports,
             evidence_items=evidence_items,
+            loading_errors=loading_errors,
         )
 
 

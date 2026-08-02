@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "source_inventory": {
+    "structured_reports": 18,
+    "matching_manual_embeddings": 105,
+    "subjects": {
+      "Maths": {"reports": 6, "questions": 43},
+      "Physics": {"reports": 6, "questions": 26},
+      "Chemistry": {"reports": 6, "questions": 36}
+    }
+  },
+  "cases": [
+    {
+      "id": "maths-all-cases",
+      "subject": "Maths",
+      "supported": true,
+      "independent_questions": 3,
+      "heading": "Have I checked every possible case?",
+      "do": "List the cases first, solve each one, then combine the valid answers.",
+      "ask_this_when_you_see": "modulus, roots, a graph, or a piecewise rule"
+    },
+    {
+      "id": "physics-direction-check",
+      "subject": "Physics",
+      "supported": true,
+      "independent_questions": 2,
+      "heading": "Have I fixed the direction before using signs?",
+      "do": "Draw the positive direction and label every vector before writing equations.",
+      "ask_this_when_you_see": "directions, components, forces, fields, or motion"
+    },
+    {
+      "id": "chemistry-condition-check",
+      "subject": "Chemistry",
+      "supported": true,
+      "independent_questions": 2,
+      "heading": "Which condition controls this reaction?",
+      "do": "Circle the reagent and condition, then write the rule they activate.",
+      "ask_this_when_you_see": "a reagent, temperature, medium, exception, or named reaction"
+    },
+    {
+      "id": "reject-shared-chapter-only",
+      "subject": "Maths",
+      "supported": false,
+      "independent_questions": 2,
+      "rejection_reason": "The questions share a chapter but need different preventive actions."
+    }
+  ]
+}

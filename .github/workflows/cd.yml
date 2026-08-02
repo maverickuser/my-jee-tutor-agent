@@ -19,14 +19,14 @@ env:
   CD_EVAL_IMAGE_S3_PREFIX: ${{ vars.CD_EVAL_IMAGE_S3_PREFIX || '' }}
   VISION_MODEL: ${{ vars.VISION_MODEL || 'gemini/gemini-2.5-pro' }}
   CREWAI_MODEL: ${{ vars.CREWAI_MODEL || 'gemini/gemini-3-flash-preview' }}
-  PROFILE_REPORT_MODEL: ${{ vars.PROFILE_REPORT_MODEL || 'gemini/gemini-2.5-pro' }}
   PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || 'gemini/gemini-embedding-2' }}
   PROFILE_SEMANTIC_CLUSTER_MODEL: ${{ vars.PROFILE_SEMANTIC_CLUSTER_MODEL || 'gemini/gemini-2.5-pro' }}
   PROFILE_REPORT_S3_BUCKET: ${{ vars.PROFILE_REPORT_S3_BUCKET || vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
-  PROFILE_REPORT_S3_PREFIX: ${{ vars.PROFILE_REPORT_S3_PREFIX || 'cd-evals-images/profile-reports' }}
+  PROFILE_REPORT_S3_PREFIX: ${{ vars.PROFILE_REPORT_S3_PREFIX || 'profile-reports' }}
   STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.STRUCTURED_DIAGNOSIS_ENABLED || 'true' }}
-  PROFILE_REPORT_LLM_ENABLED: ${{ vars.PROFILE_REPORT_LLM_ENABLED || 'true' }}
   CURRICULUM_TAXONOMY_S3_URI: ${{ vars.CURRICULUM_TAXONOMY_S3_URI || format('s3://{0}/curriculum/jee_curriculum_taxonomy.json', vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state') }}
+  CHAPTER_WEIGHTAGE_S3_BUCKET: ${{ vars.CHAPTER_WEIGHTAGE_S3_BUCKET || vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
+  CHAPTER_WEIGHTAGE_S3_PREFIX: ${{ vars.CHAPTER_WEIGHTAGE_S3_PREFIX || 'curriculum/chapter-weightage' }}
   CURRICULUM_TAXONOMY_REQUIRED: ${{ vars.CURRICULUM_TAXONOMY_REQUIRED || 'true' }}
   CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS: ${{ vars.CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS || '3600' }}
   BEDROCK_GUARDRAIL_ENABLED: ${{ vars.BEDROCK_GUARDRAIL_ENABLED || 'true' }}
@@ -83,14 +83,12 @@ jobs:
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
           TF_VAR_vision_model: ${{ env.VISION_MODEL }}
           TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
           TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
           TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
           TF_VAR_profile_report_s3_bucket_name: ${{ env.PROFILE_REPORT_S3_BUCKET }}
           TF_VAR_profile_report_s3_bucket_create: "false"
           TF_VAR_profile_report_s3_prefix: ${{ env.PROFILE_REPORT_S3_PREFIX }}
           TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
-          TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
           TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
@@ -193,7 +191,7 @@ jobs:
           echo "image_uri=$ECR_REPOSITORY_URL:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
   prepare_curriculum_taxonomy:
-    name: Prepare Curriculum Taxonomy JSON
+    name: Prepare Curriculum JSON
     runs-on: ubuntu-latest
     needs:
       - unit_integration_tests
@@ -236,14 +234,25 @@ jobs:
             --s3-uri "$CURRICULUM_TAXONOMY_S3_URI" \
             | tee eval_runs/curriculum-taxonomy-publish.json
 
-      - name: Upload taxonomy publish report
+      - name: Validate and upload chapter weightage when changed
+        run: |
+          set -o pipefail
+          poetry run python scripts/publish_chapter_weightage.py \
+            --source-dir knowledge/chapter_weightage \
+            --bucket "$CHAPTER_WEIGHTAGE_S3_BUCKET" \
+            --prefix "$CHAPTER_WEIGHTAGE_S3_PREFIX" \
+            | tee eval_runs/chapter-weightage-publish.json
+
+      - name: Upload curriculum publish report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: curriculum-taxonomy-publish-report
+          name: curriculum-publish-report
           path: |
             knowledge/jee_curriculum_taxonomy.json
+            knowledge/chapter_weightage/*.json
             eval_runs/curriculum-taxonomy-publish.json
+            eval_runs/chapter-weightage-publish.json
           if-no-files-found: error
 
   deploy_runtime:
@@ -317,14 +326,12 @@ jobs:
           TF_VAR_litellm_base_url: ${{ secrets.LITELLM_BASE_URL }}
           TF_VAR_vision_model: ${{ env.VISION_MODEL }}
           TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
-          TF_VAR_profile_report_model: ${{ env.PROFILE_REPORT_MODEL }}
           TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
           TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
           TF_VAR_profile_report_s3_bucket_name: ${{ env.PROFILE_REPORT_S3_BUCKET }}
           TF_VAR_profile_report_s3_bucket_create: "false"
           TF_VAR_profile_report_s3_prefix: ${{ env.PROFILE_REPORT_S3_PREFIX }}
           TF_VAR_structured_diagnosis_enabled: ${{ env.STRUCTURED_DIAGNOSIS_ENABLED }}
-          TF_VAR_profile_report_llm_enabled: ${{ env.PROFILE_REPORT_LLM_ENABLED }}
           TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
           TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
@@ -516,9 +523,7 @@ jobs:
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           VISION_MODEL: ${{ vars.CD_EVAL_VISION_MODEL || (secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o' || env.VISION_MODEL) }}
           CREWAI_MODEL: ${{ vars.CD_EVAL_CREWAI_MODEL || (secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o' || env.CREWAI_MODEL) }}
-          PROFILE_REPORT_MODEL: ${{ vars.CD_EVAL_PROFILE_REPORT_MODEL || env.PROFILE_REPORT_MODEL }}
           STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.CD_EVAL_STRUCTURED_DIAGNOSIS_ENABLED || (secrets.OPENAI_API_KEY != '' && 'false' || env.STRUCTURED_DIAGNOSIS_ENABLED) }}
-          PROFILE_REPORT_LLM_ENABLED: ${{ vars.CD_EVAL_PROFILE_REPORT_LLM_ENABLED || env.PROFILE_REPORT_LLM_ENABLED }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
@@ -533,6 +538,14 @@ jobs:
             --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
             --output eval_runs/agent-evals.json \
             --min-score "$CD_EVAL_MIN_SCORE"
+
+      - name: Run actionable profile contract evals
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/run_actionable_profile_evals.py \
+            --cases evals/actionable_profile_v1.json \
+            --output eval_runs/actionable-profile-evals.json
 
       - name: Upload eval reports
         if: always()
@@ -590,9 +603,7 @@ jobs:
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           VISION_MODEL: ${{ vars.GARAK_VISION_MODEL || env.VISION_MODEL }}
           CREWAI_MODEL: ${{ vars.GARAK_CREWAI_MODEL || env.CREWAI_MODEL }}
-          PROFILE_REPORT_MODEL: ${{ vars.GARAK_PROFILE_REPORT_MODEL || env.PROFILE_REPORT_MODEL }}
           STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.GARAK_STRUCTURED_DIAGNOSIS_ENABLED || env.STRUCTURED_DIAGNOSIS_ENABLED }}
-          PROFILE_REPORT_LLM_ENABLED: ${{ vars.GARAK_PROFILE_REPORT_LLM_ENABLED || env.PROFILE_REPORT_LLM_ENABLED }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}

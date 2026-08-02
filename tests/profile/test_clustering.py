@@ -9,7 +9,7 @@ from jee_tutor.profile.clustering import (
     cosine_similarity,
 )
 from jee_tutor.profile.embeddings import EvidenceEmbeddingRecord
-from tests.profile.test_semantic_evidence_pack import evidence
+from jee_tutor.profile.evidence import ProfileEvidenceItem
 
 
 class MutualNeighborClusteringTest(unittest.TestCase):
@@ -176,6 +176,25 @@ class MutualNeighborClusteringTest(unittest.TestCase):
 
 def _unit_vector(angle: float) -> list[float]:
     return [math.cos(angle), math.sin(angle)]
+
+
+def evidence(evidence_id: str, report_id: str) -> ProfileEvidenceItem:
+    return ProfileEvidenceItem(
+        evidence_id=evidence_id,
+        evidence_reference=evidence_id,
+        diagnosis_report_id=report_id,
+        diagnosis_json_s3_uri=f"s3://bucket/{report_id}.json",
+        subject="Physics",
+        test_name="Test",
+        diagnosis_date="2026-01-01T00:00:00Z",
+        question_number="1",
+        chapter="Kinematics",
+        topic="Projectile motion",
+        exact_concept_gap="Projectile components",
+        likely_thought="Treated motion as one-dimensional.",
+        why_wrong="Components must be resolved.",
+        deep_dive_recommendation="Resolve vector components.",
+    )
 
 
 def _embedding_records(

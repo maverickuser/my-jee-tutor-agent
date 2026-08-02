@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import uuid
 from urllib.parse import urlparse
 
@@ -48,7 +49,7 @@ def main() -> int:
     second_poll_count = 0
     embedding_count = 0
     diagnosis_json_uri = None
-    profile_pdf_uri = None
+    profile_report_pdf_uri = None
     subject = None
     try:
         diagnosis_smoke_report = _load_json_file(args.diagnosis_smoke_report)
@@ -90,12 +91,15 @@ def main() -> int:
             failures.append("profile_markdown_missing")
         if first.get("profile_artifact_status") != "succeeded":
             failures.append("profile_artifact_not_succeeded")
-        profile_pdf_uri = first.get("profile_pdf_uri")
-        if not profile_pdf_uri:
-            failures.append("profile_pdf_uri_missing")
+        profile_report_pdf_uri = first.get("profile_report_pdf_uri")
+        if not profile_report_pdf_uri:
+            failures.append("profile_report_pdf_uri_missing")
         else:
+            expected_key = _expected_profile_pdf_key(report, subject)
+            if urlparse(profile_report_pdf_uri).path.lstrip("/") != expected_key:
+                failures.append("profile_pdf_key_invalid")
             try:
-                _head_s3_uri(profile_pdf_uri)
+                _head_s3_uri(profile_report_pdf_uri)
             except Exception:
                 failures.append("profile_pdf_not_found")
         if "image_s3_prefix" in first or "analysis" in first:
@@ -134,9 +138,7 @@ def main() -> int:
             "profile_status": first.get("profile_status"),
             "profile_markdown_present": bool(first.get("profile_markdown")),
             "profile_artifact_status": first.get("profile_artifact_status"),
-            "profile_pdf_uri": profile_pdf_uri,
-            "profile_markdown_uri": first.get("profile_markdown_uri"),
-            "profile_json_uri": first.get("profile_json_uri"),
+            "profile_report_pdf_uri": profile_report_pdf_uri,
             "profile_artifact_errors": first.get("profile_artifact_errors", []),
             "embedding_record_count": embedding_count,
             "idempotency_replay_succeeded": second.get("profile_status") == "succeeded",
@@ -152,7 +154,7 @@ def main() -> int:
             "diagnosis_smoke_report": args.diagnosis_smoke_report,
             "diagnosis_json_uri": diagnosis_json_uri,
             "subject": subject,
-            "profile_pdf_uri": profile_pdf_uri,
+            "profile_report_pdf_uri": profile_report_pdf_uri,
             "recipient_email": email,
             "failed_assertions": failures,
             "error_type": type(exc).__name__,
@@ -173,6 +175,23 @@ def main() -> int:
 
 class ProfileSmokePreconditionError(RuntimeError):
     pass
+
+
+def _expected_profile_pdf_key(report: dict, subject: str) -> str:
+    student_name = _safe_path_part(str(report["student_name"]))
+    student_id = _safe_path_part(str(report["student_id"]))
+    safe_subject = _safe_path_part(subject)
+    return (
+        f"profile-reports/{student_name}+{student_id}/{safe_subject}/"
+        f"{safe_subject}_profile_report.pdf"
+    )
+
+
+def _safe_path_part(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("._-")
+    if not normalized:
+        raise ProfileSmokePreconditionError("Profile path component is blank.")
+    return normalized
 
 
 def _load_json_file(path: str) -> dict:

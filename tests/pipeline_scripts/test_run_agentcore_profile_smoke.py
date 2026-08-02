@@ -55,9 +55,7 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
             "profile_status": "succeeded",
             "profile_markdown": "# Physics Longitudinal Profile",
             "profile_artifact_status": "succeeded",
-            "profile_pdf_uri": "s3://profile-bucket/student/profile_report.pdf",
-            "profile_markdown_uri": "s3://profile-bucket/student/profile_report.md",
-            "profile_json_uri": "s3://profile-bucket/student/profile_report.json",
+            "profile_report_pdf_uri": "s3://profile-bucket/profile-reports/CD_Smoke+student-1/Physics/Physics_profile_report.pdf",
             "profile_artifact_errors": [],
             "runtime_commit_sha": "abc123",
         }
@@ -119,12 +117,12 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
         self.assertEqual(report["embedding_record_count"], 2)
         self.assertEqual(report["profile_artifact_status"], "succeeded")
         self.assertEqual(
-            report["profile_pdf_uri"],
-            "s3://profile-bucket/student/profile_report.pdf",
+            report["profile_report_pdf_uri"],
+            "s3://profile-bucket/profile-reports/CD_Smoke+student-1/Physics/Physics_profile_report.pdf",
         )
         s3_client.head_object.assert_called_once_with(
             Bucket="profile-bucket",
-            Key="student/profile_report.pdf",
+            Key="profile-reports/CD_Smoke+student-1/Physics/Physics_profile_report.pdf",
         )
         put_metadata.assert_called_once()
         metadata_item = put_metadata.call_args.args[1]
@@ -176,7 +174,7 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
             "profile_status": "succeeded",
             "profile_markdown": "# Physics Longitudinal Profile",
             "profile_artifact_status": "succeeded",
-            "profile_pdf_uri": "s3://profile-bucket/student/profile_report.pdf",
+            "profile_report_pdf_uri": "s3://profile-bucket/profile-reports/CD_Smoke+student-1/Physics/Physics_profile_report.pdf",
             "runtime_commit_sha": "abc123",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -268,7 +266,7 @@ class RunAgentCoreProfileSmokeTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("profile_artifact_not_succeeded", report["failed_assertions"])
-        self.assertIn("profile_pdf_uri_missing", report["failed_assertions"])
+        self.assertIn("profile_report_pdf_uri_missing", report["failed_assertions"])
 
 
 def diagnosis_report() -> dict:

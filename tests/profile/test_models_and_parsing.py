@@ -8,7 +8,7 @@ from jee_tutor.profile.models import (
     metadata_from_report,
 )
 from jee_tutor.profile.parsing import parse_student_context_from_s3_path
-from jee_tutor.profile.privacy import redact_email, redact_student_metadata
+from jee_tutor.privacy import redact_email, redact_student_metadata
 from jee_tutor.profile.storage import (
     InMemoryStudentDiagnosisMetadataStore,
     InMemoryStructuredDiagnosisArtifactStore,

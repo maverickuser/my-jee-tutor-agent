@@ -5,6 +5,17 @@ from unittest.mock import patch
 from jee_tutor.handler import validate_tutor_invocation
 
 
+class SuccessfulProfileArtifactResult:
+    status = "succeeded"
+    pdf_uri = "s3://jee-tutor-agent-terraform-state/profile-reports/Student+student-1/Physics/Physics_profile_report.pdf"
+    errors = []
+
+
+class SuccessfulProfileArtifactWriter:
+    def write(self, **_kwargs):
+        return SuccessfulProfileArtifactResult()
+
+
 class HandlerAndAppTest(unittest.TestCase):
     def test_validate_tutor_invocation_returns_model(self):
         payload = validate_tutor_invocation({"image_data_uri": "data:image/png;base64,ZmFrZQ=="})
@@ -12,13 +23,13 @@ class HandlerAndAppTest(unittest.TestCase):
         self.assertEqual(payload.image_data_uri, "data:image/png;base64,ZmFrZQ==")
 
     def test_invocation_models_do_not_import_profile_report_stack(self):
-        sys.modules.pop("jee_tutor.profile.reporting", None)
+        sys.modules.pop("jee_tutor.profile.actionable", None)
         sys.modules.pop("jee_tutor.application.profile", None)
 
         from jee_tutor.invocation.models import AgentLLMCallRecord
 
         self.assertEqual(AgentLLMCallRecord.__name__, "AgentLLMCallRecord")
-        self.assertNotIn("jee_tutor.profile.reporting", sys.modules)
+        self.assertNotIn("jee_tutor.profile.actionable", sys.modules)
         self.assertNotIn("jee_tutor.application.profile", sys.modules)
 
     def test_validate_tutor_invocation_accepts_agentcore_json_contract(self):
@@ -142,10 +153,8 @@ class HandlerAndAppTest(unittest.TestCase):
             embedding_text_hash,
         )
         from jee_tutor.profile.hierarchical import (
-            BroaderPatternAnalyzer,
             ConceptualStrandAnalyzer,
         )
-        from jee_tutor.profile.reporting import ProfileAnalysisService
         from jee_tutor.profile.storage import (
             InMemoryStudentDiagnosisMetadataStore,
             InMemoryStructuredDiagnosisArtifactStore,
@@ -200,8 +209,7 @@ class HandlerAndAppTest(unittest.TestCase):
                 classifier=classifier,
                 similarity_floor=0.95,
             ),
-            broader_pattern_analyzer=BroaderPatternAnalyzer(analyzer=lambda _gaps: []),
-            report_service=ProfileAnalysisService(),
+            artifact_writer=SuccessfulProfileArtifactWriter(),
         )
 
         with patch(
@@ -219,7 +227,7 @@ class HandlerAndAppTest(unittest.TestCase):
             )
 
         self.assertEqual(response["profile_status"], "succeeded")
-        self.assertIn("Physics Longitudinal Profile", response["profile_markdown"])
+        self.assertIn("What to do differently next time", response["profile_markdown"])
         self.assertEqual(len(embedding_store.puts), 1)
         self.assertEqual(embedding_store.puts[0].evidence_id, "r2:q1")
         self.assertEqual(
@@ -230,8 +238,8 @@ class HandlerAndAppTest(unittest.TestCase):
             ("r1:q1", "r2:q1"),
         )
         self.assertEqual(
-            response["profile_report"]["recurring_gaps"][0]["title"],
-            "Projectile components",
+            response["profile_report"]["insights"][0]["heading"],
+            "What rule should I use before I start?",
         )
 
     def test_legacy_tutor_invocation_dispatches_profile_report_task(self):

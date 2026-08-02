@@ -11,22 +11,22 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
   }
 
   environment_variables = {
-    LITELLM_API_KEY      = var.litellm_api_key
-    OPENAI_API_KEY       = var.openai_api_key
-    GOOGLE_API_KEY       = var.google_api_key
-    LITELLM_BASE_URL     = var.litellm_base_url
-	    VISION_MODEL         = var.vision_model
-	    CREWAI_MODEL         = var.crewai_model
-	    PROFILE_REPORT_MODEL = var.profile_report_model
-	    PROFILE_EMBEDDING_MODEL = var.profile_embedding_model
-	    PROFILE_SEMANTIC_CLUSTER_MODEL = var.profile_semantic_cluster_model
-	    STRUCTURED_DIAGNOSIS_ENABLED = tostring(var.structured_diagnosis_enabled)
-	    PROFILE_REPORT_LLM_ENABLED   = tostring(var.profile_report_llm_enabled)
-	    PROFILE_REPORT_S3_BUCKET     = local.profile_report_s3_bucket_name
-	    PROFILE_REPORT_S3_PREFIX     = local.profile_report_s3_prefix
-    LANGFUSE_PUBLIC_KEY = var.langfuse_public_key
-    LANGFUSE_SECRET_KEY = var.langfuse_secret_key
-    LANGFUSE_BASE_URL   = var.langfuse_base_url
+    LITELLM_API_KEY                = var.litellm_api_key
+    OPENAI_API_KEY                 = var.openai_api_key
+    GOOGLE_API_KEY                 = var.google_api_key
+    LITELLM_BASE_URL               = var.litellm_base_url
+    VISION_MODEL                   = var.vision_model
+    CREWAI_MODEL                   = var.crewai_model
+    PROFILE_EMBEDDING_MODEL        = var.profile_embedding_model
+    PROFILE_SEMANTIC_CLUSTER_MODEL = var.profile_semantic_cluster_model
+    STRUCTURED_DIAGNOSIS_ENABLED   = tostring(var.structured_diagnosis_enabled)
+    PROFILE_REPORT_S3_BUCKET       = local.profile_report_s3_bucket_name
+    PROFILE_REPORT_S3_PREFIX       = local.profile_report_s3_prefix
+    CHAPTER_WEIGHTAGE_S3_BUCKET    = "jee-tutor-agent-terraform-state"
+    CHAPTER_WEIGHTAGE_S3_PREFIX    = "curriculum/chapter-weightage"
+    LANGFUSE_PUBLIC_KEY            = var.langfuse_public_key
+    LANGFUSE_SECRET_KEY            = var.langfuse_secret_key
+    LANGFUSE_BASE_URL              = var.langfuse_base_url
 
     BEDROCK_GUARDRAIL_ENABLED       = tostring(local.bedrock_guardrail_id != "" && var.bedrock_guardrail_enabled)
     BEDROCK_GUARDRAIL_ID            = local.bedrock_guardrail_id
@@ -36,17 +36,17 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     BEDROCK_GUARDRAIL_FAIL_CLOSED   = tostring(var.bedrock_guardrail_fail_closed)
     BEDROCK_GUARDRAIL_INCLUDE_IMAGE = tostring(var.bedrock_guardrail_include_image)
 
-    NEW_RELIC_LOG_ENABLED            = tostring(var.newrelic_log_forwarding_enabled)
-    NEW_RELIC_LICENSE_KEY_SECRET_ARN = var.newrelic_license_key_secret_arn
-    NEW_RELIC_REGION                 = var.newrelic_region
-    INVOCATION_STATUS_ENABLED        = tostring(var.invocation_status_enabled)
-    INVOCATION_STATUS_TABLE_NAME     = local.invocation_status_table_name
-	    STUDENT_DIAGNOSIS_METADATA_ENABLED = tostring(var.student_diagnosis_metadata_enabled)
-	    STUDENT_DIAGNOSIS_METADATA_TABLE_NAME = local.student_diagnosis_metadata_table_name
-	    EVIDENCE_EMBEDDING_ENABLED = tostring(var.evidence_embedding_enabled)
-	    EVIDENCE_EMBEDDING_TABLE_NAME = local.evidence_embedding_table_name
-	    CURRICULUM_TAXONOMY_S3_URI       = var.curriculum_taxonomy_s3_uri
-    CURRICULUM_TAXONOMY_REQUIRED     = tostring(var.curriculum_taxonomy_required)
+    NEW_RELIC_LOG_ENABLED                 = tostring(var.newrelic_log_forwarding_enabled)
+    NEW_RELIC_LICENSE_KEY_SECRET_ARN      = var.newrelic_license_key_secret_arn
+    NEW_RELIC_REGION                      = var.newrelic_region
+    INVOCATION_STATUS_ENABLED             = tostring(var.invocation_status_enabled)
+    INVOCATION_STATUS_TABLE_NAME          = local.invocation_status_table_name
+    STUDENT_DIAGNOSIS_METADATA_ENABLED    = tostring(var.student_diagnosis_metadata_enabled)
+    STUDENT_DIAGNOSIS_METADATA_TABLE_NAME = local.student_diagnosis_metadata_table_name
+    EVIDENCE_EMBEDDING_ENABLED            = tostring(var.evidence_embedding_enabled)
+    EVIDENCE_EMBEDDING_TABLE_NAME         = local.evidence_embedding_table_name
+    CURRICULUM_TAXONOMY_S3_URI            = var.curriculum_taxonomy_s3_uri
+    CURRICULUM_TAXONOMY_REQUIRED          = tostring(var.curriculum_taxonomy_required)
     CURRICULUM_TAXONOMY_CACHE_TTL_SECONDS = tostring(var.curriculum_taxonomy_cache_ttl_seconds)
 
     EMAIL_DELIVERY_PROVIDER     = "lambda"

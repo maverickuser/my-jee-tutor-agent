@@ -8,3 +8,6 @@ eval_runs/
 garak.log
 garak_adapter.log
 garak_adapter.pid
+.terraform/
+*.tfplan
+tfdestroy.plan

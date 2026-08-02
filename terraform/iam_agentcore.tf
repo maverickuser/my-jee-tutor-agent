@@ -142,45 +142,45 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Resource = aws_dynamodb_table.invocation_status.arn
         }
       ] : [],
-	      var.student_diagnosis_metadata_enabled ? [
-	        {
-	          Sid    = "ReadWriteStudentDiagnosisMetadata"
-	          Effect = "Allow"
+      var.student_diagnosis_metadata_enabled ? [
+        {
+          Sid    = "ReadWriteStudentDiagnosisMetadata"
+          Effect = "Allow"
           Action = [
             "dynamodb:GetItem",
             "dynamodb:PutItem",
             "dynamodb:Query",
             "dynamodb:DescribeTable"
           ]
-	          Resource = aws_dynamodb_table.student_diagnosis_metadata.arn
-	        }
-	      ] : [],
-	      var.evidence_embedding_enabled ? [
-	        {
-	          Sid    = "ReadWriteEvidenceEmbeddings"
-	          Effect = "Allow"
-	          Action = [
-	            "dynamodb:GetItem",
-	            "dynamodb:PutItem",
-	            "dynamodb:DescribeTable"
-	          ]
-	          Resource = aws_dynamodb_table.evidence_embeddings.arn
-	        }
-	      ] : [],
-	      local.profile_report_s3_bucket_name != "" ? [
-	        {
-	          Sid    = "WriteProfileReportArtifacts"
-	          Effect = "Allow"
-	          Action = [
-	            "s3:PutObject",
-	            "s3:AbortMultipartUpload"
-	          ]
-	          Resource = [
-	            local.profile_report_s3_prefix != "" ? "arn:aws:s3:::${local.profile_report_s3_bucket_name}/${local.profile_report_s3_prefix}/*" : "arn:aws:s3:::${local.profile_report_s3_bucket_name}/*"
-	          ]
-	        }
-	      ] : [],
-	      length(var.s3_image_input_object_arns) > 0 ? [
+          Resource = aws_dynamodb_table.student_diagnosis_metadata.arn
+        }
+      ] : [],
+      var.evidence_embedding_enabled ? [
+        {
+          Sid    = "ReadWriteEvidenceEmbeddings"
+          Effect = "Allow"
+          Action = [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:DescribeTable"
+          ]
+          Resource = aws_dynamodb_table.evidence_embeddings.arn
+        }
+      ] : [],
+      local.profile_report_s3_bucket_name != "" ? [
+        {
+          Sid    = "WriteProfileReportArtifacts"
+          Effect = "Allow"
+          Action = [
+            "s3:PutObject",
+            "s3:AbortMultipartUpload"
+          ]
+          Resource = [
+            local.profile_report_s3_prefix != "" ? "arn:aws:s3:::${local.profile_report_s3_bucket_name}/${local.profile_report_s3_prefix}/*" : "arn:aws:s3:::${local.profile_report_s3_bucket_name}/*"
+          ]
+        }
+      ] : [],
+      length(var.s3_image_input_object_arns) > 0 ? [
         {
           Sid    = "S3ImageObjectReadWrite"
           Effect = "Allow"
@@ -237,6 +237,14 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Resource = local.curriculum_taxonomy_object_arn
         }
       ] : [],
+      [
+        {
+          Sid      = "S3ChapterWeightageRead"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = "arn:aws:s3:::jee-tutor-agent-terraform-state/curriculum/chapter-weightage/*"
+        }
+      ],
       var.newrelic_log_forwarding_enabled && var.newrelic_license_key_secret_arn != "" ? [
         {
           Sid      = "ReadNewRelicLicenseKey"

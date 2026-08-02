@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "subject": "Maths",
+  "source_document": "Maths_Syllabus_Weightge_Papers.pdf",
+  "methodology": "Chapters are ranked by average overall weightage across JEE Mains and JEE Advanced. Sets and Relations and Functions are merged to align the two syllabus structures. A missing exam value means the chapter was below that exam source's top-list cutoff; the source reports an approximate average using zero for the unlisted side.",
+  "chapters": [
+    {"rank": 1, "chapter": "Matrices and Determinants", "mains_weightage_percent": 7.18, "advanced_weightage_percent": 7.87, "combined_weightage_percent": 7.53, "combined_is_approximate": false},
+    {"rank": 2, "chapter": "Probability", "mains_weightage_percent": 4.07, "advanced_weightage_percent": 10.65, "combined_weightage_percent": 7.36, "combined_is_approximate": false},
+    {"rank": 3, "chapter": "Sets, Relations & Functions", "mains_weightage_percent": 8.43, "advanced_weightage_percent": 4.63, "combined_weightage_percent": 6.53, "combined_is_approximate": false},
+    {"rank": 4, "chapter": "Three Dimensional Geometry", "mains_weightage_percent": 7.47, "advanced_weightage_percent": 5.56, "combined_weightage_percent": 6.52, "combined_is_approximate": false},
+    {"rank": 5, "chapter": "Integration (Definite/Indefinite)", "mains_weightage_percent": 5.43, "advanced_weightage_percent": 6.02, "combined_weightage_percent": 5.73, "combined_is_approximate": false},
+    {"rank": 6, "chapter": "Application of Derivatives", "mains_weightage_percent": 3.49, "advanced_weightage_percent": 7.41, "combined_weightage_percent": 5.45, "combined_is_approximate": false},
+    {"rank": 7, "chapter": "Vector Algebra", "mains_weightage_percent": 5.82, "advanced_weightage_percent": 4.63, "combined_weightage_percent": 5.23, "combined_is_approximate": false},
+    {"rank": 8, "chapter": "Complex Numbers", "mains_weightage_percent": 3.59, "advanced_weightage_percent": 5.56, "combined_weightage_percent": 4.58, "combined_is_approximate": false},
+    {"rank": 9, "chapter": "Sequence and Series", "mains_weightage_percent": 5.92, "advanced_weightage_percent": 2.78, "combined_weightage_percent": 4.35, "combined_is_approximate": false},
+    {"rank": 10, "chapter": "Differential Equations", "mains_weightage_percent": 6.11, "advanced_weightage_percent": 2.31, "combined_weightage_percent": 4.21, "combined_is_approximate": false},
+    {"rank": 11, "chapter": "Permutations and Combinations", "mains_weightage_percent": 3.69, "advanced_weightage_percent": 3.70, "combined_weightage_percent": 3.70, "combined_is_approximate": false},
+    {"rank": 12, "chapter": "Limits of Functions", "mains_weightage_percent": 3.59, "advanced_weightage_percent": 3.70, "combined_weightage_percent": 3.65, "combined_is_approximate": false},
+    {"rank": 13, "chapter": "Application of Integrals (AUC)", "mains_weightage_percent": 4.36, "advanced_weightage_percent": 2.78, "combined_weightage_percent": 3.57, "combined_is_approximate": false},
+    {"rank": 14, "chapter": "Circles", "mains_weightage_percent": null, "advanced_weightage_percent": 6.02, "combined_weightage_percent": 3.01, "combined_is_approximate": true},
+    {"rank": 15, "chapter": "Binomial Theorem", "mains_weightage_percent": 4.75, "advanced_weightage_percent": null, "combined_weightage_percent": 2.38, "combined_is_approximate": true},
+    {"rank": 16, "chapter": "Straight Lines", "mains_weightage_percent": 4.46, "advanced_weightage_percent": null, "combined_weightage_percent": 2.23, "combined_is_approximate": true},
+    {"rank": 17, "chapter": "Quadratic Equations", "mains_weightage_percent": 3.69, "advanced_weightage_percent": null, "combined_weightage_percent": 1.85, "combined_is_approximate": true},
+    {"rank": 18, "chapter": "Solution of Triangles", "mains_weightage_percent": null, "advanced_weightage_percent": 3.24, "combined_weightage_percent": 1.62, "combined_is_approximate": true},
+    {"rank": 19, "chapter": "Inverse Trigonometry Functions", "mains_weightage_percent": null, "advanced_weightage_percent": 3.24, "combined_weightage_percent": 1.62, "combined_is_approximate": true},
+    {"rank": 20, "chapter": "Ellipse", "mains_weightage_percent": null, "advanced_weightage_percent": 2.78, "combined_weightage_percent": 1.39, "combined_is_approximate": true},
+    {"rank": 21, "chapter": "Parabola", "mains_weightage_percent": null, "advanced_weightage_percent": 2.31, "combined_weightage_percent": 1.16, "combined_is_approximate": true}
+  ]
+}

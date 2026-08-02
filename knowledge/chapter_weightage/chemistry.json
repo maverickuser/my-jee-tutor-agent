@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "subject": "Chemistry",
+  "source_document": "Chemistry_syllabus_weightage.pdf",
+  "methodology": "JEE Mains weightage is based on 475 January and April session questions. JEE Advanced weightage is taken from the source analysis. Consolidated weightage is the simple average of both exams.",
+  "coverage_note": "The source lists the top 18 chapters reaching 87.59% cumulative consolidated weightage.",
+  "chapters": [
+    {"rank": 1, "chapter": "Aldehydes, Ketones and Carboxylic Acids", "mains_weightage_percent": 6.95, "advanced_weightage_percent": 9.34, "combined_weightage_percent": 8.15, "cumulative_weightage_percent": 8.15},
+    {"rank": 2, "chapter": "Coordination Compounds", "mains_weightage_percent": 8.42, "advanced_weightage_percent": 6.07, "combined_weightage_percent": 7.25, "cumulative_weightage_percent": 15.40},
+    {"rank": 3, "chapter": "Organic Chemistry - Basic Principles & Techniques (GOC)", "mains_weightage_percent": 8.42, "advanced_weightage_percent": 3.73, "combined_weightage_percent": 6.08, "cumulative_weightage_percent": 21.48},
+    {"rank": 4, "chapter": "Thermodynamics", "mains_weightage_percent": 6.32, "advanced_weightage_percent": 5.60, "combined_weightage_percent": 5.96, "cumulative_weightage_percent": 27.44},
+    {"rank": 5, "chapter": "The d- and f-Block Elements", "mains_weightage_percent": 5.05, "advanced_weightage_percent": 6.54, "combined_weightage_percent": 5.80, "cumulative_weightage_percent": 33.24},
+    {"rank": 6, "chapter": "Hydrocarbons", "mains_weightage_percent": 4.00, "advanced_weightage_percent": 6.07, "combined_weightage_percent": 5.04, "cumulative_weightage_percent": 38.28},
+    {"rank": 7, "chapter": "Electrochemistry", "mains_weightage_percent": 4.84, "advanced_weightage_percent": 5.14, "combined_weightage_percent": 4.99, "cumulative_weightage_percent": 43.27},
+    {"rank": 8, "chapter": "Chemical Kinetics", "mains_weightage_percent": 5.26, "advanced_weightage_percent": 4.67, "combined_weightage_percent": 4.97, "cumulative_weightage_percent": 48.24},
+    {"rank": 9, "chapter": "Equilibrium", "mains_weightage_percent": 5.68, "advanced_weightage_percent": 4.20, "combined_weightage_percent": 4.94, "cumulative_weightage_percent": 53.18},
+    {"rank": 10, "chapter": "Solutions", "mains_weightage_percent": 5.68, "advanced_weightage_percent": 3.27, "combined_weightage_percent": 4.48, "cumulative_weightage_percent": 57.66},
+    {"rank": 11, "chapter": "Amines", "mains_weightage_percent": 4.00, "advanced_weightage_percent": 4.67, "combined_weightage_percent": 4.34, "cumulative_weightage_percent": 62.00},
+    {"rank": 12, "chapter": "The p-Block Elements (Group 15 to 18)", "mains_weightage_percent": 2.11, "advanced_weightage_percent": 6.54, "combined_weightage_percent": 4.33, "cumulative_weightage_percent": 66.33},
+    {"rank": 13, "chapter": "Biomolecules", "mains_weightage_percent": 4.63, "advanced_weightage_percent": 3.73, "combined_weightage_percent": 4.18, "cumulative_weightage_percent": 70.51},
+    {"rank": 14, "chapter": "Structure of Atom", "mains_weightage_percent": 4.00, "advanced_weightage_percent": 3.73, "combined_weightage_percent": 3.87, "cumulative_weightage_percent": 74.38},
+    {"rank": 15, "chapter": "Some Basic Concepts of Chemistry (Mole Concept)", "mains_weightage_percent": 4.63, "advanced_weightage_percent": 2.80, "combined_weightage_percent": 3.72, "cumulative_weightage_percent": 78.10},
+    {"rank": 16, "chapter": "Practical Chemistry / Isolation Principles", "mains_weightage_percent": 2.74, "advanced_weightage_percent": 3.73, "combined_weightage_percent": 3.24, "cumulative_weightage_percent": 81.34},
+    {"rank": 17, "chapter": "Haloalkanes and Haloarenes", "mains_weightage_percent": 4.42, "advanced_weightage_percent": 1.86, "combined_weightage_percent": 3.14, "cumulative_weightage_percent": 84.48},
+    {"rank": 18, "chapter": "Chemical Bonding and Molecular Structure", "mains_weightage_percent": 2.95, "advanced_weightage_percent": 3.27, "combined_weightage_percent": 3.11, "cumulative_weightage_percent": 87.59}
+  ]
+}

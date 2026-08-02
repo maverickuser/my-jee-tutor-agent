@@ -54,12 +54,6 @@ variable "crewai_model" {
   default     = "gemini/gemini-3-flash-preview"
 }
 
-variable "profile_report_model" {
-  description = "LiteLLM model id used for student profile report interpretation."
-  type        = string
-  default     = "gemini/gemini-2.5-pro"
-}
-
 variable "profile_embedding_model" {
   description = "LiteLLM model id used for student profile evidence embeddings."
   type        = string
@@ -74,12 +68,6 @@ variable "profile_semantic_cluster_model" {
 
 variable "structured_diagnosis_enabled" {
   description = "Enable structured diagnosis JSON output for vision analysis."
-  type        = bool
-  default     = true
-}
-
-variable "profile_report_llm_enabled" {
-  description = "Enable LLM-authored student profile reports."
   type        = bool
   default     = true
 }

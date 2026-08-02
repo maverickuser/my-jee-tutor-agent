@@ -2,658 +2,194 @@ import json
 import unittest
 
 from jee_tutor.profile.clustering import EvidenceNeighborPair
-from jee_tutor.profile.embeddings import EvidenceEmbeddingRecord
+from jee_tutor.profile.evidence import ProfileEvidenceItem
 from jee_tutor.profile.hierarchical import (
-    BroaderConceptualPattern,
-    BroaderPatternAnalyzer,
-    BroaderPatternManifestation,
     CandidateRelationshipDecision,
     ConceptualStrand,
     ConceptualStrandOutput,
-    EvidenceExclusion,
-    LiteLLMBroaderPatternClassifier,
     LiteLLMConceptualStrandClassifier,
     StrandManifestation,
-    ValidatedRecurringStrand,
-    build_longitudinal_evidence_pack,
-    build_strand_candidate_pairs,
-    normalize_chapter_family,
-    repair_conceptual_strand_output,
     recurring_conceptual_strands,
-    validate_broader_patterns,
+    repair_conceptual_strand_output,
     validate_candidate_relationships,
     validate_conceptual_strand_output,
 )
-from jee_tutor.profile.semantic import (
-    SemanticCandidateCluster,
-    SemanticClusterModelSettings,
-)
-from tests.profile.test_semantic_evidence_pack import evidence
+from jee_tutor.profile.model_config import ProfileClassifierModelConfig
 
 
-class FakeModelConfig:
-    def resolve(self):
-        return SemanticClusterModelSettings(
-            model="fake/hierarchical",
-            completion_options={},
+class ConceptualStrandTest(unittest.TestCase):
+    def test_recurring_requires_two_independent_reports_and_non_low_confidence(self):
+        items = [evidence("r1", "q1"), evidence("r2", "q1")]
+        index = {item.evidence_id: item for item in items}
+        strand = conceptual_strand(items)
+
+        recurring = recurring_conceptual_strands([strand], index)
+
+        self.assertEqual(len(recurring), 1)
+        self.assertEqual(recurring[0].diagnosis_report_count, 2)
+        self.assertEqual(recurring[0].question_count, 2)
+        self.assertEqual(
+            recurring_conceptual_strands(
+                [strand.model_copy(update={"confidence": "low"})], index
+            ),
+            [],
         )
 
-
-def strand(
-    strand_id: str,
-    evidence_ids: list[str],
-    *,
-    family: str = "Electrostatics and Capacitance",
-    confidence: str = "high",
-) -> ConceptualStrand:
-    return ConceptualStrand(
-        strand_id=strand_id,
-        chapter_family=family,
-        chapter_labels=["Electrostatics", "Electrostatics and Capacitance"],
-        topics=["Capacitor circuits", "Charge redistribution"],
-        title="Capacitor state modeling",
-        missing_mental_model=(
-            "Identify electrical nodes, conserved charge, and final voltage constraints."
-        ),
-        shared_failure="Applies a local formula before constructing the circuit state.",
-        corrective_model=(
-            "Mark isolated nodes, conserve their charge, then impose equilibrium voltage."
-        ),
-        evidence_ids=evidence_ids,
-        manifestations=[
-            StrandManifestation(
-                evidence_id=evidence_id,
-                manifestation=f"Manifestation for {evidence_id}.",
+    def test_relationship_validation_rejects_missing_duplicate_and_unknown_pairs(self):
+        pair = candidate_pair()
+        with self.assertRaisesRegex(ValueError, "missing pair ids"):
+            validate_candidate_relationships([], [pair])
+        with self.assertRaisesRegex(ValueError, "duplicate pair ids"):
+            validate_candidate_relationships(
+                [relationship(pair.pair_id), relationship(pair.pair_id)], [pair]
             )
-            for evidence_id in evidence_ids
-        ],
-        confidence=confidence,
-        rationale="One node-and-equilibrium model corrects every manifestation.",
+        with self.assertRaisesRegex(ValueError, "unknown pair ids"):
+            validate_candidate_relationships([relationship("invented")], [pair])
+
+    def test_repair_drops_unknown_ids_and_restores_manifestations(self):
+        items = [evidence("r1", "q1"), evidence("r2", "q1")]
+        strand = conceptual_strand(items).model_copy(
+            update={
+                "evidence_ids": [items[0].evidence_id, "invented"],
+                "manifestations": [],
+            }
+        )
+
+        repaired = repair_conceptual_strand_output(
+            ConceptualStrandOutput(strands=[strand]), items
+        )
+
+        self.assertEqual(repaired.strands[0].evidence_ids, [items[0].evidence_id])
+        self.assertEqual(
+            repaired.strands[0].manifestations[0].manifestation,
+            items[0].exact_concept_gap,
+        )
+        validate_conceptual_strand_output(repaired, items)
+
+    def test_litellm_classifier_uses_strict_schema_and_evidence_payload(self):
+        items = [evidence("r1", "q1"), evidence("r2", "q1")]
+        output = ConceptualStrandOutput(
+            relationships=[relationship(candidate_pair().pair_id)],
+            strands=[conceptual_strand(items)],
+        )
+        captured = {}
+
+        def completion_fn(**kwargs):
+            captured.update(kwargs)
+            return {"choices": [{"message": {"content": output.model_dump_json()}}]}
+
+        classifier = LiteLLMConceptualStrandClassifier(
+            model_config=ProfileClassifierModelConfig(
+                environ={"PROFILE_SEMANTIC_CLUSTER_MODEL": "fake/model"},
+                config={},
+            ),
+            completion_fn=completion_fn,
+        )
+        actual = classifier.classify(evidence_items=items, candidate_pairs=[candidate_pair()])
+
+        self.assertEqual(actual, output)
+        self.assertEqual(captured["temperature"], 0)
+        self.assertTrue(
+            captured["messages"][0]["content"].startswith(
+                "You are an expert JEE educational diagnostician and cognitive "
+                "learning specialist."
+            )
+        )
+        self.assertTrue(captured["response_format"]["json_schema"]["strict"])
+        payload = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(len(payload["evidence"]), 2)
+        self.assertEqual(payload["candidate_pairs"][0]["pair_id"], candidate_pair().pair_id)
+
+    def test_classifier_model_config_resolves_provider_credentials_and_proxy(self):
+        openai = ProfileClassifierModelConfig(
+            environ={
+                "PROFILE_SEMANTIC_CLUSTER_MODEL": "openai/gpt-4o",
+                "OPENAI_API_KEY": "openai-key",
+                "LITELLM_BASE_URL": "https://proxy.example",
+            },
+            config={"completion": {"temperature": 0}},
+        ).resolve()
+        self.assertEqual(openai.api_key, "openai-key")
+        self.assertEqual(openai.api_base, "https://proxy.example")
+        self.assertEqual(openai.to_litellm_kwargs()["temperature"], 0)
+
+        custom = ProfileClassifierModelConfig(
+            environ={
+                "PROFILE_SEMANTIC_CLUSTER_MODEL": "custom/model",
+                "LITELLM_API_KEY": "proxy-key",
+            },
+            config={"completion": "invalid"},
+        ).resolve()
+        self.assertEqual(custom.api_key, "proxy-key")
+        self.assertNotIn("api_base", custom.to_litellm_kwargs())
+
+        configured = ProfileClassifierModelConfig(
+            environ={},
+            config={"semantic_clustering": {"model": "gemini/configured"}},
+        ).resolve()
+        self.assertEqual(configured.model, "gemini/configured")
+
+
+def evidence(report_id: str, question: str) -> ProfileEvidenceItem:
+    return ProfileEvidenceItem(
+        evidence_id=f"{report_id}:{question}",
+        evidence_reference=f"Test : {question}",
+        diagnosis_report_id=report_id,
+        diagnosis_json_s3_uri=f"s3://bucket/{report_id}.json",
+        subject="Physics",
+        test_name="Test",
+        diagnosis_date="2026-01-01T00:00:00Z",
+        question_number=question,
+        chapter="Kinematics",
+        topic="Projectile motion",
+        exact_concept_gap="Projectile components",
+        likely_thought="Treated the motion as one-dimensional.",
+        why_wrong="Horizontal and vertical motion must be resolved separately.",
+        deep_dive_recommendation="Resolve vector components.",
     )
 
 
-def candidate_pair(
-    pair_id: str,
-    left_evidence_id: str,
-    right_evidence_id: str,
-    *,
-    family: str = "Electrostatics and Capacitance",
-) -> EvidenceNeighborPair:
+def conceptual_strand(items) -> ConceptualStrand:
+    return ConceptualStrand(
+        strand_id="components",
+        chapter_family="Kinematics",
+        chapter_labels=["Kinematics"],
+        topics=["Projectile motion"],
+        title="Resolve components",
+        missing_mental_model="Independent components",
+        shared_failure="Treats vector motion as scalar motion",
+        corrective_model="Resolve horizontal and vertical components",
+        evidence_ids=[item.evidence_id for item in items],
+        manifestations=[
+            StrandManifestation(
+                evidence_id=item.evidence_id,
+                manifestation="Did not resolve components",
+            )
+            for item in items
+        ],
+        confidence="high",
+        rationale="One model prevents both failures.",
+    )
+
+
+def candidate_pair() -> EvidenceNeighborPair:
     return EvidenceNeighborPair(
-        pair_id=pair_id,
-        left_evidence_id=left_evidence_id,
-        right_evidence_id=right_evidence_id,
-        chapter_family=family,
-        cosine_similarity=0.91,
+        pair_id="pair-1",
+        chapter_family="Kinematics",
+        left_evidence_id="r1:q1",
+        right_evidence_id="r2:q1",
+        cosine_similarity=0.9,
         left_neighbor_rank=1,
         right_neighbor_rank=1,
     )
 
 
-def relationship(
-    pair_id: str,
-    label: str = "same_underlying_gap",
-) -> CandidateRelationshipDecision:
+def relationship(pair_id: str) -> CandidateRelationshipDecision:
     return CandidateRelationshipDecision(
         candidate_pair_id=pair_id,
-        relationship=label,
-        rationale=f"Relationship rationale for {pair_id}.",
+        relationship="same_underlying_gap",
+        rationale="One missing component model.",
     )
-
-
-class HierarchicalProfileTest(unittest.TestCase):
-    def test_normalizes_related_chapter_labels_but_not_unrelated_families(self):
-        self.assertEqual(
-            normalize_chapter_family("Electrostatics"),
-            "Electrostatics and Capacitance",
-        )
-        self.assertEqual(
-            normalize_chapter_family("Electrostatics and Capacitance"),
-            "Electrostatics and Capacitance",
-        )
-        self.assertNotEqual(
-            normalize_chapter_family("Current Electricity"),
-            "Electrostatics and Capacitance",
-        )
-
-    def test_candidates_cross_topics_inside_family_not_chapter_families(self):
-        items = [
-            evidence(
-                "r1:q1",
-                "r1",
-                chapter="Electrostatics",
-                topic="Capacitor circuits",
-            ),
-            evidence(
-                "r2:q1",
-                "r2",
-                chapter="Electrostatics and Capacitance",
-                topic="Charge redistribution",
-            ),
-            evidence(
-                "r3:q1",
-                "r3",
-                chapter="Current Electricity",
-                topic="Potentiometer",
-            ),
-        ]
-        records = {
-            item.evidence_id: EvidenceEmbeddingRecord(
-                diagnosis_json_s3_uri=item.diagnosis_json_s3_uri,
-                embedding_key=f"{item.evidence_id}#fake#v1",
-                evidence_id=item.evidence_id,
-                embedding_model="fake",
-                embedding_input_version="v1",
-                embedding_text_hash="hash",
-                embedding=[1.0, 0.0],
-                created_at="2026-07-18T00:00:00+00:00",
-            )
-            for item in items
-        }
-
-        pairs = build_strand_candidate_pairs(
-            evidence_items=items,
-            embedding_records=records,
-            similarity_floor=0.5,
-            max_neighbors=3,
-        )
-
-        self.assertEqual(
-            [
-                (pair.left_evidence_id, pair.right_evidence_id)
-                for pair in pairs
-            ],
-            [("r1:q1", "r2:q1")],
-        )
-        self.assertEqual(
-            pairs[0].chapter_family,
-            "Electrostatics and Capacitance",
-        )
-
-    def test_strand_requires_manifestation_for_every_evidence_item(self):
-        items = [
-            evidence("r1:q1", "r1", chapter="Electrostatics"),
-            evidence("r2:q1", "r2", chapter="Electrostatics"),
-        ]
-        invalid = strand("strand-1", ["r1:q1", "r2:q1"])
-        invalid.manifestations.pop()
-
-        with self.assertRaisesRegex(ValueError, "exactly cover"):
-            validate_conceptual_strand_output(
-                ConceptualStrandOutput(strands=[invalid]), items
-            )
-
-    def test_strand_rejects_cross_family_evidence(self):
-        items = [
-            evidence("r1:q1", "r1", chapter="Electrostatics"),
-            evidence("r2:q1", "r2", chapter="Current Electricity"),
-        ]
-
-        with self.assertRaisesRegex(ValueError, "multiple chapter families"):
-            validate_conceptual_strand_output(
-                ConceptualStrandOutput(
-                    strands=[strand("strand-1", ["r1:q1", "r2:q1"])]
-                ),
-                items,
-            )
-
-    def test_relationship_decisions_must_exactly_cover_candidate_pairs(self):
-        pair = candidate_pair("pair-1", "r1:q1", "r2:q1")
-
-        with self.assertRaisesRegex(ValueError, "missing pair ids"):
-            validate_candidate_relationships([], [pair])
-        with self.assertRaisesRegex(ValueError, "unknown pair ids"):
-            validate_candidate_relationships(
-                [relationship("invented-pair")],
-                [pair],
-            )
-        with self.assertRaisesRegex(ValueError, "duplicate pair ids"):
-            validate_candidate_relationships(
-                [relationship("pair-1"), relationship("pair-1")],
-                [pair],
-            )
-
-    def test_multi_evidence_strand_requires_consistent_same_gap_path(self):
-        items = [
-            evidence("r1:q1", "r1", chapter="Electrostatics"),
-            evidence("r2:q1", "r2", chapter="Electrostatics"),
-            evidence("r3:q1", "r3", chapter="Electrostatics"),
-        ]
-        pairs = [
-            candidate_pair("pair-1", "r1:q1", "r2:q1"),
-            candidate_pair("pair-2", "r2:q1", "r3:q1"),
-        ]
-        valid = ConceptualStrandOutput(
-            relationships=[relationship("pair-1"), relationship("pair-2")],
-            strands=[strand("strand-1", ["r1:q1", "r2:q1", "r3:q1"])],
-        )
-
-        self.assertEqual(
-            validate_conceptual_strand_output(
-                valid,
-                items,
-                candidate_pairs=pairs,
-            ),
-            valid,
-        )
-
-        contradictory = valid.model_copy(deep=True)
-        contradictory.relationships[1].relationship = "related_but_distinct"
-        with self.assertRaisesRegex(ValueError, "contradictory internal"):
-            validate_conceptual_strand_output(
-                contradictory,
-                items,
-                candidate_pairs=pairs,
-            )
-
-        disconnected = ConceptualStrandOutput(
-            relationships=[relationship("pair-1")],
-            strands=[strand("strand-1", ["r1:q1", "r2:q1", "r3:q1"])],
-        )
-        with self.assertRaisesRegex(ValueError, "not connected"):
-            validate_conceptual_strand_output(
-                disconnected,
-                items,
-                candidate_pairs=[pairs[0]],
-            )
-
-    def test_recurrence_requires_independent_reports_and_confidence(self):
-        items = [
-            evidence("r1:q1", "r1"),
-            evidence("r1:q2", "r1"),
-            evidence("r2:q1", "r2"),
-        ]
-        index = {item.evidence_id: item for item in items}
-
-        self.assertEqual(
-            recurring_conceptual_strands(
-                [strand("one-paper", ["r1:q1", "r1:q2"])], index
-            ),
-            [],
-        )
-        self.assertEqual(
-            recurring_conceptual_strands(
-                [
-                    strand(
-                        "low-confidence",
-                        ["r1:q1", "r2:q1"],
-                        confidence="low",
-                    )
-                ],
-                index,
-            ),
-            [],
-        )
-        recurring = recurring_conceptual_strands(
-            [strand("recurring", ["r1:q1", "r2:q1"])], index
-        )
-        self.assertEqual(recurring[0].diagnosis_report_count, 2)
-
-    def test_non_conceptual_exclusion_is_preserved_for_audit(self):
-        item = evidence("r1:q1", "r1")
-        output = ConceptualStrandOutput(
-            exclusions=[
-                EvidenceExclusion(
-                    evidence_id=item.evidence_id,
-                    reason="calculation_execution",
-                    rationale="The model and setup were correct.",
-                )
-            ]
-        )
-
-        validated = validate_conceptual_strand_output(output, [item])
-
-        self.assertEqual(validated.exclusions[0].reason, "calculation_execution")
-
-    def test_repairs_invented_ids_and_cross_family_membership(self):
-        items = [
-            evidence(
-                "006445c3-c90d-47fa-985f-b799c78d390e:q12",
-                "006445c3-c90d-47fa-985f-b799c78d390e",
-                chapter="Electrostatics",
-                topic="Capacitor circuits",
-            ),
-            evidence(
-                "227ac774-ba13-4e11-a1e4-6d25d993c1a7:q6",
-                "227ac774-ba13-4e11-a1e4-6d25d993c1a7",
-                chapter="Electrostatics and Capacitance",
-                topic="Charge redistribution",
-            ),
-            evidence(
-                "current-report:q1",
-                "current-report",
-                chapter="Current Electricity",
-                topic="Potentiometer",
-            ),
-        ]
-        malformed = strand(
-            "strand-1",
-            [
-                items[0].evidence_id,
-                "006445c3-c90d-47fa-985f-b799c78d390e:q2",
-                items[1].evidence_id,
-                items[2].evidence_id,
-                "227ac774-ba13-4e11-a1e4-6d25d993c1a7:q1",
-            ],
-        )
-        malformed.manifestations = [
-            StrandManifestation(
-                evidence_id=items[0].evidence_id,
-                manifestation="Used one capacitor's charge as total battery charge.",
-            ),
-            StrandManifestation(
-                evidence_id="006445c3-c90d-47fa-985f-b799c78d390e:q2",
-                manifestation="Invented question.",
-            ),
-            StrandManifestation(
-                evidence_id=items[2].evidence_id,
-                manifestation="Unrelated current-electricity manifestation.",
-            ),
-        ]
-        output = ConceptualStrandOutput(
-            strands=[malformed],
-            exclusions=[
-                EvidenceExclusion(
-                    evidence_id="unknown:q4",
-                    reason="insufficient_evidence",
-                    rationale="Invented exclusion.",
-                ),
-                EvidenceExclusion(
-                    evidence_id=items[0].evidence_id,
-                    reason="unrelated_misconception",
-                    rationale="Conflicts with assigned evidence.",
-                ),
-            ],
-        )
-
-        repaired = repair_conceptual_strand_output(output, items)
-        validated = validate_conceptual_strand_output(repaired, items)
-
-        self.assertEqual(
-            validated.strands[0].evidence_ids,
-            [items[0].evidence_id, items[1].evidence_id],
-        )
-        self.assertEqual(
-            validated.strands[0].chapter_family,
-            "Electrostatics and Capacitance",
-        )
-        self.assertEqual(
-            validated.strands[0].topics,
-            ["Capacitor circuits", "Charge redistribution"],
-        )
-        self.assertEqual(
-            validated.strands[0].manifestations[1].manifestation,
-            items[1].exact_concept_gap,
-        )
-        self.assertEqual(validated.exclusions, [])
-
-    def test_drops_strand_when_classifier_invents_every_evidence_id(self):
-        malformed = strand("strand-1", ["unknown:q1"])
-
-        repaired = repair_conceptual_strand_output(
-            ConceptualStrandOutput(strands=[malformed]),
-            [evidence("r1:q1", "r1")],
-        )
-
-        self.assertEqual(repaired.strands, [])
-
-    def test_broader_pattern_requires_distinct_families(self):
-        items = [
-            evidence("r1:q1", "r1"),
-            evidence("r2:q1", "r2"),
-            evidence("r3:q1", "r3"),
-            evidence("r4:q1", "r4"),
-        ]
-        index = {item.evidence_id: item for item in items}
-        recurring = recurring_conceptual_strands(
-            [
-                strand("strand-1", ["r1:q1", "r2:q1"]),
-                strand("strand-2", ["r3:q1", "r4:q1"]),
-            ],
-            index,
-        )
-        pattern = BroaderConceptualPattern(
-            pattern_id="pattern-1",
-            title="Premature equation selection",
-            shared_reasoning_gap="Selects equations before establishing constraints.",
-            common_corrective_principle="State the model and constraints first.",
-            component_strand_ids=["strand-1", "strand-2"],
-            manifestations=[
-                BroaderPatternManifestation(
-                    strand_id="strand-1",
-                    chapter_family="Electrostatics and Capacitance",
-                    manifestation="Capacitor circuit state.",
-                ),
-                BroaderPatternManifestation(
-                    strand_id="strand-2",
-                    chapter_family="Electrostatics and Capacitance",
-                    manifestation="Another capacitor state.",
-                ),
-            ],
-            confidence="high",
-            rationale="Same family is not broad.",
-        )
-
-        with self.assertRaisesRegex(ValueError, "distinct chapter families"):
-            validate_broader_patterns([pattern], recurring)
-
-    def test_evidence_pack_preserves_recurring_strand_and_exclusions(self):
-        items = [evidence("r1:q1", "r1"), evidence("r2:q1", "r2")]
-        output = ConceptualStrandOutput(
-            strands=[strand("strand-1", ["r1:q1", "r2:q1"])]
-        )
-
-        pack = build_longitudinal_evidence_pack(
-            subject="Physics",
-            evidence_items=items,
-            strand_output=output,
-            broader_patterns=[],
-        )
-
-        self.assertEqual(pack.recurring_strands[0].strand.strand_id, "strand-1")
-        self.assertEqual(pack.evidence_index["r1:q1"].test_date, "2026-07-18")
-
-    def test_litellm_classifier_returns_relationships_and_strict_schema(self):
-        items = [
-            evidence("r1:q1", "r1", chapter="Electrostatics"),
-            evidence("r2:q1", "r2", chapter="Electrostatics"),
-        ]
-        pair = candidate_pair(
-            "pair-1",
-            items[0].evidence_id,
-            items[1].evidence_id,
-        )
-        output = ConceptualStrandOutput(
-            relationships=[relationship("pair-1")],
-            strands=[strand("strand-1", ["r1:q1", "r2:q1"])],
-        )
-        captured = {}
-
-        def completion_fn(**kwargs):
-            captured.update(kwargs)
-            return {
-                "choices": [
-                    {"message": {"content": json.dumps(output.model_dump())}}
-                ]
-            }
-
-        actual = LiteLLMConceptualStrandClassifier(
-            model_config=FakeModelConfig(),
-            completion_fn=completion_fn,
-        ).classify(evidence_items=items, candidate_pairs=[pair])
-
-        self.assertEqual(actual, output)
-        self.assertEqual(captured["num_retries"], 0)
-        self.assertTrue(captured["response_format"]["json_schema"]["strict"])
-        self.assertIn("chapter_family", captured["messages"][1]["content"])
-        self.assertIn("candidate_pairs", captured["messages"][1]["content"])
-
-    def test_litellm_broader_classifier_uses_recurring_strand_contract(self):
-        first = ValidatedRecurringStrand(
-            strand=strand("strand-1", ["r1:q1", "r2:q1"]),
-            diagnosis_report_count=2,
-            question_count=2,
-        )
-        second_strand = strand(
-            "strand-2",
-            ["r3:q1", "r4:q1"],
-            family="Current Electricity",
-        )
-        second_strand.chapter_labels = ["Current Electricity"]
-        second = ValidatedRecurringStrand(
-            strand=second_strand,
-            diagnosis_report_count=2,
-            question_count=2,
-        )
-        candidate = SemanticCandidateCluster(
-            candidate_id="candidate-1",
-            evidence_ids=["strand-1", "strand-2"],
-            rationale="Possible transferable reasoning operation.",
-        )
-        pattern = BroaderConceptualPattern(
-            pattern_id="BRP-1",
-            title="Equations before constraints",
-            shared_reasoning_gap="Selects equations before establishing constraints.",
-            common_corrective_principle="Represent constraints before equation selection.",
-            component_strand_ids=["strand-1", "strand-2"],
-            manifestations=[
-                BroaderPatternManifestation(
-                    strand_id="strand-1",
-                    chapter_family="Electrostatics and Capacitance",
-                    manifestation="Does not construct capacitor node state.",
-                ),
-                BroaderPatternManifestation(
-                    strand_id="strand-2",
-                    chapter_family="Current Electricity",
-                    manifestation="Does not construct loaded network topology.",
-                ),
-            ],
-            confidence="high",
-            rationale="The same pre-equation reasoning operation is absent.",
-        )
-        captured = {}
-
-        def completion_fn(**kwargs):
-            captured.update(kwargs)
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                {"patterns": [pattern.model_dump()]}
-                            )
-                        }
-                    }
-                ]
-            }
-
-        actual = LiteLLMBroaderPatternClassifier(
-            model_config=FakeModelConfig(),
-            completion_fn=completion_fn,
-        ).classify(
-            recurring_strands=[first, second],
-            candidates=[candidate],
-        )
-
-        self.assertEqual(actual, [pattern])
-        self.assertEqual(captured["num_retries"], 0)
-        self.assertIn("recurring_strands", captured["messages"][1]["content"])
-        self.assertEqual(
-            captured["response_format"]["json_schema"]["name"],
-            "student_profile_broader_patterns",
-        )
-
-    def test_broader_analyzer_builds_candidates_from_recurring_strands(self):
-        evidence_items = [
-            evidence("r1:q1", "r1", chapter="Electrostatics"),
-            evidence("r2:q1", "r2", chapter="Electrostatics"),
-            evidence("r3:q1", "r3", chapter="Current Electricity"),
-            evidence("r4:q1", "r4", chapter="Current Electricity"),
-        ]
-        evidence_index = {
-            item.evidence_id: item for item in evidence_items
-        }
-        first = ValidatedRecurringStrand(
-            strand=strand("strand-1", ["r1:q1", "r2:q1"]),
-            diagnosis_report_count=2,
-            question_count=2,
-        )
-        second_strand = strand(
-            "strand-2",
-            ["r3:q1", "r4:q1"],
-            family="Current Electricity",
-        )
-        second_strand.chapter_labels = ["Current Electricity"]
-        second = ValidatedRecurringStrand(
-            strand=second_strand,
-            diagnosis_report_count=2,
-            question_count=2,
-        )
-        pattern = BroaderConceptualPattern(
-            pattern_id="BRP-1",
-            title="Equations before constraints",
-            shared_reasoning_gap="Selects equations before establishing constraints.",
-            common_corrective_principle="Represent constraints before equation selection.",
-            component_strand_ids=["strand-1", "strand-2"],
-            manifestations=[
-                BroaderPatternManifestation(
-                    strand_id="strand-1",
-                    chapter_family="Electrostatics and Capacitance",
-                    manifestation="Capacitor state is not constructed.",
-                ),
-                BroaderPatternManifestation(
-                    strand_id="strand-2",
-                    chapter_family="Current Electricity",
-                    manifestation="Loaded topology is not constructed.",
-                ),
-            ],
-            confidence="high",
-            rationale="Both fail before selecting an equation.",
-        )
-        classifier = FixedBroaderClassifier(pattern)
-
-        actual = BroaderPatternAnalyzer(
-            embedding_service=SyntheticEmbeddingService(),
-            classifier=classifier,
-            similarity_threshold=0.5,
-        ).analyze(
-            [first, second],
-            evidence_index=evidence_index,
-            subject="Physics",
-        )
-
-        self.assertEqual(actual, [pattern])
-        self.assertEqual(
-            classifier.candidates[0].evidence_ids,
-            ["strand-1", "strand-2"],
-        )
-
-
-class SyntheticEmbeddingService:
-    def ensure_embeddings(self, *, subject, evidence_items):
-        return {
-            item.evidence_id: EvidenceEmbeddingRecord(
-                diagnosis_json_s3_uri=item.diagnosis_json_s3_uri,
-                embedding_key=f"{item.evidence_id}#fake#v1",
-                evidence_id=item.evidence_id,
-                embedding_model="fake",
-                embedding_input_version="v1",
-                embedding_text_hash="hash",
-                embedding=[1.0, 0.0],
-                created_at="2026-07-18T00:00:00+00:00",
-            )
-            for item in evidence_items
-        }
-
-
-class FixedBroaderClassifier:
-    def __init__(self, pattern):
-        self.pattern = pattern
-        self.candidates = []
-
-    def classify(self, *, recurring_strands, candidates):
-        self.candidates = candidates
-        return [self.pattern]
 
 
 if __name__ == "__main__":

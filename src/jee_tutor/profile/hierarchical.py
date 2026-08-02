@@ -18,11 +18,7 @@ from jee_tutor.profile.embeddings import (
     EvidenceEmbeddingService,
 )
 from jee_tutor.profile.evidence import ProfileEvidenceItem
-from jee_tutor.profile.semantic import (
-    SemanticCandidateCluster,
-    SemanticClusterModelConfig,
-    build_embedding_candidate_clusters,
-)
+from jee_tutor.profile.model_config import ProfileClassifierModelConfig
 
 
 Confidence = Literal["high", "medium", "low"]
@@ -105,52 +101,6 @@ class ValidatedRecurringStrand(BaseModel):
     question_count: int = Field(ge=2)
 
 
-class BroaderPatternManifestation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    strand_id: str = Field(min_length=1)
-    chapter_family: str = Field(min_length=1)
-    manifestation: str = Field(min_length=1)
-
-
-class BroaderConceptualPattern(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    pattern_id: str = Field(min_length=1)
-    title: str = Field(min_length=1)
-    shared_reasoning_gap: str = Field(min_length=1)
-    common_corrective_principle: str = Field(min_length=1)
-    component_strand_ids: list[str] = Field(min_length=2)
-    manifestations: list[BroaderPatternManifestation] = Field(min_length=2)
-    confidence: Confidence
-    rationale: str = Field(min_length=1)
-
-    @field_validator("component_strand_ids")
-    @classmethod
-    def unique_components(cls, value: list[str]) -> list[str]:
-        if len(value) != len(set(value)):
-            raise ValueError("Broader pattern contains duplicate component strands.")
-        return value
-
-
-class BroaderPatternOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    patterns: list[BroaderConceptualPattern] = Field(default_factory=list)
-
-
-class LongitudinalEvidencePack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    subject: str = Field(min_length=1)
-    diagnosis_report_count: int = Field(ge=0)
-    question_count: int = Field(ge=0)
-    evidence_index: dict[str, ProfileEvidenceItem] = Field(default_factory=dict)
-    recurring_strands: list[ValidatedRecurringStrand] = Field(default_factory=list)
-    broader_patterns: list[BroaderConceptualPattern] = Field(default_factory=list)
-    exclusions: list[EvidenceExclusion] = Field(default_factory=list)
-
-
 class ConceptualStrandClassifier(Protocol):
     def classify(
         self,
@@ -158,15 +108,6 @@ class ConceptualStrandClassifier(Protocol):
         evidence_items: list[ProfileEvidenceItem],
         candidate_pairs: list[EvidenceNeighborPair],
     ) -> ConceptualStrandOutput: ...
-
-
-class BroaderPatternClassifier(Protocol):
-    def classify(
-        self,
-        *,
-        recurring_strands: list[ValidatedRecurringStrand],
-        candidates: list[SemanticCandidateCluster],
-    ) -> list[BroaderConceptualPattern]: ...
 
 
 class ConceptualStrandAnalyzer:
@@ -229,76 +170,6 @@ class ConceptualStrandAnalyzer:
             ),
             evidence_items,
             candidate_pairs=candidate_pairs,
-        )
-
-
-class BroaderPatternAnalyzer:
-    def __init__(
-        self,
-        *,
-        embedding_service: EvidenceEmbeddingService | None = None,
-        classifier: BroaderPatternClassifier | None = None,
-        analyzer: Callable[
-            [list[ValidatedRecurringStrand]], list[BroaderConceptualPattern]
-        ]
-        | None = None,
-        similarity_threshold: float = 0.72,
-    ):
-        self.embedding_service = embedding_service
-        self.classifier = classifier
-        self.analyzer = analyzer
-        self.similarity_threshold = similarity_threshold
-
-    def analyze(
-        self,
-        recurring_strands: list[ValidatedRecurringStrand],
-        *,
-        evidence_index: dict[str, ProfileEvidenceItem],
-        subject: str,
-    ) -> list[BroaderConceptualPattern]:
-        if len({item.strand.chapter_family.casefold() for item in recurring_strands}) < 2:
-            return []
-        if self.analyzer is not None:
-            return validate_broader_patterns(
-                self.analyzer(recurring_strands), recurring_strands
-            )
-        synthetic = [
-            _strand_as_evidence(item.strand, evidence_index)
-            for item in recurring_strands
-        ]
-        embedding_service = self.embedding_service or EvidenceEmbeddingService(
-            input_version="recurring-strand-v2"
-        )
-        records = embedding_service.ensure_embeddings(
-            subject=subject,
-            evidence_items=synthetic,
-        )
-        candidates = [
-            candidate
-            for candidate in build_embedding_candidate_clusters(
-                evidence_items=synthetic,
-                embedding_records=records,
-                similarity_threshold=self.similarity_threshold,
-            )
-            if len(candidate.evidence_ids) >= 2
-            and len(
-                {
-                    _strand_by_id(recurring_strands, strand_id)
-                    .strand.chapter_family.casefold()
-                    for strand_id in candidate.evidence_ids
-                }
-            )
-            >= 2
-        ]
-        if not candidates:
-            return []
-        classifier = self.classifier or LiteLLMBroaderPatternClassifier()
-        return validate_broader_patterns(
-            classifier.classify(
-                recurring_strands=recurring_strands,
-                candidates=candidates,
-            ),
-            recurring_strands,
         )
 
 
@@ -613,71 +484,14 @@ def recurring_conceptual_strands(
     return recurring
 
 
-def validate_broader_patterns(
-    patterns: list[BroaderConceptualPattern],
-    recurring_strands: list[ValidatedRecurringStrand],
-) -> list[BroaderConceptualPattern]:
-    strand_index = {
-        item.strand.strand_id: item for item in recurring_strands
-    }
-    for pattern in patterns:
-        unknown = set(pattern.component_strand_ids) - set(strand_index)
-        if unknown:
-            raise ValueError(
-                f"Broader pattern references unknown strand ids: {sorted(unknown)}"
-            )
-        families = {
-            strand_index[strand_id].strand.chapter_family.casefold()
-            for strand_id in pattern.component_strand_ids
-        }
-        if len(families) < 2:
-            raise ValueError("Broader pattern must span distinct chapter families.")
-        if pattern.confidence == "low":
-            raise ValueError("Low-confidence broader patterns are not reportable.")
-        if {item.strand_id for item in pattern.manifestations} != set(
-            pattern.component_strand_ids
-        ):
-            raise ValueError(
-                "Broader pattern manifestations must cover component strands."
-            )
-    return patterns
-
-
-def build_longitudinal_evidence_pack(
-    *,
-    subject: str,
-    evidence_items: list[ProfileEvidenceItem],
-    strand_output: ConceptualStrandOutput,
-    broader_patterns: list[BroaderConceptualPattern],
-) -> LongitudinalEvidencePack:
-    evidence_index = {item.evidence_id: item for item in evidence_items}
-    recurring = recurring_conceptual_strands(
-        strand_output.strands, evidence_index
-    )
-    validated_patterns = validate_broader_patterns(
-        broader_patterns, recurring
-    )
-    return LongitudinalEvidencePack(
-        subject=subject,
-        diagnosis_report_count=len(
-            {item.diagnosis_report_id for item in evidence_items}
-        ),
-        question_count=len(evidence_items),
-        evidence_index=evidence_index,
-        recurring_strands=recurring,
-        broader_patterns=validated_patterns,
-        exclusions=strand_output.exclusions,
-    )
-
-
 class LiteLLMConceptualStrandClassifier:
     def __init__(
         self,
         *,
-        model_config: SemanticClusterModelConfig | None = None,
+        model_config: ProfileClassifierModelConfig | None = None,
         completion_fn=completion,
     ):
-        self.model_config = model_config or SemanticClusterModelConfig()
+        self.model_config = model_config or ProfileClassifierModelConfig()
         self.completion_fn = completion_fn
 
     def classify(
@@ -688,6 +502,7 @@ class LiteLLMConceptualStrandClassifier:
     ) -> ConceptualStrandOutput:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
+        kwargs["temperature"] = 0
         kwargs.setdefault("num_retries", 0)
         response = self.completion_fn(
             **kwargs,
@@ -720,56 +535,11 @@ class LiteLLMConceptualStrandClassifier:
         )
 
 
-class LiteLLMBroaderPatternClassifier:
-    def __init__(
-        self,
-        *,
-        model_config: SemanticClusterModelConfig | None = None,
-        completion_fn=completion,
-    ):
-        self.model_config = model_config or SemanticClusterModelConfig()
-        self.completion_fn = completion_fn
-
-    def classify(
-        self, *, recurring_strands, candidates
-    ) -> list[BroaderConceptualPattern]:
-        config = self.model_config.resolve()
-        kwargs = config.to_litellm_kwargs()
-        kwargs.setdefault("num_retries", 0)
-        response = self.completion_fn(
-            **kwargs,
-            messages=[
-                {"role": "system", "content": _broader_system_prompt()},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "recurring_strands": [
-                                item.model_dump() for item in recurring_strands
-                            ],
-                            "candidates": [
-                                candidate.model_dump() for candidate in candidates
-                            ],
-                        },
-                        sort_keys=True,
-                    ),
-                },
-            ],
-            response_format=_response_format(
-                "student_profile_broader_patterns",
-                BroaderPatternOutput,
-            ),
-            caching=False,
-            cache={"no-cache": True},
-        )
-        return BroaderPatternOutput.model_validate_json(
-            response["choices"][0]["message"]["content"].strip()
-        ).patterns
-
-
 def _strand_system_prompt() -> str:
     return (
-        "Synthesize precise conceptual strands from JEE question diagnoses. First classify "
+        "You are an expert JEE educational diagnostician and cognitive learning specialist. "
+        "Your task is to synthesize precise conceptual strands from JEE question diagnoses. "
+        "First classify "
         "every supplied candidate pair exactly once as same_underlying_gap, "
         "related_but_distinct, unrelated, or non_conceptual, with a specific rationale. "
         "A strand is one missing mental model or conceptual operation within the pair's "
@@ -782,17 +552,6 @@ def _strand_system_prompt() -> str:
         "generic formula recall, carelessness, shared vocabulary, or syllabus proximity. "
         "Use exclusions for non-conceptual or unsupported evidence. Preserve all evidence "
         "and candidate pair ids exactly and return strict JSON only."
-    )
-
-
-def _broader_system_prompt() -> str:
-    return (
-        "Identify broader conceptual-reasoning patterns across validated recurring "
-        "conceptual strands from distinct chapter families. A pattern must name a precise "
-        "transferable reasoning failure and common corrective principle while preserving "
-        "each strand's distinct manifestation. Reject generic labels such as formula "
-        "recall, carelessness, calculation mistakes, vocabulary overlap, or syllabus "
-        "proximity. Preserve component strand ids and return strict JSON only."
     )
 
 
@@ -817,42 +576,6 @@ def _evidence_payload(item: ProfileEvidenceItem) -> dict[str, str]:
         "why_wrong": item.why_wrong,
         "deep_dive_recommendation": item.deep_dive_recommendation,
     }
-
-
-def _strand_as_evidence(
-    strand: ConceptualStrand,
-    evidence_index: dict[str, ProfileEvidenceItem],
-) -> ProfileEvidenceItem:
-    source = evidence_index[strand.evidence_ids[0]]
-    return ProfileEvidenceItem(
-        evidence_id=strand.strand_id,
-        evidence_reference=strand.strand_id,
-        diagnosis_report_id=f"conceptual-strand:{strand.strand_id}",
-        diagnosis_json_s3_uri=source.diagnosis_json_s3_uri,
-        subject=source.subject,
-        test_name="conceptual-strand-synthesis",
-        test_date=None,
-        test_date_source="unavailable",
-        diagnosis_date=source.diagnosis_date,
-        question_number=strand.strand_id,
-        chapter=strand.chapter_family,
-        topic=strand.title,
-        canonical_chapter=strand.chapter_family,
-        canonical_topic=strand.title,
-        exact_concept_gap=strand.missing_mental_model,
-        likely_thought=strand.shared_failure,
-        why_wrong=strand.rationale,
-        deep_dive_recommendation=strand.corrective_model,
-    )
-
-
-def _strand_by_id(
-    strands: list[ValidatedRecurringStrand],
-    strand_id: str,
-) -> ValidatedRecurringStrand:
-    return next(
-        item for item in strands if item.strand.strand_id == strand_id
-    )
 
 
 def _unique_strings(values) -> list[str]:

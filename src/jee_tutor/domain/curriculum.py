@@ -2,13 +2,13 @@
 
 from jee_tutor.curriculum.taxonomy import (
     CurriculumTaxonomy,
-    SubjectTaxonomy,
-    TaxonomyTopic,
+    CurriculumSubject as SubjectTaxonomy,
+    CurriculumTopic as TaxonomyTopic,
 )
 from jee_tutor.curriculum.validator import (
     CurriculumValidationError,
     CurriculumValidator,
-    ValidationResult,
+    CurriculumValidationResult as ValidationResult,
 )
 
 __all__ = [
