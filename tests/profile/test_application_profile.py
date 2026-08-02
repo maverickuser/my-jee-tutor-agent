@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from boto3.dynamodb.types import TypeSerializer
@@ -102,6 +103,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         for report_id in ["r1", "r2"]:
             metadata_store.put_metadata(metadata(report_id))
             artifact_store.write_report(s3_uri=f"s3://bucket/{report_id}.json", report=report(report_id))
+        observability = RecordingProfileObservability()
         service = StudentProfileApplicationService(
             metadata_store=metadata_store,
             artifact_store=artifact_store,
@@ -109,6 +111,7 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
                 analyzer=fixed_strands
             ),
             artifact_writer=FakeProfileArtifactWriter(),
+            observability=observability,
         )
 
         response = service.handle(
@@ -132,6 +135,12 @@ class StudentProfileApplicationServiceTest(unittest.TestCase):
         self.assertIn("**Ask this when you see:**", response["profile_markdown"])
         self.assertNotIn("r1:q1", response["profile_markdown"])
         self.assertEqual(len(response["profile_internal_metadata"]["insights"]), 1)
+        self.assertEqual(observability.input_payload["task"], "profile")
+        self.assertNotIn("recipient_email", observability.input_payload)
+        self.assertEqual(
+            observability.observation.updates[0]["output"]["profile_status"],
+            "succeeded",
+        )
 
     def test_profile_request_creates_dynamodb_embeddings_before_semantic_classification(self):
         metadata_store = InMemoryStudentDiagnosisMetadataStore()
@@ -262,6 +271,25 @@ class RecordingSemanticClassifier:
             )
             ]
         )
+
+
+class RecordingProfileObservation:
+    def __init__(self):
+        self.updates = []
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+
+class RecordingProfileObservability:
+    def __init__(self):
+        self.input_payload = None
+        self.observation = RecordingProfileObservation()
+
+    @contextmanager
+    def invocation_span(self, *, input_payload, **_kwargs):
+        self.input_payload = input_payload
+        yield self.observation
 
 
 class FakeProfileArtifactResult:

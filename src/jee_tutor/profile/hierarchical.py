@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import deepcopy
 import json
+import logging
 import re
 from typing import Literal, Protocol
 
@@ -19,6 +20,10 @@ from jee_tutor.profile.embeddings import (
 )
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 from jee_tutor.profile.model_config import ProfileClassifierModelConfig
+from jee_tutor.agent.observability import LangfuseObservability
+
+
+logger = logging.getLogger(__name__)
 
 
 Confidence = Literal["high", "medium", "low"]
@@ -162,12 +167,17 @@ class ConceptualStrandAnalyzer:
             classified.relationships,
             candidate_pairs,
         )
+        repaired = repair_conceptual_strand_output(
+            classified,
+            evidence_items,
+            candidate_pairs=candidate_pairs,
+        )
+        supported = discard_unsupported_strands(
+            repaired,
+            candidate_pairs=candidate_pairs,
+        )
         return validate_conceptual_strand_output(
-            repair_conceptual_strand_output(
-                classified,
-                evidence_items,
-                candidate_pairs=candidate_pairs,
-            ),
+            supported,
             evidence_items,
             candidate_pairs=candidate_pairs,
         )
@@ -462,6 +472,41 @@ def _validate_strand_relationship_support(
         )
 
 
+def discard_unsupported_strands(
+    output: ConceptualStrandOutput,
+    *,
+    candidate_pairs: list[EvidenceNeighborPair],
+) -> ConceptualStrandOutput:
+    """Drop LLM strands that contradict their validated pair relationships."""
+    supported: list[ConceptualStrand] = []
+    for strand in output.strands:
+        if len(strand.evidence_ids) < 2:
+            supported.append(strand)
+            continue
+        try:
+            _validate_strand_relationship_support(
+                strand,
+                output.relationships,
+                candidate_pairs,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "profile_strand_dropped strand_id=%s reason=%s evidence_count=%s",
+                strand.strand_id,
+                _strand_drop_reason(exc),
+                len(strand.evidence_ids),
+            )
+            continue
+        supported.append(strand)
+    return output.model_copy(update={"strands": supported})
+
+
+def _strand_drop_reason(exc: ValueError) -> str:
+    if "contradictory internal" in str(exc):
+        return "contradictory_internal_relationship"
+    return "disconnected_same_gap_graph"
+
+
 def recurring_conceptual_strands(
     strands: list[ConceptualStrand],
     evidence_index: dict[str, ProfileEvidenceItem],
@@ -489,9 +534,11 @@ class LiteLLMConceptualStrandClassifier:
         self,
         *,
         model_config: ProfileClassifierModelConfig | None = None,
+        observability: LangfuseObservability | None = None,
         completion_fn=completion,
     ):
         self.model_config = model_config or ProfileClassifierModelConfig()
+        self.observability = observability or LangfuseObservability()
         self.completion_fn = completion_fn
 
     def classify(
@@ -504,35 +551,92 @@ class LiteLLMConceptualStrandClassifier:
         kwargs = config.to_litellm_kwargs()
         kwargs["temperature"] = 0
         kwargs.setdefault("num_retries", 0)
-        response = self.completion_fn(
-            **kwargs,
-            messages=[
-                {"role": "system", "content": _strand_system_prompt()},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "evidence": [
-                                _evidence_payload(item) for item in evidence_items
-                            ],
-                            "candidate_pairs": [
-                                pair.model_dump() for pair in candidate_pairs
-                            ],
-                        },
-                        sort_keys=True,
+        messages = [
+            {"role": "system", "content": _strand_system_prompt()},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "evidence": [_evidence_payload(item) for item in evidence_items],
+                        "candidate_pairs": [
+                            pair.model_dump() for pair in candidate_pairs
+                        ],
+                    },
+                    sort_keys=True,
+                ),
+            },
+        ]
+        with self.observability.generation_span(
+            name="profile-conceptual-strand-classification",
+            model=config.model,
+            input_payload={
+                "evidence_count": len(evidence_items),
+                "candidate_pair_count": len(candidate_pairs),
+                "candidate_pair_ids": [pair.pair_id for pair in candidate_pairs],
+            },
+            metadata={
+                "task": "profile",
+                "output_format": "json_schema",
+                "schema_name": "student_profile_conceptual_strands",
+                "temperature": 0,
+            },
+        ) as generation:
+            try:
+                response = self.completion_fn(
+                    **kwargs,
+                    messages=messages,
+                    response_format=_response_format(
+                        "student_profile_conceptual_strands",
+                        ConceptualStrandOutput,
                     ),
-                },
-            ],
-            response_format=_response_format(
-                "student_profile_conceptual_strands",
-                ConceptualStrandOutput,
-            ),
-            caching=False,
-            cache={"no-cache": True},
-        )
-        return ConceptualStrandOutput.model_validate_json(
-            response["choices"][0]["message"]["content"].strip()
-        )
+                    caching=False,
+                    cache={"no-cache": True},
+                )
+                result = ConceptualStrandOutput.model_validate_json(
+                    response["choices"][0]["message"]["content"].strip()
+                )
+            except Exception as exc:
+                if generation:
+                    generation.update(
+                        output={
+                            "validation_status": "failed",
+                            "error_type": exc.__class__.__name__,
+                        }
+                    )
+                raise
+            if generation:
+                generation.update(
+                    output={
+                        "validation_status": "passed",
+                        "relationship_count": len(result.relationships),
+                        "strand_count": len(result.strands),
+                        "exclusion_count": len(result.exclusions),
+                    },
+                    **_profile_generation_usage(response),
+                )
+            return result
+
+
+def _profile_generation_usage(response: object) -> dict[str, dict[str, int]]:
+    usage = (
+        response.get("usage")
+        if isinstance(response, dict)
+        else getattr(response, "usage", None)
+    )
+    if not usage:
+        return {}
+    values = usage if isinstance(usage, dict) else usage.model_dump(exclude_none=True)
+    aliases = {
+        "prompt_tokens": "input",
+        "completion_tokens": "output",
+        "total_tokens": "total",
+    }
+    details = {
+        target: int(values[source])
+        for source, target in aliases.items()
+        if isinstance(values.get(source), int)
+    }
+    return {"usage_details": details} if details else {}
 
 
 def _strand_system_prompt() -> str:

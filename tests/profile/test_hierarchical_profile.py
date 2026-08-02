@@ -1,5 +1,6 @@
 import json
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from jee_tutor.profile.clustering import EvidenceNeighborPair
@@ -10,6 +11,7 @@ from jee_tutor.profile.hierarchical import (
     ConceptualStrandOutput,
     LiteLLMConceptualStrandClassifier,
     StrandManifestation,
+    discard_unsupported_strands,
     recurring_conceptual_strands,
     repair_conceptual_strand_output,
     validate_candidate_relationships,
@@ -67,6 +69,57 @@ class ConceptualStrandTest(unittest.TestCase):
         )
         validate_conceptual_strand_output(repaired, items)
 
+    def test_discards_and_logs_disconnected_strand(self):
+        items = [evidence("r1", "q1"), evidence("r2", "q1"), evidence("r3", "q1")]
+        pair = candidate_pair()
+        output = ConceptualStrandOutput(
+            relationships=[relationship(pair.pair_id)],
+            strands=[conceptual_strand(items)],
+        )
+
+        with self.assertLogs("jee_tutor.profile.hierarchical", level="WARNING") as logs:
+            repaired = discard_unsupported_strands(output, candidate_pairs=[pair])
+
+        self.assertEqual(repaired.strands, [])
+        self.assertIn("reason=disconnected_same_gap_graph", logs.output[0])
+        validate_conceptual_strand_output(repaired, items, candidate_pairs=[pair])
+
+    def test_discards_and_logs_strand_with_contradictory_internal_pair(self):
+        items = [evidence("r1", "q1"), evidence("r2", "q1"), evidence("r3", "q1")]
+        same_pair = candidate_pair()
+        contradictory_pair = same_pair.model_copy(
+            update={
+                "pair_id": "pair-2",
+                "left_evidence_id": "r2:q1",
+                "right_evidence_id": "r3:q1",
+            }
+        )
+        output = ConceptualStrandOutput(
+            relationships=[
+                relationship(same_pair.pair_id),
+                CandidateRelationshipDecision(
+                    candidate_pair_id=contradictory_pair.pair_id,
+                    relationship="related_but_distinct",
+                    rationale="The questions require different corrective models.",
+                ),
+            ],
+            strands=[conceptual_strand(items)],
+        )
+
+        with self.assertLogs("jee_tutor.profile.hierarchical", level="WARNING") as logs:
+            repaired = discard_unsupported_strands(
+                output,
+                candidate_pairs=[same_pair, contradictory_pair],
+            )
+
+        self.assertEqual(repaired.strands, [])
+        self.assertIn("reason=contradictory_internal_relationship", logs.output[0])
+        validate_conceptual_strand_output(
+            repaired,
+            items,
+            candidate_pairs=[same_pair, contradictory_pair],
+        )
+
     def test_litellm_classifier_uses_strict_schema_and_evidence_payload(self):
         items = [evidence("r1", "q1"), evidence("r2", "q1")]
         output = ConceptualStrandOutput(
@@ -74,16 +127,25 @@ class ConceptualStrandTest(unittest.TestCase):
             strands=[conceptual_strand(items)],
         )
         captured = {}
+        observability = RecordingObservability()
 
         def completion_fn(**kwargs):
             captured.update(kwargs)
-            return {"choices": [{"message": {"content": output.model_dump_json()}}]}
+            return {
+                "choices": [{"message": {"content": output.model_dump_json()}}],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "total_tokens": 30,
+                },
+            }
 
         classifier = LiteLLMConceptualStrandClassifier(
             model_config=ProfileClassifierModelConfig(
                 environ={"PROFILE_SEMANTIC_CLUSTER_MODEL": "fake/model"},
                 config={},
             ),
+            observability=observability,
             completion_fn=completion_fn,
         )
         actual = classifier.classify(evidence_items=items, candidate_pairs=[candidate_pair()])
@@ -100,6 +162,20 @@ class ConceptualStrandTest(unittest.TestCase):
         payload = json.loads(captured["messages"][1]["content"])
         self.assertEqual(len(payload["evidence"]), 2)
         self.assertEqual(payload["candidate_pairs"][0]["pair_id"], candidate_pair().pair_id)
+        self.assertEqual(
+            observability.generation_kwargs["name"],
+            "profile-conceptual-strand-classification",
+        )
+        self.assertEqual(observability.generation_kwargs["input_payload"]["evidence_count"], 2)
+        self.assertNotIn("evidence", observability.generation_kwargs["input_payload"])
+        self.assertEqual(
+            observability.observation.updates[0]["usage_details"],
+            {"input": 20, "output": 10, "total": 30},
+        )
+        self.assertEqual(
+            observability.observation.updates[0]["output"]["validation_status"],
+            "passed",
+        )
 
     def test_classifier_model_config_resolves_provider_credentials_and_proxy(self):
         openai = ProfileClassifierModelConfig(
@@ -134,6 +210,51 @@ class ConceptualStrandTest(unittest.TestCase):
                 config={"semantic_clustering": {"model": "gemini/configured"}},
             ).resolve()
         self.assertEqual(configured.model, "gemini/configured")
+
+    def test_classifier_records_safe_failure_in_generation_trace(self):
+        observability = RecordingObservability()
+
+        def completion_fn(**_kwargs):
+            raise RuntimeError("provider unavailable")
+
+        classifier = LiteLLMConceptualStrandClassifier(
+            model_config=ProfileClassifierModelConfig(
+                environ={"PROFILE_SEMANTIC_CLUSTER_MODEL": "fake/model"},
+                config={},
+            ),
+            observability=observability,
+            completion_fn=completion_fn,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
+            classifier.classify(
+                evidence_items=[evidence("r1", "q1"), evidence("r2", "q1")],
+                candidate_pairs=[candidate_pair()],
+            )
+
+        self.assertEqual(
+            observability.observation.updates[0]["output"],
+            {"validation_status": "failed", "error_type": "RuntimeError"},
+        )
+
+
+class RecordingObservation:
+    def __init__(self):
+        self.updates = []
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+
+class RecordingObservability:
+    def __init__(self):
+        self.generation_kwargs = None
+        self.observation = RecordingObservation()
+
+    @contextmanager
+    def generation_span(self, **kwargs):
+        self.generation_kwargs = kwargs
+        yield self.observation
 
 
 def evidence(report_id: str, question: str) -> ProfileEvidenceItem:

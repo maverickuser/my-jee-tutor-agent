@@ -14,6 +14,7 @@ from jee_tutor.profile.evidence import ProfileEvidenceLoader
 from jee_tutor.profile.models import ProfileReportRequest
 from jee_tutor.profile.weightage import ChapterWeightageService
 from jee_tutor.profile.hierarchical import ConceptualStrandAnalyzer
+from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.profile.storage import (
     StructuredDiagnosisArtifactStore,
     StudentDiagnosisMetadataStore,
@@ -34,6 +35,7 @@ class StudentProfileApplicationService:
         actionable_service: ActionableInsightService | None = None,
         weightage_service: ChapterWeightageService | None = None,
         artifact_writer: ProfileReportArtifactWriter | None = None,
+        observability: LangfuseObservability | None = None,
     ):
         self.metadata_store = metadata_store or build_student_diagnosis_metadata_store()
         self.artifact_store = artifact_store or build_structured_diagnosis_artifact_store()
@@ -43,8 +45,31 @@ class StudentProfileApplicationService:
         self.actionable_service = actionable_service or ActionableInsightService()
         self.weightage_service = weightage_service or ChapterWeightageService()
         self.artifact_writer = artifact_writer or ProfileReportArtifactWriter()
+        self.observability = observability or LangfuseObservability()
 
     def handle(self, payload: dict[str, Any]) -> dict[str, Any]:
+        safe_input = {
+            "task": "profile",
+            "subject": payload.get("subject"),
+            "has_student_identity": bool(payload.get("email") or payload.get("recipient_email")),
+        }
+        with self.observability.invocation_span(
+            input_payload=safe_input,
+            tags=["profile", "actionable-insights"],
+            metadata={"task": "profile"},
+        ) as span:
+            result = self._handle(payload)
+            if span:
+                span.update(
+                    output={
+                        "profile_status": result.get("profile_status"),
+                        "subject": result.get("subject"),
+                        "artifact_status": result.get("profile_artifact_status"),
+                    }
+                )
+            return result
+
+    def _handle(self, payload: dict[str, Any]) -> dict[str, Any]:
         runtime_commit_sha = _runtime_commit_sha()
         try:
             request = ProfileReportRequest.model_validate(
