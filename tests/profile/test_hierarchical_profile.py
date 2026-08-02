@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from jee_tutor.profile.clustering import EvidenceNeighborPair
 from jee_tutor.profile.evidence import ProfileEvidenceItem
@@ -123,10 +124,15 @@ class ConceptualStrandTest(unittest.TestCase):
         self.assertEqual(custom.api_key, "proxy-key")
         self.assertNotIn("api_base", custom.to_litellm_kwargs())
 
-        configured = ProfileClassifierModelConfig(
-            environ={},
-            config={"semantic_clustering": {"model": "gemini/configured"}},
-        ).resolve()
+        with patch.dict(
+            "os.environ",
+            {"PROFILE_SEMANTIC_CLUSTER_MODEL": "gemini/from-ci"},
+            clear=True,
+        ):
+            configured = ProfileClassifierModelConfig(
+                environ={},
+                config={"semantic_clustering": {"model": "gemini/configured"}},
+            ).resolve()
         self.assertEqual(configured.model, "gemini/configured")
 
 

@@ -40,8 +40,8 @@ class ProfileClassifierModelConfig:
         environ: dict[str, str] | None = None,
         config: Any | None = None,
     ):
-        self.environ = environ or os.environ
-        self.config = config or LLMConfig.load()
+        self.environ = environ if environ is not None else os.environ
+        self.config = config if config is not None else LLMConfig.load()
 
     def resolve(self) -> ProfileClassifierModelSettings:
         model = (
