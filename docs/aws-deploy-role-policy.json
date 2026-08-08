@@ -49,6 +49,17 @@
         "kms:DescribeKey"
       ],
       "Resource": "arn:*:kms:*:::*"
+    },
+    {
+      "Sid": "CdExecutionHmacSecretManagement",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:jee-tutor/cd-execution-hmac-*"
     }
   ]
 }

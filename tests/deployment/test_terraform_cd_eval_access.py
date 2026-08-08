@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -205,6 +206,31 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertNotIn("--generate-secret-string", workflow)
         self.assertEqual(workflow.count("--cd-execution-secret-id"), 2)
         self.assertIn("scripts/check_cd_model_lifecycle.py", workflow)
+
+    def test_deploy_role_policy_can_manage_and_read_only_the_cd_hmac_secret(self):
+        policy = json.loads(
+            (REPO_ROOT / "docs/aws-deploy-role-policy.json").read_text()
+        )
+        statement = next(
+            item
+            for item in policy["Statement"]
+            if item["Sid"] == "CdExecutionHmacSecretManagement"
+        )
+
+        self.assertEqual(statement["Effect"], "Allow")
+        self.assertEqual(
+            set(statement["Action"]),
+            {
+                "secretsmanager:CreateSecret",
+                "secretsmanager:DescribeSecret",
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:PutSecretValue",
+            },
+        )
+        self.assertEqual(
+            statement["Resource"],
+            "arn:aws:secretsmanager:*:*:secret:jee-tutor/cd-execution-hmac-*",
+        )
 
 
 if __name__ == "__main__":

@@ -168,6 +168,13 @@ role to allow `iam:CreateServiceLinkedRole` for
 `AWSServiceRoleForBedrockAgentCoreRuntimeIdentity` during runtime deployment.
 That statement is included in [docs/aws-deploy-role-policy.json](docs/aws-deploy-role-policy.json).
 
+The deploy role must also be able to create, describe, update, and read the CD
+execution HMAC secret. Those least-privilege Secrets Manager permissions are
+included in [docs/aws-deploy-role-policy.json](docs/aws-deploy-role-policy.json)
+for the default `jee-tutor/cd-execution-hmac` secret name. If
+`CD_EXECUTION_HMAC_SECRET_NAME` overrides that name, update the policy resource
+to match it before running CD.
+
 The CD workflow prints the effective AWS caller and runs `bedrock
 list-guardrails` before Terraform applies the guardrail. If that preflight fails,
 the assumed deploy role, permission boundary, SCP, or selected region is blocking
