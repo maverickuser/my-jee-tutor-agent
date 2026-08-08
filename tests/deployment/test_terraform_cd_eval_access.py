@@ -200,6 +200,9 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("CD_EXECUTION_HMAC_SECRET_ARN", terraform)
         self.assertIn("Provision CD execution HMAC secret", workflow)
         self.assertIn("CD_EXECUTION_HMAC_SECRET", workflow)
+        self.assertIn("generated_secret=$(openssl rand -hex 32)", workflow)
+        self.assertIn('--secret-string "$generated_secret"', workflow)
+        self.assertNotIn("--generate-secret-string", workflow)
         self.assertEqual(workflow.count("--cd-execution-secret-id"), 2)
         self.assertIn("scripts/check_cd_model_lifecycle.py", workflow)
 

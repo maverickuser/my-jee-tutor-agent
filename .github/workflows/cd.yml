@@ -343,9 +343,10 @@ jobs:
               --name "$SECRET_NAME" \
               --secret-string "$CONFIGURED_SECRET" >/dev/null
           else
+            generated_secret=$(openssl rand -hex 32)
             aws secretsmanager create-secret \
               --name "$SECRET_NAME" \
-              --generate-secret-string '{"ExcludePunctuation":true,"PasswordLength":64}' >/dev/null
+              --secret-string "$generated_secret" >/dev/null
           fi
           secret_arn=$(aws secretsmanager describe-secret \
             --secret-id "$SECRET_NAME" \
