@@ -5,11 +5,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.model_routing import (
+    LIVE_GENERATION_MODEL,
+    active_model_bundle,
+    is_gemini_36_model,
+)
 
 
 DEFAULT_LLM_TIMEOUT_SECONDS = 360
-DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
-CREWAI_MODEL = "gemini/gemini-3-flash-preview"
+DIAGNOSIS_MODEL = LIVE_GENERATION_MODEL
+CREWAI_MODEL = LIVE_GENERATION_MODEL
 
 
 @dataclass(frozen=True)
@@ -22,6 +27,9 @@ class ModelSettings:
 
     def to_litellm_kwargs(self) -> dict[str, Any]:
         kwargs = deepcopy(self.completion_options) if self.completion_options else {}
+        if is_gemini_36_model(self.model):
+            for key in ("temperature", "top_p", "top_k"):
+                kwargs.pop(key, None)
         kwargs["model"] = self.model
         if self.api_key:
             kwargs["api_key"] = self.api_key
@@ -90,7 +98,12 @@ class VisionModelConfig:
         default_model: str,
         error_label: str,
     ) -> ModelSettings:
-        model = self._setting(env_key, config_section, config_key, default_model)
+        model_bundle = active_model_bundle()
+        model = (
+            model_bundle.generation_model
+            if model_bundle is not None
+            else self._setting(env_key, config_section, config_key, default_model)
+        )
         api_base = self._setting("LITELLM_BASE_URL", "litellm", "api_base")
         completion_options = self.config.section("completion")
         completion_options.setdefault("timeout", DEFAULT_LLM_TIMEOUT_SECONDS)

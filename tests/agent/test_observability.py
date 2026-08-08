@@ -1,10 +1,15 @@
 import os
 import unittest
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from jee_tutor.agent.config_loader import LLMConfig
-from jee_tutor.agent.observability import EvaluationScore, LangfuseObservability
+from jee_tutor.agent.observability import (
+    EvaluationScore,
+    LangfuseObservability,
+    safe_provider_response_metadata,
+)
 
 
 class FakePrompt:
@@ -64,6 +69,27 @@ def fake_attribute_context(**kwargs):
 
 
 class ObservabilityTest(unittest.TestCase):
+    def test_safe_provider_metadata_supports_mapping_and_object_responses(self):
+        self.assertEqual(
+            safe_provider_response_metadata(
+                {
+                    "id": "request-1",
+                    "choices": [{"finish_reason": "stop"}],
+                    "_hidden_params": {"request_id": "ignored"},
+                }
+            ),
+            {"provider_request_id": "request-1", "finish_reason": "stop"},
+        )
+        self.assertEqual(
+            safe_provider_response_metadata(
+                SimpleNamespace(
+                    choices=[SimpleNamespace(finish_reason="length")],
+                    _hidden_params={"request_id": "request-2"},
+                )
+            ),
+            {"provider_request_id": "request-2", "finish_reason": "length"},
+        )
+
     def test_enabled_is_false_when_langfuse_client_is_unavailable(self):
         with patch(
             "jee_tutor.agent.observability.get_client",
@@ -201,6 +227,71 @@ class ObservabilityTest(unittest.TestCase):
 
         self.assertEqual(client.flush_count, 1)
 
+    def test_invocation_start_and_close_failures_are_best_effort(self):
+        config = LLMConfig({"langfuse": {"enabled": True}})
+        credentials = {
+            "LANGFUSE_PUBLIC_KEY": "public",
+            "LANGFUSE_SECRET_KEY": "secret",
+        }
+        with (
+            patch.dict(os.environ, credentials, clear=True),
+            patch(
+                "jee_tutor.agent.observability.get_client",
+                side_effect=RuntimeError("initialization failed"),
+            ),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}) as span:
+                self.assertIsNone(span)
+        self.assertIn("invocation_start", " ".join(logs.output))
+
+        client = FakeLangfuseClient()
+        client.start_as_current_observation = Mock(return_value=RaisingEnterObservation())
+        with (
+            patch.dict(os.environ, credentials, clear=True),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            patch(
+                "jee_tutor.agent.observability.propagate_attributes",
+                return_value=RaisingExitContext(),
+            ),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}) as span:
+                self.assertIsNone(span)
+        self.assertIn("invocation_close", " ".join(logs.output))
+
+        client.start_as_current_observation = Mock(return_value=RaisingExitObservation())
+        with (
+            patch.dict(os.environ, credentials, clear=True),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            with LangfuseObservability(config).invocation_span(input_payload={}) as span:
+                self.assertEqual(span.marker, "delegated")
+        self.assertIn("invocation_close", " ".join(logs.output))
+
+    def test_provider_body_and_close_failures_preserve_body_error(self):
+        client = FakeLangfuseClient()
+        client.start_as_current_observation = Mock(return_value=RaisingExitObservation())
+        config = LLMConfig({"langfuse": {"enabled": True}})
+        with (
+            patch.dict(
+                os.environ,
+                {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+            self.assertRaisesRegex(ValueError, "provider body failed"),
+        ):
+            with LangfuseObservability(config).embedding_span(
+                model="gemini/embedding",
+                input_payload={},
+            ):
+                raise ValueError("provider body failed")
+
+        self.assertIn("embedding_close", " ".join(logs.output))
+
     def test_flush_failure_does_not_fail_invocation(self):
         client = FakeLangfuseClient()
         client.flush = Mock(side_effect=RuntimeError("collector unavailable"))
@@ -228,6 +319,27 @@ class ObservabilityTest(unittest.TestCase):
         with patch("jee_tutor.agent.observability.get_client") as get_client:
             observability.score_current_trace([])
             observability.score_current_trace([EvaluationScore(name="score", value=1)])
+        get_client.assert_not_called()
+
+    def test_score_without_optional_data_type_and_disabled_flush(self):
+        client = FakeLangfuseClient()
+        with (
+            patch.dict(
+                os.environ,
+                {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+        ):
+            LangfuseObservability(LLMConfig({})).score_current_trace(
+                [EvaluationScore(name="score", value=1)]
+            )
+        self.assertNotIn("data_type", client.scores[0])
+
+        with patch("jee_tutor.agent.observability.get_client") as get_client:
+            LangfuseObservability(
+                LLMConfig({"langfuse": {"enabled": False}})
+            ).flush()
         get_client.assert_not_called()
 
     def test_publish_deploy_summary_noops_when_disabled(self):
@@ -277,6 +389,120 @@ class ObservabilityTest(unittest.TestCase):
 
         self.assertEqual(text, "fallback")
         self.assertIsNone(prompt)
+
+    def test_provider_trace_initialization_failure_uses_redacted_local_events(self):
+        config = LLMConfig({"langfuse": {"enabled": True}})
+        with (
+            patch.dict(
+                os.environ,
+                {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
+                clear=True,
+            ),
+            patch(
+                "jee_tutor.agent.observability.get_client",
+                side_effect=RuntimeError("collector unavailable"),
+            ),
+            self.assertLogs("jee_tutor.agent.observability", level="INFO") as logs,
+        ):
+            observability = LangfuseObservability(config)
+            with observability.generation_span(
+                model="gemini/model",
+                input_payload={"messages": "secret prompt"},
+                metadata={"attempt": 2},
+            ) as generation:
+                generation.update(output={"status": "succeeded"})
+            observability.score_current_trace([EvaluationScore(name="score", value=1)])
+            observability.publish_deploy_summary(
+                name="summary",
+                input_payload={},
+                output_payload={},
+                scores=[],
+            )
+            observability.flush()
+
+        joined = " ".join(logs.output)
+        self.assertIn("langfuse_operation_failed", joined)
+        self.assertIn("llm_provider_attempt_local", joined)
+        self.assertIn("llm_provider_result_local", joined)
+        self.assertNotIn("secret prompt", joined)
+
+    def test_score_and_deploy_summary_failures_are_best_effort(self):
+        client = FakeLangfuseClient()
+        client.score_current_trace = Mock(side_effect=RuntimeError("score unavailable"))
+        config = LLMConfig({"langfuse": {"enabled": True}})
+        credentials = {
+            "LANGFUSE_PUBLIC_KEY": "public",
+            "LANGFUSE_SECRET_KEY": "secret",
+        }
+        with (
+            patch.dict(os.environ, credentials, clear=True),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            observability = LangfuseObservability(config)
+            observability.score_current_trace([EvaluationScore(name="score", value=1)])
+        self.assertIn("score_update", " ".join(logs.output))
+
+        client.start_as_current_observation = Mock(return_value=RaisingEnterObservation())
+        with (
+            patch.dict(os.environ, credentials, clear=True),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            LangfuseObservability(config).publish_deploy_summary(
+                name="summary",
+                input_payload={},
+                output_payload={},
+                scores=[],
+            )
+        self.assertIn("deploy_summary", " ".join(logs.output))
+
+    def test_observation_update_failure_does_not_replace_provider_result(self):
+        client = FakeLangfuseClient()
+        observation = FakeObservation()
+        observation.update = Mock(side_effect=RuntimeError("update unavailable"))
+        client.start_as_current_observation = Mock(return_value=observation)
+        config = LLMConfig({"langfuse": {"enabled": True}})
+
+        with (
+            patch.dict(
+                os.environ,
+                {"LANGFUSE_PUBLIC_KEY": "public", "LANGFUSE_SECRET_KEY": "secret"},
+                clear=True,
+            ),
+            patch("jee_tutor.agent.observability.get_client", return_value=client),
+            self.assertLogs("jee_tutor.agent.observability", level="WARNING") as logs,
+        ):
+            with LangfuseObservability(config).generation_span(
+                model="gemini/model",
+                input_payload={},
+            ) as generation:
+                generation.update(output={"status": "succeeded"})
+
+        self.assertIn("langfuse_operation_failed", " ".join(logs.output))
+
+
+class RaisingEnterObservation:
+    def __enter__(self):
+        raise RuntimeError("observation start failed")
+
+    def __exit__(self, *_args):
+        return False
+
+
+class RaisingExitObservation(FakeObservation):
+    marker = "delegated"
+
+    def __exit__(self, *_args):
+        raise RuntimeError("observation close failed")
+
+
+class RaisingExitContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        raise RuntimeError("attribute close failed")
 
 
 if __name__ == "__main__":

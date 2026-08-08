@@ -10,6 +10,15 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     }
   }
 
+  request_header_configuration = {
+    request_header_allowlist = [
+      "X-JEE-Execution-Profile",
+      "X-JEE-CD-Timestamp",
+      "X-JEE-CD-Run-ID",
+      "X-JEE-CD-Signature",
+    ]
+  }
+
   environment_variables = {
     LITELLM_API_KEY                = var.litellm_api_key
     OPENAI_API_KEY                 = var.openai_api_key
@@ -19,6 +28,11 @@ resource "awscc_bedrockagentcore_runtime" "tutor" {
     CREWAI_MODEL                   = var.crewai_model
     PROFILE_EMBEDDING_MODEL        = var.profile_embedding_model
     PROFILE_SEMANTIC_CLUSTER_MODEL = var.profile_semantic_cluster_model
+    LIVE_GENERATION_MODEL          = var.live_generation_model
+    LIVE_EMBEDDING_MODEL           = var.live_embedding_model
+    CD_GENERATION_MODEL            = var.cd_generation_model
+    CD_EMBEDDING_MODEL             = var.cd_embedding_model
+    CD_EXECUTION_HMAC_SECRET_ARN   = var.cd_execution_hmac_secret_arn
     STRUCTURED_DIAGNOSIS_ENABLED   = tostring(var.structured_diagnosis_enabled)
     PROFILE_REPORT_S3_BUCKET       = local.profile_report_s3_bucket_name
     PROFILE_REPORT_S3_PREFIX       = local.profile_report_s3_prefix

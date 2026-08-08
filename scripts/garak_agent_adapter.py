@@ -27,6 +27,7 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
 
         try:
             from jee_tutor.handler import handle_tutor_invocation
+            from jee_tutor.model_routing import ExecutionProfile
 
             request = self._read_json()
             prompt = str(request.get("text", ""))
@@ -35,7 +36,8 @@ class GarakAgentHandler(BaseHTTPRequestHandler):
                     **self.image_input,
                     "task": prompt,
                     "save_analysis_pdf": False,
-                }
+                },
+                execution_profile=ExecutionProfile.CD,
             )
         except Exception as exc:
             self._send_json({"text": f"adapter error: {exc}"}, status=500)

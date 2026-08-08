@@ -6,12 +6,19 @@ import os
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from urllib.parse import urlparse
 
 import boto3
 from botocore.config import Config
 
 from jee_tutor.profile.parsing import parse_student_context_from_s3_path
+from jee_tutor.infrastructure.execution_profile import (
+    CdExecutionRequestSigner,
+    attach_agentcore_cd_headers,
+    canonical_payload_bytes,
+    load_cd_execution_secret,
+)
 
 from eval_runner import write_report
 
@@ -51,15 +58,24 @@ def invoke_runtime(
     runtime_arn: str,
     runtime_session_id: str,
     payload: dict,
+    *,
+    signer: CdExecutionRequestSigner | None = None,
 ) -> dict:
-    response = client.invoke_agent_runtime(
-        agentRuntimeArn=runtime_arn,
-        runtimeSessionId=runtime_session_id,
-        qualifier="DEFAULT",
-        contentType="application/json",
-        accept="application/json",
-        payload=json.dumps(payload).encode(),
+    request_body = canonical_payload_bytes(payload)
+    header_context = (
+        attach_agentcore_cd_headers(client, signer.headers(payload))
+        if signer is not None
+        else nullcontext()
     )
+    with header_context:
+        response = client.invoke_agent_runtime(
+            agentRuntimeArn=runtime_arn,
+            runtimeSessionId=runtime_session_id,
+            qualifier="DEFAULT",
+            contentType="application/json",
+            accept="application/json",
+            payload=request_body,
+        )
     body = response["response"].read()
     return json.loads(body)
 
@@ -70,6 +86,7 @@ def invoke_until_terminal(
     runtime_session_id: str,
     payload: dict,
     *,
+    signer: CdExecutionRequestSigner | None = None,
     poll_interval_seconds: float = IN_PROGRESS_POLL_INTERVAL_SECONDS,
     poll_timeout_seconds: float = IN_PROGRESS_POLL_TIMEOUT_SECONDS,
     monotonic=time.monotonic,
@@ -83,6 +100,7 @@ def invoke_until_terminal(
             runtime_arn,
             runtime_session_id,
             payload,
+            signer=signer,
         )
         if response.get("error") != IN_PROGRESS_ERROR:
             return response, poll_count
@@ -152,6 +170,10 @@ def main() -> int:
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--expected-image-count", required=True, type=int)
     parser.add_argument(
+        "--cd-execution-secret-id",
+        default=os.getenv("CD_EXECUTION_HMAC_SECRET_ARN", ""),
+    )
+    parser.add_argument(
         "--save-analysis-pdf",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -172,6 +194,12 @@ def main() -> int:
     )
     failures = []
     try:
+        if not args.cd_execution_secret_id:
+            raise ValueError("--cd-execution-secret-id is required for deployed CD smoke.")
+        signer = CdExecutionRequestSigner(
+            secret=load_cd_execution_secret(args.cd_execution_secret_id),
+            run_id=os.getenv("GITHUB_RUN_ID", run_id),
+        )
         effective_image_s3_prefix = prepare_smoke_image_prefix(args.image_s3_prefix, run_id)
         payload = {
             "task": "Run the deployed quality-pipeline smoke evaluation.",
@@ -185,6 +213,7 @@ def main() -> int:
             args.runtime_arn,
             run_id,
             payload,
+            signer=signer,
         )
         runtime_failed = "error" in first
         if runtime_failed:
@@ -217,6 +246,7 @@ def main() -> int:
             args.runtime_arn,
             run_id,
             payload,
+            signer=signer,
         )
         if not runtime_failed and first != second:
             failures.append("idempotent_response_mismatch")

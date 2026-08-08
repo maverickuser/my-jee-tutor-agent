@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import uuid
 from urllib.parse import urlparse
@@ -13,6 +14,10 @@ from eval_runner import write_report
 from run_agentcore_smoke import (
     AGENTCORE_READ_TIMEOUT_SECONDS,
     invoke_until_terminal,
+)
+from jee_tutor.infrastructure.execution_profile import (
+    CdExecutionRequestSigner,
+    load_cd_execution_secret,
 )
 
 
@@ -26,6 +31,10 @@ def main() -> int:
     parser.add_argument("--embedding-table-name", required=True)
     parser.add_argument("--diagnosis-smoke-report", required=True)
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument(
+        "--cd-execution-secret-id",
+        default=os.getenv("CD_EXECUTION_HMAC_SECRET_ARN", ""),
+    )
     parser.add_argument("--email-domain", default="example.com")
     parser.add_argument("--output", default="eval_runs/agentcore-profile-smoke.json")
     args = parser.parse_args()
@@ -52,6 +61,12 @@ def main() -> int:
     profile_report_pdf_uri = None
     subject = None
     try:
+        if not args.cd_execution_secret_id:
+            raise ValueError("--cd-execution-secret-id is required for deployed CD smoke.")
+        signer = CdExecutionRequestSigner(
+            secret=load_cd_execution_secret(args.cd_execution_secret_id),
+            run_id=os.getenv("GITHUB_RUN_ID", run_id),
+        )
         diagnosis_smoke_report = _load_json_file(args.diagnosis_smoke_report)
         diagnosis_json_uri = diagnosis_smoke_report.get("diagnosis_json_uri")
         if not diagnosis_json_uri:
@@ -80,6 +95,7 @@ def main() -> int:
             args.runtime_arn,
             run_id,
             payload,
+            signer=signer,
         )
         if "error" in first:
             failures.append("profile_runtime_returned_error")
@@ -117,6 +133,7 @@ def main() -> int:
             args.runtime_arn,
             run_id,
             payload,
+            signer=signer,
         )
         if "error" in second:
             failures.append("profile_replay_returned_error")

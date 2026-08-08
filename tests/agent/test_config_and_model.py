@@ -35,6 +35,26 @@ class ConfigAndModelTest(unittest.TestCase):
 
         self.assertEqual(kwargs, {"model": "custom/model"})
 
+    def test_gemini_36_omits_deprecated_sampling_parameters_only(self):
+        live = ModelSettings(
+            model="gemini/gemini-3.6-flash",
+            completion_options={
+                "temperature": 0.2,
+                "top_p": 0.9,
+                "top_k": 20,
+                "timeout": 30,
+            },
+        ).to_litellm_kwargs()
+        cd = ModelSettings(
+            model="gemini/gemini-2.5-flash-lite",
+            completion_options={"temperature": 0.2, "top_p": 0.9, "top_k": 20},
+        ).to_litellm_kwargs()
+
+        self.assertEqual(live, {"model": "gemini/gemini-3.6-flash", "timeout": 30})
+        self.assertEqual(cd["temperature"], 0.2)
+        self.assertEqual(cd["top_p"], 0.9)
+        self.assertEqual(cd["top_k"], 20)
+
     def test_openai_model_uses_openai_key_and_api_base(self):
         config = LLMConfig(
             {
@@ -90,7 +110,7 @@ class ConfigAndModelTest(unittest.TestCase):
             config=LLMConfig({}),
         ).resolve()
 
-        self.assertEqual(settings.model, "gemini/gemini-3-flash-preview")
+        self.assertEqual(settings.model, "gemini/gemini-3.6-flash")
 
 
 if __name__ == "__main__":

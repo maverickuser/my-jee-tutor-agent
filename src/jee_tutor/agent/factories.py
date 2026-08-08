@@ -5,6 +5,7 @@ from crewai import Agent, LLM, Task
 from crewai.llms.base_llm import BaseLLM
 
 from jee_tutor.agent.model_config import CrewAIModelConfig
+from jee_tutor.agent.observability import LangfuseObservability
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import (
     TUTOR_AGENT_ROLE,
@@ -162,14 +163,17 @@ def build_diagnosis_task(
     )
 
 
-def build_crewai_llm(model_config: CrewAIModelConfig | None = None) -> LLM | BaseLLM:
+def build_crewai_llm(
+    model_config: CrewAIModelConfig | None = None,
+    observability: LangfuseObservability | None = None,
+) -> LLM | BaseLLM:
     settings = (model_config or CrewAIModelConfig()).resolve()
     kwargs = settings.to_litellm_kwargs()
     model = kwargs.pop("model")
     llm = LLM(model=model, provider="litellm", is_litellm=True, **kwargs)
     if is_gemini_model(model):
-        return RateLimitedLLM(llm)
-    return llm
+        return RateLimitedLLM(llm, observability=observability)
+    return ObservedLLM(llm, observability=observability)
 
 
 class MandatoryVisionToolLLM(BaseLLM):
@@ -232,11 +236,17 @@ class OrchestrationCallBudgetError(RuntimeError):
 
 
 class RateLimitedLLM(BaseLLM):
-    def __init__(self, llm: LLM):
+    def __init__(
+        self,
+        llm: LLM,
+        *,
+        observability: LangfuseObservability | None = None,
+    ):
         model = _first_string_attribute(llm, "model", "model_name", "deployment_name", "name")
         temperature = _first_numeric_attribute(llm, "temperature")
         super().__init__(model=model or str(llm), temperature=temperature)
         self.llm = llm
+        self.observability = observability or LangfuseObservability()
         self.stop = _normalize_stop_sequences(getattr(llm, "stop", []))
 
     def call(
@@ -248,16 +258,70 @@ class RateLimitedLLM(BaseLLM):
         **kwargs: Any,
     ) -> Any:
         try:
-            return gemini_rate_limiter.call(
-                self.llm.call,
-                messages,
-                tools=tools,
-                callbacks=callbacks,
-                available_functions=available_functions,
-                **kwargs,
+            return gemini_rate_limiter.call_attempts(
+                lambda attempt: self._call_provider_attempt(
+                    attempt=attempt,
+                    max_attempts=gemini_rate_limiter.max_attempts,
+                    messages=messages,
+                    tools=tools,
+                    callbacks=callbacks,
+                    available_functions=available_functions,
+                    **kwargs,
+                )
             )
         except Exception as exc:
             raise RuntimeError(self._format_call_failure(exc)) from exc
+
+    def _call_provider_attempt(
+        self,
+        *,
+        attempt: int,
+        max_attempts: int,
+        messages: Any,
+        tools: list[dict] | None,
+        callbacks: list[Any] | None,
+        available_functions: dict[str, Any] | None,
+        **kwargs: Any,
+    ) -> Any:
+        metadata = {
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "operation": "crewai_finalization",
+        }
+        with self.observability.generation_span(
+            name="diagnosis-finalization",
+            model=self.model,
+            input_payload={
+                "message_count": len(messages) if isinstance(messages, list) else None,
+                "tool_count": len(tools or []),
+            },
+            metadata=metadata,
+        ) as observation:
+            try:
+                response = self.llm.call(
+                    messages,
+                    tools=tools,
+                    callbacks=callbacks,
+                    available_functions=available_functions,
+                    **kwargs,
+                )
+            except Exception as exc:
+                if observation:
+                    observation.update(
+                        output={
+                            "status": "failed",
+                            "error_type": type(exc).__name__,
+                        }
+                    )
+                raise
+            if observation:
+                observation.update(
+                    output={
+                        "status": "succeeded",
+                        "response_chars": len(response) if isinstance(response, str) else None,
+                    }
+                )
+            return response
 
     def supports_stop_words(self) -> bool:
         supports_stop_words = getattr(self.llm, "supports_stop_words", None)
@@ -315,3 +379,28 @@ class RateLimitedLLM(BaseLLM):
             "function-calling-capable model or pass a dedicated "
             "function_calling_llm."
         )
+
+
+class ObservedLLM(RateLimitedLLM):
+    """Trace a non-Gemini CrewAI provider call without Gemini retry behavior."""
+
+    def call(
+        self,
+        messages: Any,
+        tools: list[dict] | None = None,
+        callbacks: list[Any] | None = None,
+        available_functions: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        try:
+            return self._call_provider_attempt(
+                attempt=1,
+                max_attempts=1,
+                messages=messages,
+                tools=tools,
+                callbacks=callbacks,
+                available_functions=available_functions,
+                **kwargs,
+            )
+        except Exception as exc:
+            raise RuntimeError(self._format_call_failure(exc)) from exc

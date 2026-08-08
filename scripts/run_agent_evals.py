@@ -104,13 +104,17 @@ def _run_case_with_retries(
 
 def _run_case(case: dict[str, Any], image_input: dict[str, str] | str) -> dict[str, Any]:
     from jee_tutor.handler import handle_tutor_invocation
+    from jee_tutor.model_routing import ExecutionProfile
 
     payload = {
         **_normalized_image_input(image_input),
         "task": case["task"],
         "save_analysis_pdf": False,
     }
-    response = handle_tutor_invocation(payload)
+    response = handle_tutor_invocation(
+        payload,
+        execution_profile=ExecutionProfile.CD,
+    )
     provider_error_reason = _provider_response_error_reason(response)
     if provider_error_reason:
         return {
@@ -334,8 +338,7 @@ def _provider_response_error_reason(response: dict[str, Any]) -> str | None:
     if "resource_exhausted" in text or "prepayment credits are depleted" in text:
         return (
             "Provider quota exhausted during eval; case scored as failed. "
-            "Refill provider credits or set "
-            "CD_EVAL_CREWAI_MODEL/CD_EVAL_VISION_MODEL to a funded model."
+            "Refill provider credits or set CD_GENERATION_MODEL to a funded model."
         )
     # Vision transport retries are exhausted inside VisionLLMClient. Retrying the
     # entire invocation here would duplicate image analysis and stack retry layers.

@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 
 from jee_tutor.profile.embeddings import (
     EvidenceEmbeddingRecord,
@@ -97,6 +98,33 @@ class EvidenceEmbeddingTest(unittest.TestCase):
         self.assertEqual(client.embed(["text"]), [[1.0, 2.0]])
         self.assertEqual(captured["input"], ["text"])
 
+    def test_each_embedding_batch_has_one_observation_with_usage_and_cost(self):
+        observability = RecordingEmbeddingObservability()
+        client = LiteLLMEvidenceEmbeddingClient(
+            config=ProfileEmbeddingConfig(
+                environ={
+                    "PROFILE_EMBEDDING_MODEL": "gemini/gemini-embedding-001",
+                    "GOOGLE_API_KEY": "key",
+                },
+                config={},
+            ),
+            observability=observability,
+            embedding_fn=lambda **_kwargs: {
+                "data": [{"embedding": [1.0]}],
+                "usage": {"prompt_tokens": 4, "total_tokens": 4},
+                "_hidden_params": {"response_cost": 0.001},
+            },
+        )
+
+        self.assertEqual(client.embed(["text"]), [[1.0]])
+        self.assertEqual(len(observability.spans), 1)
+        self.assertEqual(observability.spans[0]["metadata"]["attempt"], 1)
+        self.assertEqual(
+            observability.updates[0]["usage_details"],
+            {"input": 4, "total": 4},
+        )
+        self.assertEqual(observability.updates[0]["cost_details"], {"total": 0.001})
+
 
 class SequentialEmbeddingClient:
     model = "fake-embedding"
@@ -108,6 +136,26 @@ class SequentialEmbeddingClient:
     def embed(self, _texts):
         self.calls += 1
         return self.vectors
+
+
+class RecordingEmbeddingObservability:
+    def __init__(self):
+        self.spans = []
+        self.updates = []
+
+    @contextmanager
+    def embedding_span(self, **kwargs):
+        self.spans.append(kwargs)
+        observation = MockEmbeddingObservation(self.updates)
+        yield observation
+
+
+class MockEmbeddingObservation:
+    def __init__(self, updates):
+        self.updates = updates
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
 
 
 def embedding_record(evidence_id, vector, *, text_hash="hash"):

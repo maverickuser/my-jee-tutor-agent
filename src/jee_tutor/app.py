@@ -17,4 +17,7 @@ def invoke_tutor(payload: dict, context) -> dict:
         os.getenv("JEE_TUTOR_GIT_SHA", "unknown"),
         sorted(payload.keys()),
     )
-    return handle_agentcore_request(payload)
+    return handle_agentcore_request(
+        payload,
+        request_headers=getattr(context, "request_headers", None),
+    )

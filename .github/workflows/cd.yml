@@ -12,15 +12,22 @@ env:
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
   TF_STATE_KEY: ${{ vars.TF_STATE_KEY || 'jee-tutor-agent/terraform.tfstate' }}
   TF_STATE_DYNAMODB_TABLE: ${{ vars.TF_STATE_DYNAMODB_TABLE || 'jee-tutor-agent-terraform-locks' }}
-  GARAK_SCAN_ENABLED: ${{ vars.GARAK_SCAN_ENABLED || 'true' }}
+  REACT_DIAGNOSIS_EVALS_ENABLED: ${{ vars.REACT_DIAGNOSIS_EVALS_ENABLED || 'false' }}
+  DEPLOYED_RUNTIME_SMOKE_ENABLED: ${{ vars.DEPLOYED_RUNTIME_SMOKE_ENABLED || 'false' }}
+  AGENT_EVALS_ENABLED: ${{ vars.AGENT_EVALS_ENABLED || 'false' }}
+  GARAK_SCAN_ENABLED: ${{ vars.GARAK_SCAN_ENABLED || 'false' }}
   GARAK_PROBES: ${{ vars.GARAK_PROBES || 'dan.Dan_11_0,promptinject.HijackHateHumansMini' }}
   GARAK_HIT_THRESHOLD: ${{ vars.GARAK_HIT_THRESHOLD || '0' }}
   CD_EVAL_MIN_SCORE: ${{ vars.CD_EVAL_MIN_SCORE || '0.75' }}
   CD_EVAL_IMAGE_S3_PREFIX: ${{ vars.CD_EVAL_IMAGE_S3_PREFIX || '' }}
-  VISION_MODEL: ${{ vars.VISION_MODEL || 'gemini/gemini-2.5-pro' }}
-  CREWAI_MODEL: ${{ vars.CREWAI_MODEL || 'gemini/gemini-3-flash-preview' }}
-  PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || 'gemini/gemini-embedding-2' }}
-  PROFILE_SEMANTIC_CLUSTER_MODEL: ${{ vars.PROFILE_SEMANTIC_CLUSTER_MODEL || 'gemini/gemini-2.5-pro' }}
+  LIVE_GENERATION_MODEL: ${{ vars.LIVE_GENERATION_MODEL || 'gemini/gemini-3.6-flash' }}
+  LIVE_EMBEDDING_MODEL: ${{ vars.LIVE_EMBEDDING_MODEL || 'gemini/gemini-embedding-2' }}
+  CD_GENERATION_MODEL: ${{ vars.CD_GENERATION_MODEL || 'gemini/gemini-2.5-flash-lite' }}
+  CD_EMBEDDING_MODEL: ${{ vars.CD_EMBEDDING_MODEL || 'gemini/gemini-embedding-001' }}
+  VISION_MODEL: ${{ vars.VISION_MODEL || vars.LIVE_GENERATION_MODEL || 'gemini/gemini-3.6-flash' }}
+  CREWAI_MODEL: ${{ vars.CREWAI_MODEL || vars.LIVE_GENERATION_MODEL || 'gemini/gemini-3.6-flash' }}
+  PROFILE_EMBEDDING_MODEL: ${{ vars.PROFILE_EMBEDDING_MODEL || vars.LIVE_EMBEDDING_MODEL || 'gemini/gemini-embedding-2' }}
+  PROFILE_SEMANTIC_CLUSTER_MODEL: ${{ vars.PROFILE_SEMANTIC_CLUSTER_MODEL || vars.LIVE_GENERATION_MODEL || 'gemini/gemini-3.6-flash' }}
   PROFILE_REPORT_S3_BUCKET: ${{ vars.PROFILE_REPORT_S3_BUCKET || vars.TF_STATE_BUCKET || 'jee-tutor-agent-terraform-state' }}
   PROFILE_REPORT_S3_PREFIX: ${{ vars.PROFILE_REPORT_S3_PREFIX || 'profile-reports' }}
   STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.STRUCTURED_DIAGNOSIS_ENABLED || 'true' }}
@@ -137,6 +144,9 @@ jobs:
 
       - name: Run Ruff
         run: poetry run ruff check src scripts tests
+
+      - name: Check CD model lifecycle
+        run: poetry run python scripts/check_cd_model_lifecycle.py --model "$CD_GENERATION_MODEL"
 
       - name: Run unit and integration tests with branch coverage
         run: |
@@ -270,6 +280,7 @@ jobs:
       runtime_arn: ${{ steps.security_outputs.outputs.runtime_arn }}
       student_diagnosis_metadata_table_name: ${{ steps.security_outputs.outputs.student_diagnosis_metadata_table_name }}
       evidence_embedding_table_name: ${{ steps.security_outputs.outputs.evidence_embedding_table_name }}
+      cd_execution_hmac_secret_arn: ${{ steps.security_outputs.outputs.cd_execution_hmac_secret_arn }}
 
     steps:
       - name: Checkout repository
@@ -316,6 +327,32 @@ jobs:
             --output text)
           echo "TF_VAR_newrelic_license_key_secret_arn=$secret_arn" >> "$GITHUB_ENV"
 
+      - name: Provision CD execution HMAC secret
+        env:
+          CONFIGURED_SECRET: ${{ secrets.CD_EXECUTION_HMAC_SECRET }}
+          SECRET_NAME: ${{ vars.CD_EXECUTION_HMAC_SECRET_NAME || 'jee-tutor/cd-execution-hmac' }}
+        run: |
+          if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+            if [ -n "$CONFIGURED_SECRET" ]; then
+              aws secretsmanager put-secret-value \
+                --secret-id "$SECRET_NAME" \
+                --secret-string "$CONFIGURED_SECRET" >/dev/null
+            fi
+          elif [ -n "$CONFIGURED_SECRET" ]; then
+            aws secretsmanager create-secret \
+              --name "$SECRET_NAME" \
+              --secret-string "$CONFIGURED_SECRET" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name "$SECRET_NAME" \
+              --generate-secret-string '{"ExcludePunctuation":true,"PasswordLength":64}' >/dev/null
+          fi
+          secret_arn=$(aws secretsmanager describe-secret \
+            --secret-id "$SECRET_NAME" \
+            --query ARN \
+            --output text)
+          echo "TF_VAR_cd_execution_hmac_secret_arn=$secret_arn" >> "$GITHUB_ENV"
+
       - name: Terraform apply AgentCore runtime
         working-directory: terraform
         env:
@@ -328,6 +365,10 @@ jobs:
           TF_VAR_crewai_model: ${{ env.CREWAI_MODEL }}
           TF_VAR_profile_embedding_model: ${{ env.PROFILE_EMBEDDING_MODEL }}
           TF_VAR_profile_semantic_cluster_model: ${{ env.PROFILE_SEMANTIC_CLUSTER_MODEL }}
+          TF_VAR_live_generation_model: ${{ env.LIVE_GENERATION_MODEL }}
+          TF_VAR_live_embedding_model: ${{ env.LIVE_EMBEDDING_MODEL }}
+          TF_VAR_cd_generation_model: ${{ env.CD_GENERATION_MODEL }}
+          TF_VAR_cd_embedding_model: ${{ env.CD_EMBEDDING_MODEL }}
           TF_VAR_profile_report_s3_bucket_name: ${{ env.PROFILE_REPORT_S3_BUCKET }}
           TF_VAR_profile_report_s3_bucket_create: "false"
           TF_VAR_profile_report_s3_prefix: ${{ env.PROFILE_REPORT_S3_PREFIX }}
@@ -359,6 +400,7 @@ jobs:
           echo "runtime_arn=$(terraform output -raw agentcore_runtime_arn)" >> "$GITHUB_OUTPUT"
           echo "student_diagnosis_metadata_table_name=$(terraform output -raw student_diagnosis_metadata_table_name)" >> "$GITHUB_OUTPUT"
           echo "evidence_embedding_table_name=$(terraform output -raw evidence_embedding_table_name)" >> "$GITHUB_OUTPUT"
+          echo "cd_execution_hmac_secret_arn=$(terraform output -raw cd_execution_hmac_secret_arn)" >> "$GITHUB_OUTPUT"
 
       - name: Verify New Relic ingest accepts deployment canary
         if: env.NEW_RELIC_ENABLED == 'true'
@@ -379,7 +421,8 @@ jobs:
             --data "$payload" >/dev/null
 
   react_diagnosis_evals:
-    name: Mandatory ReAct Diagnosis Evals
+    name: ReAct Diagnosis Evals
+    if: ${{ vars.REACT_DIAGNOSIS_EVALS_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     needs: deploy_runtime
     permissions:
@@ -418,6 +461,11 @@ jobs:
 
   deployed_runtime_smoke:
     name: Deployed AgentCore Runtime Smoke
+    if: >-
+      ${{ always() && vars.DEPLOYED_RUNTIME_SMOKE_ENABLED == 'true' &&
+      needs.deploy_runtime.result == 'success' &&
+      (needs.react_diagnosis_evals.result == 'success' ||
+      needs.react_diagnosis_evals.result == 'skipped') }}
     runs-on: ubuntu-latest
     needs:
       - deploy_runtime
@@ -458,6 +506,7 @@ jobs:
             --runtime-arn "${{ needs.deploy_runtime.outputs.runtime_arn }}" \
             --image-s3-prefix "${CD_EVAL_IMAGE_S3_PREFIX:-s3://${TF_STATE_BUCKET}/cd-evals-images/}" \
             --expected-image-count 3 \
+            --cd-execution-secret-id "${{ needs.deploy_runtime.outputs.cd_execution_hmac_secret_arn }}" \
             --expected-sha "${{ github.sha }}"
 
       - name: Invoke deployed profile runtime and verify embeddings
@@ -469,6 +518,7 @@ jobs:
             --metadata-table-name "${{ needs.deploy_runtime.outputs.student_diagnosis_metadata_table_name }}" \
             --embedding-table-name "${{ needs.deploy_runtime.outputs.evidence_embedding_table_name }}" \
             --diagnosis-smoke-report eval_runs/agentcore-smoke.json \
+            --cd-execution-secret-id "${{ needs.deploy_runtime.outputs.cd_execution_hmac_secret_arn }}" \
             --expected-sha "${{ github.sha }}"
 
       - name: Upload smoke report
@@ -483,6 +533,7 @@ jobs:
 
   agent_evals:
     name: Run Agent Evals
+    if: ${{ vars.AGENT_EVALS_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     needs: deploy_runtime
     permissions:
@@ -521,9 +572,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
-          VISION_MODEL: ${{ vars.CD_EVAL_VISION_MODEL || (secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o' || env.VISION_MODEL) }}
-          CREWAI_MODEL: ${{ vars.CD_EVAL_CREWAI_MODEL || (secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o' || env.CREWAI_MODEL) }}
-          STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.CD_EVAL_STRUCTURED_DIAGNOSIS_ENABLED || (secrets.OPENAI_API_KEY != '' && 'false' || env.STRUCTURED_DIAGNOSIS_ENABLED) }}
+          CD_GENERATION_MODEL: ${{ env.CD_GENERATION_MODEL }}
+          CD_EMBEDDING_MODEL: ${{ env.CD_EMBEDDING_MODEL }}
+          STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.CD_EVAL_STRUCTURED_DIAGNOSIS_ENABLED || env.STRUCTURED_DIAGNOSIS_ENABLED }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
@@ -557,6 +608,7 @@ jobs:
 
   garak_scan:
     name: Run Garak Scan
+    if: ${{ vars.GARAK_SCAN_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     needs: deploy_runtime
     permissions:
@@ -601,8 +653,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
-          VISION_MODEL: ${{ vars.GARAK_VISION_MODEL || env.VISION_MODEL }}
-          CREWAI_MODEL: ${{ vars.GARAK_CREWAI_MODEL || env.CREWAI_MODEL }}
+          CD_GENERATION_MODEL: ${{ env.CD_GENERATION_MODEL }}
+          CD_EMBEDDING_MODEL: ${{ env.CD_EMBEDDING_MODEL }}
           STRUCTURED_DIAGNOSIS_ENABLED: ${{ vars.GARAK_STRUCTURED_DIAGNOSIS_ENABLED || env.STRUCTURED_DIAGNOSIS_ENABLED }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}

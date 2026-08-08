@@ -17,6 +17,13 @@ from scripts.run_agentcore_smoke import (  # noqa: E402
     markdown_data_row_count,
     prepare_smoke_image_prefix,
 )
+from jee_tutor.infrastructure.execution_profile import (  # noqa: E402
+    EXECUTION_PROFILE_HEADER,
+    CdExecutionProfileAuthenticator,
+    CdExecutionRequestSigner,
+    canonical_payload_bytes,
+)
+from jee_tutor.model_routing import ExecutionProfile  # noqa: E402
 
 
 CANONICAL_IMAGE_PREFIX = (
@@ -26,6 +33,20 @@ CANONICAL_IMAGE_PREFIX = (
 
 
 class RunAgentCoreSmokeTest(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(
+            "os.environ",
+            {"CD_EXECUTION_HMAC_SECRET_ARN": "arn:secret:test"},
+        )
+        secret = patch(
+            "scripts.run_agentcore_smoke.load_cd_execution_secret",
+            return_value="test-secret",
+        )
+        environment.start()
+        secret.start()
+        self.addCleanup(environment.stop)
+        self.addCleanup(secret.stop)
+
     def test_markdown_data_row_count(self):
         analysis = (
             "| Question Number | Topic |\n"
@@ -54,6 +75,43 @@ class RunAgentCoreSmokeTest(unittest.TestCase):
         self.assertEqual(
             client.invoke_agent_runtime.call_args.kwargs["runtimeSessionId"],
             "session-id-that-is-longer-than-thirty-three-characters",
+        )
+
+    def test_runtime_invocation_signs_the_exact_canonical_payload_before_sigv4(self):
+        body = Mock()
+        body.read.return_value = b'{"analysis":"ok"}'
+        client = Mock()
+        client.invoke_agent_runtime.return_value = {"response": body}
+        payload = {"subject": "Physics", "task": "diagnose"}
+        signer = CdExecutionRequestSigner(
+            secret="test-secret",
+            run_id="run-1",
+            now=lambda: 1_800_000_000,
+        )
+
+        invoke_runtime(
+            client,
+            "arn:runtime",
+            "session-id-that-is-longer-than-thirty-three-characters",
+            payload,
+            signer=signer,
+        )
+
+        callback = client.meta.events.register_first.call_args.args[1]
+        request = Mock()
+        request.headers = {}
+        callback(request)
+        self.assertEqual(request.headers[EXECUTION_PROFILE_HEADER], "cd")
+        self.assertEqual(
+            client.invoke_agent_runtime.call_args.kwargs["payload"],
+            canonical_payload_bytes(payload),
+        )
+        self.assertEqual(
+            CdExecutionProfileAuthenticator(
+                secret_provider=lambda: "test-secret",
+                now=lambda: 1_800_000_000,
+            ).resolve(payload=payload, request_headers=request.headers),
+            ExecutionProfile.CD,
         )
 
     def test_quality_gate_evidence_includes_controlled_react_and_artifact_safety(self):

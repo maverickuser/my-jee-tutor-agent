@@ -20,7 +20,11 @@ from jee_tutor.profile.embeddings import (
 )
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 from jee_tutor.profile.model_config import ProfileClassifierModelConfig
-from jee_tutor.agent.observability import LangfuseObservability
+from jee_tutor.agent.observability import (
+    LangfuseObservability,
+    safe_provider_response_metadata,
+)
+from jee_tutor.model_routing import is_gemini_36_model
 
 
 logger = logging.getLogger(__name__)
@@ -549,7 +553,8 @@ class LiteLLMConceptualStrandClassifier:
     ) -> ConceptualStrandOutput:
         config = self.model_config.resolve()
         kwargs = config.to_litellm_kwargs()
-        kwargs["temperature"] = 0
+        if not is_gemini_36_model(config.model):
+            kwargs["temperature"] = 0
         kwargs.setdefault("num_retries", 0)
         messages = [
             {"role": "system", "content": _strand_system_prompt()},
@@ -578,7 +583,7 @@ class LiteLLMConceptualStrandClassifier:
                 "task": "profile",
                 "output_format": "json_schema",
                 "schema_name": "student_profile_conceptual_strands",
-                "temperature": 0,
+                "temperature": None if is_gemini_36_model(config.model) else 0,
             },
         ) as generation:
             try:
@@ -605,27 +610,35 @@ class LiteLLMConceptualStrandClassifier:
                     )
                 raise
             if generation:
-                generation.update(
-                    output={
+                update = {
+                    "output": {
                         "validation_status": "passed",
                         "relationship_count": len(result.relationships),
                         "strand_count": len(result.strands),
                         "exclusion_count": len(result.exclusions),
                     },
                     **_profile_generation_usage(response),
-                )
+                }
+                response_metadata = safe_provider_response_metadata(response)
+                if response_metadata:
+                    update["metadata"] = response_metadata
+                generation.update(**update)
             return result
 
 
-def _profile_generation_usage(response: object) -> dict[str, dict[str, int]]:
+def _profile_generation_usage(response: object) -> dict[str, dict[str, int | float]]:
     usage = (
         response.get("usage")
         if isinstance(response, dict)
         else getattr(response, "usage", None)
     )
-    if not usage:
-        return {}
-    values = usage if isinstance(usage, dict) else usage.model_dump(exclude_none=True)
+    values = (
+        usage
+        if isinstance(usage, dict)
+        else usage.model_dump(exclude_none=True)
+        if usage
+        else {}
+    )
     aliases = {
         "prompt_tokens": "input",
         "completion_tokens": "output",
@@ -636,7 +649,17 @@ def _profile_generation_usage(response: object) -> dict[str, dict[str, int]]:
         for source, target in aliases.items()
         if isinstance(values.get(source), int)
     }
-    return {"usage_details": details} if details else {}
+    accounting: dict[str, dict[str, int | float]] = {}
+    if details:
+        accounting["usage_details"] = details
+    hidden = (
+        response.get("_hidden_params")
+        if isinstance(response, dict)
+        else getattr(response, "_hidden_params", None)
+    )
+    if isinstance(hidden, dict) and isinstance(hidden.get("response_cost"), int | float):
+        accounting["cost_details"] = {"total": float(hidden["response_cost"])}
+    return accounting
 
 
 def _strand_system_prompt() -> str:

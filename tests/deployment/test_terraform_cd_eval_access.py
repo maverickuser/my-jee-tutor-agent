@@ -39,6 +39,22 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("evidence_embedding_table_name", workflow)
         self.assertIn("poetry run python scripts/run_crewai_react_evals.py", workflow)
 
+    def test_optional_cd_quality_jobs_are_disabled_by_default(self):
+        workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
+
+        variables = [
+            "REACT_DIAGNOSIS_EVALS_ENABLED",
+            "DEPLOYED_RUNTIME_SMOKE_ENABLED",
+            "AGENT_EVALS_ENABLED",
+            "GARAK_SCAN_ENABLED",
+        ]
+        for variable in variables:
+            self.assertIn(f"{variable}: ${{{{ vars.{variable} || 'false' }}}}", workflow)
+            self.assertIn(f"vars.{variable} == 'true'", workflow)
+
+        self.assertNotIn("Mandatory ReAct Diagnosis Evals", workflow)
+        self.assertIn("needs.react_diagnosis_evals.result == 'skipped'", workflow)
+
     def test_cd_workflow_uploads_curriculum_taxonomy_before_runtime_deploy(self):
         workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
 
@@ -116,7 +132,7 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn("ReadWriteEvidenceEmbeddings", terraform)
         self.assertIn("evidence_embedding_table_name", terraform)
 
-    def test_runtime_and_cd_evals_can_override_models(self):
+    def test_runtime_and_cd_use_the_exact_profile_model_matrix(self):
         terraform = "\n".join(
             path.read_text()
             for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
@@ -124,10 +140,10 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
 
         for name in [
-            "vision_model",
-            "crewai_model",
-            "profile_embedding_model",
-            "profile_semantic_cluster_model",
+            "live_generation_model",
+            "live_embedding_model",
+            "cd_generation_model",
+            "cd_embedding_model",
             "profile_report_s3_bucket_name",
             "profile_report_s3_bucket_create",
             "profile_report_s3_prefix",
@@ -137,10 +153,10 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             self.assertIn(f"TF_VAR_{name}", workflow)
 
         for env_name in [
-            "VISION_MODEL",
-            "CREWAI_MODEL",
-            "PROFILE_EMBEDDING_MODEL",
-            "PROFILE_SEMANTIC_CLUSTER_MODEL",
+            "LIVE_GENERATION_MODEL",
+            "LIVE_EMBEDDING_MODEL",
+            "CD_GENERATION_MODEL",
+            "CD_EMBEDDING_MODEL",
             "PROFILE_REPORT_S3_BUCKET",
             "PROFILE_REPORT_S3_PREFIX",
             "STRUCTURED_DIAGNOSIS_ENABLED",
@@ -148,7 +164,10 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
             self.assertIn(env_name, terraform)
             self.assertIn(env_name, workflow)
 
-        self.assertIn("CD_EVAL_CREWAI_MODEL", workflow)
+        self.assertIn("gemini/gemini-2.5-flash-lite", workflow)
+        self.assertIn("gemini/gemini-embedding-001", workflow)
+        self.assertIn("gemini/gemini-3.6-flash", workflow)
+        self.assertIn("gemini/gemini-embedding-2", workflow)
         self.assertIn("PROFILE_REPORT_S3_PREFIX", workflow)
         self.assertIn("WriteProfileReportArtifacts", terraform)
         self.assertIn("S3ChapterWeightageRead", terraform)
@@ -157,13 +176,32 @@ class TerraformCdEvalAccessTest(unittest.TestCase):
         self.assertIn('aws_s3_bucket" "profile_reports', terraform)
         self.assertIn("profile_report_s3_bucket_name", terraform)
         self.assertIn('TF_VAR_profile_report_s3_bucket_create: "false"', workflow)
-        self.assertIn("CD_EVAL_VISION_MODEL", workflow)
-        self.assertIn("secrets.OPENAI_API_KEY != '' && 'openai/gpt-4o'", workflow)
-        self.assertIn(
-            "CD_EVAL_STRUCTURED_DIAGNOSIS_ENABLED || "
-            "(secrets.OPENAI_API_KEY != '' && 'false'",
-            workflow,
+        self.assertNotIn("openai/gpt-4o", workflow)
+        self.assertNotIn("CD_EVAL_VISION_MODEL", workflow)
+        self.assertNotIn("CD_EVAL_CREWAI_MODEL", workflow)
+
+    def test_cd_profile_headers_secret_and_lifecycle_warning_are_deployed(self):
+        terraform = "\n".join(
+            path.read_text()
+            for path in sorted((REPO_ROOT / "terraform").glob("*.tf"))
         )
+        workflow = (REPO_ROOT / ".github/workflows/cd.yml").read_text()
+
+        for header in [
+            "X-JEE-Execution-Profile",
+            "X-JEE-CD-Timestamp",
+            "X-JEE-CD-Run-ID",
+            "X-JEE-CD-Signature",
+        ]:
+            self.assertIn(header, terraform)
+        self.assertIn("request_header_allowlist", terraform)
+        self.assertIn("ReadCdExecutionHmacKey", terraform)
+        self.assertIn("secretsmanager:GetSecretValue", terraform)
+        self.assertIn("CD_EXECUTION_HMAC_SECRET_ARN", terraform)
+        self.assertIn("Provision CD execution HMAC secret", workflow)
+        self.assertIn("CD_EXECUTION_HMAC_SECRET", workflow)
+        self.assertEqual(workflow.count("--cd-execution-secret-id"), 2)
+        self.assertIn("scripts/check_cd_model_lifecycle.py", workflow)
 
 
 if __name__ == "__main__":

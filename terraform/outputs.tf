@@ -18,6 +18,11 @@ output "agentcore_endpoint_arn" {
   value = "${awscc_bedrockagentcore_runtime.tutor.agent_runtime_arn}/runtime-endpoint/${local.agentcore_endpoint_name}"
 }
 
+output "cd_execution_hmac_secret_arn" {
+  value       = var.cd_execution_hmac_secret_arn
+  description = "Secrets Manager ARN used to authenticate CD execution-profile headers."
+}
+
 output "email_delivery_function_name" {
   value = aws_lambda_function.email_delivery.function_name
 }

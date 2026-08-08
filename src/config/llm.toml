@@ -2,17 +2,17 @@
 # Environment variables can override deployment-specific values.
 
 [vision]
-model = "gemini/gemini-2.5-pro"
+model = "gemini/gemini-3.6-flash"
 
 [crewai]
-model = "gemini/gemini-3-flash-preview"
+model = "gemini/gemini-3.6-flash"
 
 [profile_embedding]
 model = "gemini/gemini-embedding-2"
 dimensions = 256
 
 [semantic_clustering]
-model = "gemini/gemini-2.5-pro"
+model = "gemini/gemini-3.6-flash"
 
 [structured_diagnosis]
 enabled = true

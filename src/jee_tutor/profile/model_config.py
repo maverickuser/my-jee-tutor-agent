@@ -10,9 +10,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jee_tutor.agent.config_loader import LLMConfig
 from jee_tutor.agent.model_config import DEFAULT_LLM_TIMEOUT_SECONDS
+from jee_tutor.model_routing import (
+    LIVE_GENERATION_MODEL,
+    active_model_bundle,
+    is_gemini_36_model,
+)
 
 
-DEFAULT_PROFILE_CLASSIFIER_MODEL = "gemini/gemini-2.5-pro"
+DEFAULT_PROFILE_CLASSIFIER_MODEL = LIVE_GENERATION_MODEL
 
 
 class ProfileClassifierModelSettings(BaseModel):
@@ -25,6 +30,9 @@ class ProfileClassifierModelSettings(BaseModel):
 
     def to_litellm_kwargs(self) -> dict[str, Any]:
         kwargs = deepcopy(self.completion_options) if self.completion_options else {}
+        if is_gemini_36_model(self.model):
+            for key in ("temperature", "top_p", "top_k"):
+                kwargs.pop(key, None)
         kwargs["model"] = self.model
         if self.api_key:
             kwargs["api_key"] = self.api_key
@@ -44,7 +52,8 @@ class ProfileClassifierModelConfig:
         self.config = config if config is not None else LLMConfig.load()
 
     def resolve(self) -> ProfileClassifierModelSettings:
-        model = (
+        model_bundle = active_model_bundle()
+        model = model_bundle.generation_model if model_bundle is not None else (
             self.environ.get("PROFILE_SEMANTIC_CLUSTER_MODEL")
             or _config_get(self.config, "semantic_clustering", "model")
             or DEFAULT_PROFILE_CLASSIFIER_MODEL

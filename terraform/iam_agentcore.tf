@@ -245,6 +245,14 @@ resource "aws_iam_role_policy" "agentcore_runtime_access" {
           Resource = "arn:aws:s3:::jee-tutor-agent-terraform-state/curriculum/chapter-weightage/*"
         }
       ],
+      var.cd_execution_hmac_secret_arn != "" ? [
+        {
+          Sid      = "ReadCdExecutionHmacKey"
+          Effect   = "Allow"
+          Action   = ["secretsmanager:GetSecretValue"]
+          Resource = var.cd_execution_hmac_secret_arn
+        }
+      ] : [],
       var.newrelic_log_forwarding_enabled && var.newrelic_license_key_secret_arn != "" ? [
         {
           Sid      = "ReadNewRelicLicenseKey"

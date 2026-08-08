@@ -11,8 +11,16 @@ from jee_tutor.agent.diagnosis_output import (
     diagnosis_response_format,
     parse_and_validate_diagnosis,
 )
-from jee_tutor.agent.model_config import DIAGNOSIS_MODEL, VisionModelConfig
-from jee_tutor.agent.observability import LangfuseObservability
+from jee_tutor.agent.model_config import VisionModelConfig
+from jee_tutor.model_routing import (
+    CD_GENERATION_MODEL,
+    LIVE_GENERATION_MODEL,
+    active_model_bundle,
+)
+from jee_tutor.agent.observability import (
+    LangfuseObservability,
+    safe_provider_response_metadata,
+)
 from jee_tutor.agent.prompt_provider import PromptProvider
 from jee_tutor.agent.prompts import STRUCTURED_DIAGNOSIS_OVERRIDE, VISION_SYSTEM, VISION_USER
 from jee_tutor.agent.rate_limit import (
@@ -24,6 +32,19 @@ from jee_tutor.agent.rate_limit import (
 
 CompletionFunction = Callable[..., dict]
 logger = logging.getLogger(__name__)
+LEGACY_STRUCTURED_DIAGNOSIS_MODEL = "gemini/gemini-2.5-pro"
+
+
+def _structured_diagnosis_models() -> set[str]:
+    models = {
+        CD_GENERATION_MODEL,
+        LIVE_GENERATION_MODEL,
+        LEGACY_STRUCTURED_DIAGNOSIS_MODEL,
+    }
+    model_bundle = active_model_bundle()
+    if model_bundle is not None:
+        models.add(model_bundle.generation_model)
+    return models
 
 
 class VisionMessageFactory:
@@ -113,9 +134,10 @@ class VisionLLMClient:
                         "Structured diagnosis output is enabled only for verified Gemini models."
                     )
                 structured_output = False
-            elif model_settings.model != DIAGNOSIS_MODEL:
+            elif model_settings.model not in _structured_diagnosis_models():
                 raise ValueError(
-                    f"Structured diagnosis model must be pinned to {DIAGNOSIS_MODEL}."
+                    "Structured diagnosis model must be pinned to one of the configured "
+                    "CD or live generation models."
                 )
             else:
                 request_kwargs["response_format"] = diagnosis_response_format()
@@ -238,14 +260,18 @@ class VisionLLMClient:
 
             analysis = response["choices"][0]["message"]["content"].strip()
             if generation:
-                generation.update(
-                    output=(
+                update = {
+                    "output": (
                         {"validation_status": "pending", "content": "[redacted structured output]"}
                         if generation_metadata.get("output_format") == "json_schema"
                         else analysis
                     ),
                     **self._generation_accounting(response, model),
-                )
+                }
+                response_metadata = safe_provider_response_metadata(response)
+                if response_metadata:
+                    update["metadata"] = response_metadata
+                generation.update(**update)
             return response
 
     @staticmethod

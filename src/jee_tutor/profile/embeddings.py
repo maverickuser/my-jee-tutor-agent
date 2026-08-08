@@ -13,9 +13,14 @@ from litellm import embedding
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from jee_tutor.agent.config_loader import LLMConfig
+from jee_tutor.agent.observability import (
+    LangfuseObservability,
+    safe_provider_response_metadata,
+)
+from jee_tutor.model_routing import LIVE_EMBEDDING_MODEL, active_model_bundle
 from jee_tutor.profile.evidence import ProfileEvidenceItem
 
-DEFAULT_PROFILE_EMBEDDING_MODEL = "gemini/gemini-embedding-2"
+DEFAULT_PROFILE_EMBEDDING_MODEL = LIVE_EMBEDDING_MODEL
 DEFAULT_EMBEDDING_INPUT_VERSION = "v2"
 DEFAULT_PROFILE_EMBEDDING_DIMENSIONS = 256
 
@@ -88,7 +93,8 @@ class ProfileEmbeddingConfig:
         self.config = config if config is not None else LLMConfig.load()
 
     def resolve(self) -> ProfileEmbeddingSettings:
-        model = (
+        model_bundle = active_model_bundle()
+        model = model_bundle.embedding_model if model_bundle is not None else (
             self.environ.get("PROFILE_EMBEDDING_MODEL")
             or _config_get(self.config, "profile_embedding", "model", DEFAULT_PROFILE_EMBEDDING_MODEL)
         )
@@ -118,10 +124,13 @@ class LiteLLMEvidenceEmbeddingClient:
         *,
         config: ProfileEmbeddingConfig | None = None,
         embedding_fn: EmbeddingFunction | None = None,
+        observability: LangfuseObservability | None = None,
     ):
         self.config = config or ProfileEmbeddingConfig()
         self.embedding_fn = embedding_fn or embedding
+        self.observability = observability or LangfuseObservability()
         self._settings: ProfileEmbeddingSettings | None = None
+        self.attempt_count = 0
 
     @property
     def model(self) -> str:
@@ -131,10 +140,36 @@ class LiteLLMEvidenceEmbeddingClient:
         if not texts:
             return []
         settings = self._resolved_settings()
-        response = self.embedding_fn(
-            **settings.to_litellm_kwargs(),
-            input=texts,
-        )
+        self.attempt_count += 1
+        metadata = {"attempt": self.attempt_count, "operation": "profile_embedding"}
+        with self.observability.embedding_span(
+            model=settings.model,
+            input_payload={"batch_size": len(texts)},
+            metadata=metadata,
+        ) as observation:
+            try:
+                response = self.embedding_fn(
+                    **settings.to_litellm_kwargs(),
+                    input=texts,
+                )
+            except Exception as exc:
+                if observation:
+                    observation.update(
+                        output={"status": "failed", "error_type": type(exc).__name__}
+                    )
+                raise
+            if observation:
+                update = {
+                    "output": {
+                        "status": "succeeded",
+                        "embedding_count": len(response["data"]),
+                    },
+                    **_embedding_accounting(response),
+                }
+                response_metadata = safe_provider_response_metadata(response)
+                if response_metadata:
+                    update["metadata"] = response_metadata
+                observation.update(**update)
         return [
             [float(component) for component in item["embedding"]]
             for item in response["data"]
@@ -144,6 +179,27 @@ class LiteLLMEvidenceEmbeddingClient:
         if self._settings is None:
             self._settings = self.config.resolve()
         return self._settings
+
+
+def _embedding_accounting(response: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    accounting: dict[str, dict[str, Any]] = {}
+    usage = response.get("usage")
+    if isinstance(usage, Mapping):
+        aliases = {
+            "prompt_tokens": "input",
+            "total_tokens": "total",
+        }
+        usage_details = {
+            aliases.get(str(key), str(key)): value
+            for key, value in usage.items()
+            if value is not None
+        }
+        if usage_details:
+            accounting["usage_details"] = usage_details
+    hidden = response.get("_hidden_params")
+    if isinstance(hidden, Mapping) and isinstance(hidden.get("response_cost"), int | float):
+        accounting["cost_details"] = {"total": float(hidden["response_cost"])}
+    return accounting
 
 
 class InMemoryEvidenceEmbeddingStore:

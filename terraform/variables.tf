@@ -45,13 +45,13 @@ variable "litellm_base_url" {
 variable "vision_model" {
   description = "LiteLLM model id used for question image analysis."
   type        = string
-  default     = "gemini/gemini-2.5-pro"
+  default     = "gemini/gemini-3.6-flash"
 }
 
 variable "crewai_model" {
   description = "LiteLLM model id used for CrewAI orchestration."
   type        = string
-  default     = "gemini/gemini-3-flash-preview"
+  default     = "gemini/gemini-3.6-flash"
 }
 
 variable "profile_embedding_model" {
@@ -63,7 +63,37 @@ variable "profile_embedding_model" {
 variable "profile_semantic_cluster_model" {
   description = "LiteLLM model id used for mandatory student profile semantic cluster classification."
   type        = string
-  default     = "gemini/gemini-2.5-pro"
+  default     = "gemini/gemini-3.6-flash"
+}
+
+variable "live_generation_model" {
+  description = "LiteLLM generation model used by student-facing live requests."
+  type        = string
+  default     = "gemini/gemini-3.6-flash"
+}
+
+variable "live_embedding_model" {
+  description = "LiteLLM embedding model used by student-facing live requests."
+  type        = string
+  default     = "gemini/gemini-embedding-2"
+}
+
+variable "cd_generation_model" {
+  description = "LiteLLM generation model used by authenticated CD requests."
+  type        = string
+  default     = "gemini/gemini-2.5-flash-lite"
+}
+
+variable "cd_embedding_model" {
+  description = "LiteLLM embedding model used by authenticated CD requests."
+  type        = string
+  default     = "gemini/gemini-embedding-001"
+}
+
+variable "cd_execution_hmac_secret_arn" {
+  description = "Secrets Manager ARN containing the CD execution-profile HMAC key."
+  type        = string
+  default     = ""
 }
 
 variable "structured_diagnosis_enabled" {

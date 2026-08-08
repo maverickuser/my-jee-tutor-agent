@@ -211,6 +211,31 @@ class ConceptualStrandTest(unittest.TestCase):
             ).resolve()
         self.assertEqual(configured.model, "gemini/configured")
 
+    def test_gemini_36_classifier_omits_deprecated_sampling_parameters(self):
+        settings = ProfileClassifierModelConfig(
+            environ={
+                "PROFILE_SEMANTIC_CLUSTER_MODEL": "gemini/gemini-3.6-flash",
+                "GOOGLE_API_KEY": "key",
+            },
+            config={
+                "completion": {
+                    "temperature": 0.2,
+                    "top_p": 0.8,
+                    "top_k": 20,
+                    "timeout": 30,
+                }
+            },
+        ).resolve()
+
+        self.assertEqual(
+            settings.to_litellm_kwargs(),
+            {
+                "model": "gemini/gemini-3.6-flash",
+                "api_key": "key",
+                "timeout": 30,
+            },
+        )
+
     def test_classifier_records_safe_failure_in_generation_trace(self):
         observability = RecordingObservability()
 

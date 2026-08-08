@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 from crewai.utilities.llm_utils import create_llm
@@ -58,6 +59,16 @@ class BareLLM:
 
     def call(self, *args, **kwargs):
         return "analysis"
+
+
+class RecordingObservability:
+    def __init__(self):
+        self.spans = []
+
+    @contextmanager
+    def generation_span(self, **kwargs):
+        self.spans.append(kwargs)
+        yield Mock()
 
 
 class CrewAIModelConfigTest(unittest.TestCase):
@@ -162,7 +173,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
         wrapped = RateLimitedLLM(DummyGeminiLLM(error=FakeGeminiError("model unavailable")))
 
         with patch("jee_tutor.agent.factories.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+            limiter.max_attempts = 2
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             with self.assertRaises(RuntimeError) as exc_info:
                 wrapped.call([{"role": "user", "content": "hello"}])
@@ -183,7 +195,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
         tool_function = object()
 
         with patch("jee_tutor.agent.factories.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+            limiter.max_attempts = 2
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             result = wrapped.call(
                 [{"role": "user", "content": "hello"}],
@@ -205,6 +218,28 @@ class CrewAIModelConfigTest(unittest.TestCase):
                     },
                 )
             ],
+        )
+
+    def test_each_crewai_retry_attempt_has_one_generation_observation(self):
+        dummy = DummyGeminiLLM()
+        dummy.call = Mock(side_effect=[TimeoutError("timed out"), "analysis"])
+        observability = RecordingObservability()
+        wrapped = RateLimitedLLM(dummy, observability=observability)
+
+        with patch("jee_tutor.agent.factories.gemini_rate_limiter") as limiter:
+            limiter.max_attempts = 2
+
+            def run_attempts(func):
+                with self.assertRaises(TimeoutError):
+                    func(1)
+                return func(2)
+
+            limiter.call_attempts.side_effect = run_attempts
+            self.assertEqual(wrapped.call([{"role": "user", "content": "hello"}]), "analysis")
+
+        self.assertEqual(
+            [span["metadata"]["attempt"] for span in observability.spans],
+            [1, 2],
         )
 
     def test_rate_limited_llm_delegates_capability_methods(self):
@@ -290,7 +325,8 @@ class CrewAIModelConfigTest(unittest.TestCase):
         wrapped = RateLimitedLLM(llm)
 
         with patch("jee_tutor.agent.factories.gemini_rate_limiter") as limiter:
-            limiter.call.side_effect = lambda func, *args, **kwargs: func(*args, **kwargs)
+            limiter.max_attempts = 2
+            limiter.call_attempts.side_effect = lambda func: func(1)
 
             with self.assertRaises(RuntimeError) as exc_info:
                 wrapped.call([{"role": "user", "content": "hello"}])

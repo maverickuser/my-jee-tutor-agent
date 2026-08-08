@@ -23,6 +23,20 @@ class Body:
 
 
 class RunAgentCoreProfileSmokeTest(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(
+            "os.environ",
+            {"CD_EXECUTION_HMAC_SECRET_ARN": "arn:secret:test"},
+        )
+        secret = patch(
+            "scripts.run_agentcore_profile_smoke.load_cd_execution_secret",
+            return_value="test-secret",
+        )
+        environment.start()
+        secret.start()
+        self.addCleanup(environment.stop)
+        self.addCleanup(secret.stop)
+
     def test_load_s3_json_rejects_invalid_uri_and_loads_valid_json(self):
         s3_client = Mock()
         s3_client.get_object.return_value = {"Body": Body(b'{"subject":"Physics"}')}
